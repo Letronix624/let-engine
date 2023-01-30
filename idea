@@ -36,14 +36,15 @@ main
         GAME
             resources (load with &[u8])
             objects
+            draw
+            shaders
+                glsl
         discord
         sound
         window & events
         instance & device
         pipelines & swapchain
-        draw
-            shaders
-                glsl
+        
     data
     client
     server
