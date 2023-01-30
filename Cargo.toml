@@ -1,0 +1,40 @@
+
+[package]
+name = "let_engine"
+version = "0.1.1"
+authors = ["Let"]
+edition = "2021"
+description = "A test game engine to learn vulkan made by Let."
+readme = "README.md"
+homepage = "http://selfon.ddns.net/"
+repository = "https://github.com/Letronix624/Let-Engine"
+license = "MIT OR Apache-2.0"
+keywords = [
+    "gamedev",
+    "graphics",
+    "engine"
+]
+publish = false
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+vulkano = "0.32.3"
+vulkano-win = "0.32.0"
+vulkano-shaders = "0.31.1"
+bytemuck = "1.8.0"
+winit = "0.27.5"
+image = "0.24.4"
+local-ip-address = "0.5.1"
+lazy_static = "1.4.0"
+rodio = "0.16.0"
+png = "0.17.7"
+discord-presence = "0.5.14"
+rusttype = { version = "0.9.3", features = ["gpu_cache"]}
+
+[profile.release]
+strip = "symbols"
+opt-level = 3
+lto = "fat"
+codegen-units = 1

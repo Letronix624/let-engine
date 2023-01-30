@@ -1,0 +1,101 @@
+client - high
+consts - high
+data - high
+discord - high
+game - low
+objects - low
+resources - low
+server - high
+sound - high
+vulkan - low
+
+main
+    server
+    consts
+    game
+        client
+        gamelogic
+        sound
+        discord
+        player
+        resources
+    vulkan
+        shaders
+            glsl
+        pipelines
+        font
+        instance
+        swapchain
+        window
+
+======================= let engine as lib
+main
+    game logic (loop)
+    objects
+    Let Engine Lib
+        GAME
+            resources (load with &[u8])
+            objects
+        discord
+        sound
+        window & events
+        instance & device
+        pipelines & swapchain
+        draw
+            shaders
+                glsl
+    data
+    client
+    server
+    consts
+
+--------------------------
+
+//start part
+
+let game
+game.resources.load/t/f/s(&[u8])
+let discord(token)
+
+discord change title, things
+sound.play("sound name loaded in game.resources")
+
+window.create (vulkan) -> eventloop
+
+game objects add name, object/textobject inplementing part.
+
+//run part
+eventloop {
+    objects.run things
+
+
+}
+
+//tick part
+fn tick
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
