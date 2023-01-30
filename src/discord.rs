@@ -2,11 +2,14 @@ use discord_presence::client::Client;
 use discord_presence::Event;
 use std::thread;
 
-use crate::consts::D_PRESENCE;
-
-pub fn start() {
-    thread::spawn(|| {
-        let mut client = Client::new(D_PRESENCE);
+pub struct DiscordPresence {
+    client_id: u64,
+}
+impl DiscordPresence{
+    pub fn start(&self) {
+    let client_id = self.client_id;
+    thread::spawn(move || {
+        let mut client = Client::new(client_id);
 
         client.on_ready(|_| {
             println!("INFO: Started Discord rich presence.");
@@ -32,6 +35,9 @@ pub fn start() {
         handle.join().unwrap();
     });
 }
+}
+
+
 /*
 Activity {
             state: Some("Test".into()),

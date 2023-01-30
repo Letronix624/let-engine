@@ -1,5 +1,5 @@
 [package]
-name = "Let-Engine"
+name = "let-engine"
 version = "0.1.2"
 authors = ["Let"]
 edition = "2021"
