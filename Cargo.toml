@@ -3,7 +3,7 @@ name = "let-engine"
 version = "0.1.2"
 authors = ["Let"]
 edition = "2021"
-description = "A game engine to learn vulkan made by Let."
+description = "A game engine to learn vulkan made by Let. Not done yet."
 readme = "README.md"
 repository = "https://github.com/Letronix624/Let-Engine"
 keywords = [
@@ -11,7 +11,6 @@ keywords = [
     "graphics",
     "engine"
 ]
-publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,3 +27,9 @@ rodio = "0.16.0"
 png = "0.17.7"
 discord-presence = "0.5.14"
 rusttype = { version = "0.9.3", features = ["gpu_cache"]}
+
+[profile.release]
+strip = "symbols"
+opt-level = 3
+lto = "fat"
+codegen-units = 1
