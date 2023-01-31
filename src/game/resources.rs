@@ -3,6 +3,7 @@ use rusttype::Font;
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 use vulkano::image::ImageDimensions;
 
+/// Resources takes hold of all the resources into a HashMap filled with Arcs.
 #[derive(Clone)]
 pub struct Resources {
     pub textures: HashMap<String, Arc<(Vec<u8>, ImageDimensions)>>,
@@ -11,36 +12,29 @@ pub struct Resources {
 }
 
 impl Resources {
-    // pub fn load_all() -> Self {
-    //     let mut textures = HashMap::new();
-    //     let mut fonts = HashMap::new();
-    //     let mut sounds = HashMap::new();
+    pub fn new() -> Self {
+        let textures = HashMap::new();
+        let fonts = HashMap::new();
+        let sounds = HashMap::new();
 
-    //     println!("\nLoading Rusty...");
-    //     let texture = Arc::new(load_texture(
-    //         include_bytes!("../assets/textures/rusty.png").to_vec(),
-    //     ));
-    //     textures.insert("rusty".into(), texture);
-    //     println!("Loaded Rusty!\nLoading fonts...");
-    //     let font = Arc::new({
-    //         let font_data = include_bytes!("../assets/fonts/Bani-Regular.ttf");
-    //         Font::try_from_bytes(font_data).unwrap()
-    //     });
-    //     fonts.insert("Bani-Regular".into(), font);
-    //     println!("Loaded fonts!\nLoading sounds...");
-    //     let sound = Arc::new(include_bytes!("../assets/sounds/boom.mp3").to_vec());
-
-    //     sounds.insert("boom".into(), sound);
-    //     println!("Loaded sounds!\n\nLoading complete.");
-    //     Self {
-    //         textures,
-    //         fonts,
-    //         sounds,
-    //     }
-    // }
-    // pub fn load_texture(&mut self) {
-
-    // }
+        Self {
+            textures,
+            fonts,
+            sounds,
+        }
+    }
+    pub fn add_texture(&mut self, name: &str, texture: &[u8]) {
+        let texture = Arc::new(load_texture(texture.to_vec()));
+        self.textures.insert(name.into(), texture);
+    }
+    pub fn add_font(&mut self, name: &str, font: &[u8]) {
+        let font = Arc::new({ Font::try_from_vec(font.to_vec()).unwrap() });
+        self.fonts.insert(name.into(), font);
+    }
+    pub fn add_sound(&mut self, name: &str, sound: &[u8]) {
+        let sound = Arc::new(sound.to_vec());
+        self.sounds.insert(name.into(), sound);
+    }
 }
 
 fn rgb_to_rgba(rgb_image: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
@@ -82,4 +76,3 @@ fn load_texture(png_bytes: Vec<u8>) -> (Vec<u8>, ImageDimensions) {
 
     (image_data, dimensions)
 }
-

@@ -1,4 +1,4 @@
-mod data;
+pub mod data;
 use data::*;
 
 #[derive(Clone, Debug)]

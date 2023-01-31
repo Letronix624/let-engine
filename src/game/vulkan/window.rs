@@ -1,16 +1,14 @@
 extern crate image;
 extern crate vulkano;
-use image::DynamicImage;
 use std::sync::Arc;
 use vulkano::instance::Instance;
 use vulkano::swapchain::Surface;
 use vulkano_win::VkSurfaceBuild;
-use winit::dpi::LogicalSize;
-use winit::{event_loop::EventLoop, window::{WindowBuilder, Fullscreen}};
+use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 pub struct Window {
     event_loop: EventLoop<()>,
-    surface: Surface,
+    surface: Arc<Surface>,
     // resizable: bool,
     // min_size: [u32; 2],
     // max_size: [u32; 2],
@@ -18,14 +16,16 @@ pub struct Window {
     // title: String,
     // visible: bool,
     // decorations: bool,
-
 }
 impl Window {
-    pub fn create_window(instance: &Arc<Instance>, builder: WindowBuilder) -> Self {
+    pub fn create_window(
+        instance: &Arc<Instance>,
+        builder: WindowBuilder,
+    ) -> (EventLoop<()>, Arc<Surface>) {
         // let icon: DynamicImage =
         //     image::load_from_memory(include_bytes!("../../assets/handsomesquidward.bmp")).unwrap();
-        let icondimension = (icon.height(), icon.width());
-        let iconbytes: Vec<u8> = icon.into_rgba8().into_raw();
+        // let icondimension = (icon.height(), icon.width());
+        // let iconbytes: Vec<u8> = icon.into_rgba8().into_raw();
         let event_loop = winit::event_loop::EventLoopBuilder::new().build();
         // let surface = WindowBuilder::new()
         //     .with_resizable(true)
@@ -42,10 +42,6 @@ impl Window {
             .build_vk_surface(&event_loop, instance.clone())
             .unwrap();
 
-        Self {
-            event_loop,
-            surface
-        }
+        (event_loop, surface)
     }
 }
-
