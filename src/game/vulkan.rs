@@ -1,6 +1,6 @@
 mod instance;
 mod pipeline;
-mod shaders;
+pub mod shaders;
 use shaders::*;
 mod swapchain;
 mod window;
@@ -14,13 +14,9 @@ use vulkano::{
     shader::ShaderModule,
     swapchain::{Surface, Swapchain},
 };
-use winit::{
-    event_loop::EventLoop,
-    window::{WindowBuilder},
-};
+use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use std::sync::Arc;
-
 
 use super::AppInfo;
 
@@ -45,7 +41,7 @@ pub struct Vulkan {
 
 impl Vulkan {
     pub fn init(window_builder: WindowBuilder, app_info: AppInfo) -> (Self, EventLoop<()>) {
-        let instance = instance::create_instance(app_info.AppName.to_string());
+        let instance = instance::create_instance(app_info.app_name.to_string());
         let (event_loop, surface) = window::Window::create_window(&instance, window_builder);
         let debugmessenger = instance::setup_debug(&instance);
         let device_extensions = instance::create_device_extensions();
@@ -113,6 +109,8 @@ impl Vulkan {
             event_loop,
         )
     }
+
+    
 }
 
 pub fn window_size_dependent_setup(
