@@ -95,6 +95,5 @@ pub fn create_swapchain_and_images(
             }
         }
     };
-    println!("{:?}", swapchain.0.present_mode());
     swapchain
 }
