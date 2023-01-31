@@ -28,7 +28,7 @@ impl Resources {
         self.textures.insert(name.into(), texture);
     }
     pub fn add_font(&mut self, name: &str, font: &[u8]) {
-        let font = Arc::new({ Font::try_from_vec(font.to_vec()).unwrap() });
+        let font = Arc::new(Font::try_from_vec(font.to_vec()).unwrap());
         self.fonts.insert(name.into(), font);
     }
     pub fn add_sound(&mut self, name: &str, sound: &[u8]) {
