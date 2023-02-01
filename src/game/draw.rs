@@ -1,4 +1,9 @@
-use std::sync::{mpsc::Receiver, Arc};
+use image::{ImageBuffer, Rgb, Rgba};
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    sync::{mpsc::Receiver, Arc},
+};
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool},
     command_buffer::{
@@ -8,7 +13,11 @@ use vulkano::{
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
     },
-    image::{view::ImageView, ImageDimensions, ImmutableImage, MipmapsCount},
+    format::Format,
+    image::{
+        view::{ImageView, ImageViewCreateInfo},
+        ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
+    },
     memory::allocator::{MemoryUsage, StandardMemoryAllocator},
     pipeline::Pipeline,
     sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
@@ -28,6 +37,7 @@ use super::{
 
 use crate::game::vulkan::shaders::*;
 
+#[allow(unused)]
 pub struct Draw {
     pub recreate_swapchain: bool,
     descriptors: [Arc<PersistentDescriptorSet>; 2],
@@ -38,10 +48,13 @@ pub struct Draw {
     memoryallocator: Arc<StandardMemoryAllocator>,
     commandbufferallocator: StandardCommandBufferAllocator,
     descriptor_set_allocator: StandardDescriptorSetAllocator,
+    texture_hash: HashMap<String, u32>,
 }
 
 impl Draw {
     pub fn setup(vulkan: &Vulkan, resources: &Resources) -> Self {
+        let mut texture_hash: HashMap<String, u32> = HashMap::new();
+
         let recreate_swapchain = false;
 
         let memoryallocator = Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
@@ -78,34 +91,54 @@ impl Draw {
         )
         .unwrap();
 
-        // placeholder texture
         let texture = {
-            // let texture =
-            //     resources
-            //     .textures
-            //     .get("rusty")
-            //     .unwrap()
-            //     .as_ref()
-            //     .clone();
-            let texture: (Vec<u8>, ImageDimensions) = (
-                vec![0, 0, 0, 255],
-                ImageDimensions::Dim2d {
+            let mut wh = [0; 2];
+
+            let mut texture: Vec<u8> = resources
+                .textures
+                .clone()
+                .into_iter()
+                .zip(1_u32..)
+                .flat_map(|t| {
+                    texture_hash.insert(t.0 .0, t.1);
+                    let tex = load_texture(t.0 .1);
+                    wh = tex.1.width_height();
+                    tex.0
+                })
+                .collect();
+
+            let mut dimensions = ImageDimensions::Dim2d {
+                width: wh[0],
+                height: wh[1],
+                array_layers: texture_hash.len() as u32,
+            };
+
+            if dimensions.width_height() == [0; 2] {
+                texture = vec![0, 0, 0, 255];
+                dimensions = ImageDimensions::Dim2d {
                     width: 1,
                     height: 1,
                     array_layers: 1,
-                },
-            );
+                };
+            }
 
             let image = ImmutableImage::from_iter(
                 &memoryallocator,
-                texture.0,
-                texture.1,
+                texture,
+                dimensions,
                 MipmapsCount::One,
-                vulkano::format::Format::R8G8B8A8_SRGB,
+                Format::R8G8B8A8_SRGB,
                 &mut uploads,
             )
             .unwrap();
-            ImageView::new_default(image).unwrap()
+            ImageView::new(
+                image.clone(),
+                ImageViewCreateInfo {
+                    view_type: ImageViewType::Dim2dArray,
+                    ..ImageViewCreateInfo::from_image(&image)
+                },
+            )
+            .unwrap()
         };
 
         let sampler = Sampler::new(
@@ -184,6 +217,7 @@ impl Draw {
             memoryallocator,
             commandbufferallocator,
             descriptor_set_allocator,
+            texture_hash,
         }
     }
 
@@ -285,7 +319,11 @@ impl Draw {
                                     position: obj.position,
                                     size: obj.size,
                                     rotation: obj.rotation,
-                                    textureID: if let Some(_) = obj.texture { 1 } else { 0 },
+                                    textureID: if let Some(name) = obj.texture {
+                                        *self.texture_hash.get(&name).unwrap()
+                                    } else {
+                                        0
+                                    },
                                 })
                                 .unwrap(),
                         )],
@@ -361,4 +399,43 @@ impl Draw {
             }
         }
     }
+}
+fn rgb_to_rgba(rgb_image: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    let (width, height) = rgb_image.dimensions();
+    let mut rgba_image = ImageBuffer::new(width, height);
+    for (x, y, pixel) in rgb_image.enumerate_pixels() {
+        let Rgb([r, g, b]) = *pixel;
+        let rgba = Rgba([r, g, b, 255]);
+        rgba_image.put_pixel(x, y, rgba);
+    }
+    rgba_image
+}
+
+fn load_texture(png_bytes: Arc<Vec<u8>>) -> (Vec<u8>, ImageDimensions) {
+    let cursor = Cursor::new(png_bytes.to_vec());
+    let decoder = png::Decoder::new(cursor);
+    let mut reader = decoder.read_info().unwrap();
+    let info = reader.info();
+    let dimensions = ImageDimensions::Dim2d {
+        width: info.width,
+        height: info.height,
+        array_layers: 1,
+    };
+    let color_type = info.color_type.clone();
+    let pixels = info.width * info.height;
+
+    let mut image_data = Vec::new();
+    image_data.resize((pixels * 4) as usize, 0);
+    reader.next_frame(&mut image_data).unwrap();
+
+    if color_type == png::ColorType::Rgb {
+        image_data.resize((pixels * 3) as usize, 0);
+        let imbuf =
+            image::ImageBuffer::from_vec(dimensions.width(), dimensions.height(), image_data)
+                .unwrap();
+        let imbuf = rgb_to_rgba(&imbuf);
+        image_data = imbuf.to_vec();
+    }
+
+    (image_data, dimensions)
 }

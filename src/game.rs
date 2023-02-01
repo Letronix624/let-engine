@@ -1,5 +1,5 @@
 pub mod resources;
-use resources::Resources;
+pub use resources::Resources;
 pub mod objects;
 use objects::Object;
 pub mod vulkan;
@@ -17,6 +17,7 @@ use std::sync::mpsc::Receiver;
 pub struct GameBuilder {
     window_builder: Option<WindowBuilder>,
     app_info: Option<AppInfo>,
+    resources: Resources,
 }
 
 /// This is what you create your whole game session with.
@@ -25,10 +26,20 @@ impl GameBuilder {
         Self {
             window_builder: None,
             app_info: None,
+            resources: Resources::new(),
         }
     }
-    pub fn with_window_builder(&mut self, window_builder: WindowBuilder) {
+    pub fn with_resources(mut self, resources: Resources) -> Self {
+        self.resources = resources;
+        self
+    }
+    pub fn with_window_builder(mut self, window_builder: WindowBuilder) -> Self {
         self.window_builder = Some(window_builder);
+        self
+    }
+    pub fn with_app_info(mut self, app_info: AppInfo) -> Self {
+        self.app_info = Some(app_info);
+        self
     }
     pub fn build(&mut self) -> (Game, EventLoop<()>) {
         let app_info = if let Some(app_info) = self.app_info {
@@ -43,7 +54,7 @@ impl GameBuilder {
             panic!("no window builder");
         };
 
-        let resources = Resources::new();
+        let resources = self.resources.clone();
         let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
         let draw = Draw::setup(&vulkan, &resources);
 
@@ -72,8 +83,8 @@ impl GameBuilder {
 #[allow(dead_code)]
 pub struct Game {
     pub objects: Vec<Receiver<Object>>,
-    pub resources: Resources,
-    pub app_info: AppInfo,
+    resources: Resources,
+    app_info: AppInfo,
     draw: Draw,
     vulkan: Vulkan,
 }
