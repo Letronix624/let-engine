@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["Let"]
 edition = "2021"
 description = "A game engine to learn vulkan made by Let. Not done yet."
