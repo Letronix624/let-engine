@@ -127,6 +127,7 @@ pub const SQUARE: [Vertex; 6] = [
 #[allow(dead_code)]
 pub const SQUARE_ID: [u16; 6] = [0, 1, 2, 1, 2, 3];
 
+#[allow(unused)]
 macro_rules! make_circle {
     ($corners:expr) => {{
         let corners = $corners;
@@ -198,4 +199,6 @@ macro_rules! make_circle {
         Data { vertices, indices }
     }};
 }
+
+#[allow(unused)]
 pub(crate) use make_circle;

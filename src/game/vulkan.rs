@@ -42,7 +42,7 @@ pub struct Vulkan {
 impl Vulkan {
     pub fn init(window_builder: WindowBuilder, app_info: AppInfo) -> (Self, EventLoop<()>) {
         let instance = instance::create_instance(app_info.app_name.to_string());
-        let (event_loop, surface) = window::Window::create_window(&instance, window_builder);
+        let (event_loop, surface) = window::create_window(&instance, window_builder);
         let debugmessenger = instance::setup_debug(&instance);
         let device_extensions = instance::create_device_extensions();
         let (physical_device, queue_family_index) =
@@ -109,8 +109,6 @@ impl Vulkan {
             event_loop,
         )
     }
-
-    
 }
 
 pub fn window_size_dependent_setup(
