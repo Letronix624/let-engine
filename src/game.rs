@@ -14,13 +14,13 @@ use draw::Draw;
 use crate::AppInfo;
 use std::sync::mpsc::Receiver;
 
+/// This is what you create your whole game session with.
 pub struct GameBuilder {
     window_builder: Option<WindowBuilder>,
     app_info: Option<AppInfo>,
     resources: Resources,
 }
 
-/// This is what you create your whole game session with.
 impl GameBuilder {
     pub fn new() -> Self {
         Self {

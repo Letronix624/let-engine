@@ -1,6 +1,7 @@
 pub mod discord;
 
 mod game;
+mod errors;
 
 pub use game::{objects::Object, Game, GameBuilder, Resources};
 
