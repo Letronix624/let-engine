@@ -22,12 +22,11 @@ vulkano-shaders = "0.31.1"
 bytemuck = "1.8.0"
 winit = "0.27.5"
 image = "0.24.4"
-local-ip-address = "0.5.1"
-lazy_static = "1.4.0"
 rodio = "0.16.0"
 png = "0.17.7"
 discord-presence = "0.5.14"
 rusttype = { version = "0.9.3", features = ["gpu_cache"]}
+error-stack = "0.3.0"
 
 [profile.release]
 strip = "symbols"
