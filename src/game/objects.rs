@@ -84,12 +84,28 @@ impl VisualObject {
             ..Self::empty()
         }
     }
-    pub fn new_text(text: &str, font: String) -> Self {
+    pub fn new_text(text: &str, font: &str) -> Self {
         Self {
             text: Some(text.to_string()),
-            font: Some(font),
+            font: Some(font.to_string()),
             ..Self::empty()
         }
+    }
+    pub fn texture(mut self, texture: &str) -> Self{
+        self.texture = Some(texture.to_string());
+        self
+    }
+    pub fn data(mut self, data: Data) -> Self{
+        self.data = data;
+        self
+    }
+    pub fn text(mut self, text: &str) -> Self{
+        self.text = Some(text.to_string());
+        self
+    }
+    pub fn font(mut self, font: &str) -> Self{
+        self.font = Some(font.to_string());
+        self
     }
 }
 
