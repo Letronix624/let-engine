@@ -1,7 +1,7 @@
 pub mod resources;
 pub use resources::Resources;
 pub mod objects;
-pub use objects::{Display, Object, VisualObject};
+pub use objects::{Display, Object, VisualObject, data::Data};
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
