@@ -3,7 +3,7 @@ pub mod discord;
 mod game;
 mod errors;
 
-pub use game::{objects::Object, Game, GameBuilder, Resources};
+pub use game::{Object, Game, GameBuilder, Resources, VisualObject, Display};
 
 /// Information about your game.
 #[derive(Clone, Copy)]

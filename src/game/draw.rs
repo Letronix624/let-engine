@@ -87,7 +87,6 @@ impl Draw {
             },
             MemoryUsage::Upload,
         );
-
         let index_buffer: CpuBufferPool<u16> = CpuBufferPool::new(
             memoryallocator.clone(),
             BufferUsage {
@@ -124,7 +123,6 @@ impl Draw {
         .unwrap();
 
         //textures
-
         let texture = {
             let mut wh = [0; 2];
 
@@ -174,7 +172,6 @@ impl Draw {
             )
             .unwrap()
         };
-
         //fonts
 
         let font_cache = Cache::builder().dimensions(512, 512).build();
@@ -187,13 +184,12 @@ impl Draw {
             },
             MemoryUsage::Upload,
         );
-
         let cache_texture = ImmutableImage::from_iter(
             &memoryallocator,
-            [0u32; 512 * 512],
+            [100, 200, 255, 255],
             ImageDimensions::Dim2d {
-                width: 512,
-                height: 512,
+                width: 1,
+                height: 1,
                 array_layers: 1,
             },
             MipmapsCount::One,
@@ -203,7 +199,7 @@ impl Draw {
         .unwrap();
 
         let cache_texture_view = ImageView::new_default(cache_texture).unwrap();
-
+        
 
         let font_set = PersistentDescriptorSet::new(
             &descriptor_set_allocator,
@@ -221,7 +217,6 @@ impl Draw {
             )],
         )
         .unwrap();
-
 
         let descriptors = [
             PersistentDescriptorSet::new(
@@ -264,7 +259,6 @@ impl Draw {
             )
             .unwrap(),
         ];
-
         let previous_frame_end = Some(
             uploads
                 .build()
@@ -273,7 +267,6 @@ impl Draw {
                 .unwrap()
                 .boxed(),
         );
-
         Self {
             recreate_swapchain,
             descriptors,
@@ -524,7 +517,7 @@ impl Draw {
             let obj = obj.try_recv();
             match obj {
                 Ok(obj) => {
-                    if let Some(visual_object) = obj.graphic {
+                    if let Some(visual_object) = obj.graphics {
                         if visual_object.display == Display::Data {
                             self.descriptors[1] = PersistentDescriptorSet::new(
                                 &self.descriptor_set_allocator,

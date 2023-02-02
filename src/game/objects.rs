@@ -10,7 +10,7 @@ pub struct Object {
     pub size: [f32; 2],
     pub rotation: f32,
     pub color: [f32; 4],
-    pub graphic: Option<VisualObject>,
+    pub graphics: Option<VisualObject>,
 }
 //game objects have position, size, rotation, color texture and data.
 //text objects have position, size, rotation, color, text and font.
@@ -21,7 +21,7 @@ impl Object {
             size: [1.0, 1.0],
             rotation: 0.0,
             color: [0.0, 0.0, 0.0, 1.0],
-            graphic: None,
+            graphics: None,
         }
     }
     pub fn new_square() -> Self {
@@ -30,7 +30,7 @@ impl Object {
             size: [0.5, 0.5],
             rotation: 0.0,
             color: [0.0, 0.0, 0.0, 1.0],
-            graphic: Some(VisualObject::new(Display::Data)),
+            graphics: Some(VisualObject::new(Display::Data)),
         }
     }
     // pub fn position(&self) -> [f32; 2] {
