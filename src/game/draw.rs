@@ -1,14 +1,15 @@
 use image::{ImageBuffer, Rgb, Rgba};
+use rusttype::{gpu_cache::Cache, point, PositionedGlyph};
 use std::{
     collections::HashMap,
     io::Cursor,
     sync::{mpsc::Receiver, Arc},
 };
 use vulkano::{
-    buffer::{BufferUsage, CpuBufferPool},
+    buffer::{cpu_pool::CpuBufferPoolChunk, BufferUsage, CpuAccessibleBuffer, CpuBufferPool},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer,
     },
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
@@ -30,7 +31,10 @@ use vulkano::{
 use winit::window::Window;
 
 use super::{
-    objects::{data::Vertex, Object},
+    objects::{
+        data::{TextVertex, Vertex},
+        Display, Object
+    },
     resources::Resources,
     vulkan::{window_size_dependent_setup, Vulkan},
 };
@@ -49,10 +53,23 @@ pub struct Draw {
     commandbufferallocator: StandardCommandBufferAllocator,
     descriptor_set_allocator: StandardDescriptorSetAllocator,
     texture_hash: HashMap<String, u32>,
+    text_vertex_buffer: CpuBufferPool<TextVertex>,
+    font_cache: Cache<'static>,
+    font_set: Arc<PersistentDescriptorSet>,
 }
 
 impl Draw {
     pub fn setup(vulkan: &Vulkan, resources: &Resources) -> Self {
+        let dimensions: [u32; 2] = vulkan
+            .surface
+            .object()
+            .unwrap()
+            .downcast_ref::<Window>()
+            .unwrap()
+            .inner_size()
+            .try_into()
+            .unwrap();
+
         let mut texture_hash: HashMap<String, u32> = HashMap::new();
 
         let recreate_swapchain = false;
@@ -60,10 +77,10 @@ impl Draw {
         let memoryallocator = Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
 
         let vertex_buffer: CpuBufferPool<Vertex> =
-            CpuBufferPool::vertex_buffer(memoryallocator.clone().into());
+            CpuBufferPool::vertex_buffer(memoryallocator.clone());
 
         let object_buffer: CpuBufferPool<vertexshader::ty::Object> = CpuBufferPool::new(
-            memoryallocator.clone().into(),
+            memoryallocator.clone(),
             BufferUsage {
                 uniform_buffer: true,
                 ..Default::default()
@@ -72,7 +89,7 @@ impl Draw {
         );
 
         let index_buffer: CpuBufferPool<u16> = CpuBufferPool::new(
-            memoryallocator.clone().into(),
+            memoryallocator.clone(),
             BufferUsage {
                 index_buffer: true,
                 ..Default::default()
@@ -90,6 +107,23 @@ impl Draw {
             CommandBufferUsage::OneTimeSubmit,
         )
         .unwrap();
+
+        let sampler = Sampler::new(
+            vulkan.device.clone(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Nearest,
+                min_filter: Filter::Linear,
+                address_mode: [
+                    SamplerAddressMode::ClampToBorder,
+                    SamplerAddressMode::ClampToBorder,
+                    SamplerAddressMode::Repeat,
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        //textures
 
         let texture = {
             let mut wh = [0; 2];
@@ -141,20 +175,53 @@ impl Draw {
             .unwrap()
         };
 
-        let sampler = Sampler::new(
-            vulkan.device.clone(),
-            SamplerCreateInfo {
-                mag_filter: Filter::Nearest,
-                min_filter: Filter::Linear,
-                address_mode: [
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::Repeat,
-                ],
+        //fonts
+
+        let font_cache = Cache::builder().dimensions(512, 512).build();
+
+        let text_vertex_buffer = CpuBufferPool::new(
+            memoryallocator.clone(),
+            BufferUsage {
+                vertex_buffer: true,
                 ..Default::default()
             },
+            MemoryUsage::Upload,
+        );
+
+        let cache_texture = ImmutableImage::from_iter(
+            &memoryallocator,
+            [0u32; 512 * 512],
+            ImageDimensions::Dim2d {
+                width: 512,
+                height: 512,
+                array_layers: 1,
+            },
+            MipmapsCount::One,
+            vulkano::format::Format::R8_UNORM,
+            &mut uploads,
         )
         .unwrap();
+
+        let cache_texture_view = ImageView::new_default(cache_texture).unwrap();
+
+
+        let font_set = PersistentDescriptorSet::new(
+            &descriptor_set_allocator,
+            vulkan
+                .text_pipeline
+                .layout()
+                .set_layouts()
+                .get(0)
+                .unwrap()
+                .clone(),
+            [WriteDescriptorSet::image_view_sampler(
+                0,
+                cache_texture_view.clone(),
+                sampler.clone(),
+            )],
+        )
+        .unwrap();
+
 
         let descriptors = [
             PersistentDescriptorSet::new(
@@ -218,7 +285,162 @@ impl Draw {
             commandbufferallocator,
             descriptor_set_allocator,
             texture_hash,
+            text_vertex_buffer,
+            font_cache,
+            font_set,
+
         }
+    }
+
+    pub fn update_font_objects(&mut self, vulkan: &mut Vulkan, resources: &Resources) {
+        
+        let dimensions: [u32; 2] = vulkan
+            .surface
+            .object()
+            .unwrap()
+            .downcast_ref::<Window>()
+            .unwrap()
+            .inner_size()
+            .try_into()
+            .unwrap();
+
+        let mut cache_pixel_buffer = vec![0; 512 * 512];
+
+        let glyphs: Vec<PositionedGlyph>;
+
+        let font = resources.fonts.get("Bani-Regular").unwrap();
+        glyphs = font
+            .layout(
+                "SUPER TEST! RUSTY UGA!",
+                rusttype::Scale::uniform(50.0),
+                point(0.0, 50.0),
+            )
+            .collect();
+
+        for glyph in &glyphs {
+            self.font_cache.queue_glyph(0, glyph.clone());
+        }
+
+        self.font_cache
+            .cache_queued(|rect, src_data| {
+                let width = (rect.max.x - rect.min.x) as usize;
+                let height = (rect.max.y - rect.min.y) as usize;
+                let mut dst_index = rect.min.y as usize * 512 + rect.min.x as usize;
+                let mut src_index = 0;
+                for _ in 0..height {
+                    let dst_slice = &mut cache_pixel_buffer[dst_index..dst_index + width];
+                    let src_slice = &src_data[src_index..src_index + width];
+                    dst_slice.copy_from_slice(src_slice);
+
+                    dst_index += 512;
+                    src_index += width;
+                }
+            })
+            .unwrap();
+
+        let mut uploads = AutoCommandBufferBuilder::primary(
+            &self.commandbufferallocator,
+            vulkan.queue.queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
+
+        let cache_texture = ImmutableImage::from_iter(
+            &self.memoryallocator,
+            cache_pixel_buffer.iter().cloned(),
+            ImageDimensions::Dim2d {
+                width: 512,
+                height: 512,
+                array_layers: 1,
+            },
+            MipmapsCount::One,
+            vulkano::format::Format::R8_UNORM,
+            &mut uploads,
+        )
+        .unwrap();
+
+        let cache_texture_view = ImageView::new_default(cache_texture).unwrap();
+
+        let text_vertices: Vec<TextVertex> = glyphs
+            .clone()
+            .iter()
+            .flat_map(|g| {
+                if let Ok(Some((uv_rect, screen_rect))) = self.font_cache.rect_for(0, g) {
+                    let gl_rect = rusttype::Rect {
+                        min: point(
+                            (screen_rect.min.x as f32 / dimensions[0] as f32 - 0.5) * 2.0,
+                            (screen_rect.min.y as f32 / dimensions[1] as f32 - 0.5) * 2.0,
+                        ),
+                        max: point(
+                            (screen_rect.max.x as f32 / dimensions[0] as f32 - 0.5) * 2.0,
+                            (screen_rect.max.y as f32 / dimensions[1] as f32 - 0.5) * 2.0,
+                        ),
+                    };
+                    vec![
+                        TextVertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_position: [uv_rect.min.x, uv_rect.max.y],
+                        },
+                        TextVertex {
+                            position: [gl_rect.min.x, gl_rect.min.y],
+                            tex_position: [uv_rect.min.x, uv_rect.min.y],
+                        },
+                        TextVertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_position: [uv_rect.max.x, uv_rect.min.y],
+                        },
+                        TextVertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_position: [uv_rect.max.x, uv_rect.min.y],
+                        },
+                        TextVertex {
+                            position: [gl_rect.max.x, gl_rect.max.y],
+                            tex_position: [uv_rect.max.x, uv_rect.max.y],
+                        },
+                        TextVertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_position: [uv_rect.min.x, uv_rect.max.y],
+                        },
+                    ]
+                    .into_iter()
+                } else {
+                    vec![].into_iter()
+                }
+            })
+            .collect();
+        
+
+        let sampler = Sampler::new(
+            vulkan.device.clone(),
+            SamplerCreateInfo {
+                mag_filter: Filter::Nearest,
+                min_filter: Filter::Linear,
+                address_mode: [
+                    SamplerAddressMode::ClampToBorder,
+                    SamplerAddressMode::ClampToBorder,
+                    SamplerAddressMode::Repeat,
+                ],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        self.font_set = PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
+            vulkan
+                .text_pipeline
+                .layout()
+                .set_layouts()
+                .get(0)
+                .unwrap()
+                .clone(),
+            [WriteDescriptorSet::image_view_sampler(
+                0,
+                cache_texture_view.clone(),
+                sampler.clone(),
+            )],
+        )
+        .unwrap();
     }
 
     pub fn redrawevent(&mut self, vulkan: &mut Vulkan, objects: &Vec<Receiver<Object>>) {
@@ -275,7 +497,7 @@ impl Draw {
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([1.0, 0.0, 0.0, 1.0].into())],
+                    clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into())],
                     ..RenderPassBeginInfo::framebuffer(
                         vulkan.framebuffers[image_num as usize].clone(),
                     )
@@ -302,72 +524,78 @@ impl Draw {
             let obj = obj.try_recv();
             match obj {
                 Ok(obj) => {
-                    self.descriptors[1] = PersistentDescriptorSet::new(
-                        &self.descriptor_set_allocator,
-                        vulkan
-                            .pipeline
-                            .layout()
-                            .set_layouts()
-                            .get(1)
-                            .unwrap()
-                            .clone(),
-                        [WriteDescriptorSet::buffer(
-                            0,
-                            self.object_buffer
-                                .from_data(vertexshader::ty::Object {
-                                    color: obj.color,
-                                    position: obj.position,
-                                    size: obj.size,
-                                    rotation: obj.rotation,
-                                    textureID: if let Some(name) = obj.texture {
-                                        *self.texture_hash.get(&name).unwrap()
-                                    } else {
-                                        0
-                                    },
-                                })
-                                .unwrap(),
-                        )],
-                    )
-                    .unwrap();
+                    if let Some(visual_object) = obj.graphic {
+                        if visual_object.display == Display::Data {
+                            self.descriptors[1] = PersistentDescriptorSet::new(
+                                &self.descriptor_set_allocator,
+                                vulkan
+                                    .pipeline
+                                    .layout()
+                                    .set_layouts()
+                                    .get(1)
+                                    .unwrap()
+                                    .clone(),
+                                [WriteDescriptorSet::buffer(
+                                    0,
+                                    self.object_buffer
+                                        .from_data(vertexshader::ty::Object {
+                                            color: obj.color,
+                                            position: obj.position,
+                                            size: obj.size,
+                                            rotation: obj.rotation,
+                                            textureID: if let Some(name) = visual_object.texture {
+                                                *self.texture_hash.get(&name).unwrap()
+                                            } else {
+                                                0
+                                            },
+                                        })
+                                        .unwrap(),
+                                )],
+                            )
+                            .unwrap();
 
-                    let index_sub_buffer = self
-                        .index_buffer
-                        .from_iter(obj.data.indices.clone())
-                        .unwrap();
-                    let vertex_sub_buffer = self
-                        .vertex_buffer
-                        .from_iter(obj.data.vertices.clone())
-                        .unwrap();
-                    builder
-                        .bind_descriptor_sets(
-                            vulkano::pipeline::PipelineBindPoint::Graphics,
-                            vulkan.pipeline.layout().clone(),
-                            0,
-                            self.descriptors.to_vec(),
-                        )
-                        .bind_vertex_buffers(0, vertex_sub_buffer.clone())
-                        .bind_index_buffer(index_sub_buffer.clone())
-                        .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
-                        .draw(obj.data.vertices.len() as u32, 1, 0, 0)
-                        .unwrap();
+                            let index_sub_buffer = self
+                                .index_buffer
+                                .from_iter(visual_object.data.indices.clone())
+                                .unwrap();
+                            let vertex_sub_buffer = self
+                                .vertex_buffer
+                                .from_iter(visual_object.data.vertices.clone())
+                                .unwrap();
+                            builder
+                                .bind_descriptor_sets(
+                                    vulkano::pipeline::PipelineBindPoint::Graphics,
+                                    vulkan.pipeline.layout().clone(),
+                                    0,
+                                    self.descriptors.to_vec(),
+                                )
+                                .bind_vertex_buffers(0, vertex_sub_buffer.clone())
+                                .bind_index_buffer(index_sub_buffer.clone())
+                                .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
+                                .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
+                                .unwrap();
+                        } else {
+                            // let vertex_subbuffer =
+                            //     self.text_vertex_buffer.from_iter(self.text_vertices.clone()).unwrap();
+                            // builder
+                            //     .bind_pipeline_graphics(vulkan.text_pipeline.clone())
+                            //     .bind_vertex_buffers(0, [vertex_subbuffer.clone()])
+                            //     .bind_descriptor_sets(
+                            //         vulkano::pipeline::PipelineBindPoint::Graphics,
+                            //         vulkan.text_pipeline.layout().clone(),
+                            //         0,
+                            //         self.font_set.clone(),
+                            //     )
+                            //     .draw(self.text_vertices.clone().len() as u32, 1, 0, 0)
+                            //     .unwrap();
+                        }
+                    }
                 }
                 Err(_) => {}
             }
         }
-        // //Draw Fonts
-        // // let text = "Mein Kater Rusty";
-
-        // builder
-        //     .bind_pipeline_graphics(self.text_pipeline.clone())
-        //     .bind_vertex_buffers(0, [self.text_vertex_buffer.clone()])
-        //     .bind_descriptor_sets(
-        //         vulkano::pipeline::PipelineBindPoint::Graphics,
-        //         self.text_pipeline.layout().clone(),
-        //         0,
-        //         self.text_set.clone(),
-        //     )
-        //     .draw(self.text_vertices.clone().len() as u32, 1, 0, 0)
-        //     .unwrap();
+        //Draw Fonts
+        // let text = "Mein Kater Rusty";
 
         builder.end_render_pass().unwrap();
         let command_buffer = builder.build().unwrap();

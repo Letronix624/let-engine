@@ -33,10 +33,13 @@ pub struct Vulkan {
     pub images: Vec<Arc<SwapchainImage>>,
     pub vs: Arc<ShaderModule>,
     pub fs: Arc<ShaderModule>,
+    pub tvs: Arc<ShaderModule>,
+    pub tfs: Arc<ShaderModule>,
     pub render_pass: Arc<RenderPass>,
     pub pipeline: Arc<GraphicsPipeline>,
     pub viewport: Viewport,
     pub framebuffers: Vec<Arc<Framebuffer>>,
+    pub text_pipeline: Arc<GraphicsPipeline>,
 }
 
 impl Vulkan {
@@ -57,6 +60,8 @@ impl Vulkan {
 
         let vs = vertexshader::load(device.clone()).unwrap();
         let fs = fragmentshader::load(device.clone()).unwrap();
+        let tvs = text_vertexshader::load(device.clone()).unwrap();
+        let tfs = text_fragmentshader::load(device.clone()).unwrap();
 
         let render_pass = vulkano::single_pass_renderpass!(
             device.clone(),
@@ -78,6 +83,13 @@ impl Vulkan {
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
         let pipeline: Arc<GraphicsPipeline> =
             pipeline::create_pipeline(&device, &vs, &fs, subpass.clone());
+        let text_pipeline: Arc<GraphicsPipeline> = pipeline::create_font_pipeline(
+            &device,
+            &tvs,
+            &tfs,
+            subpass,
+            &images[0].dimensions().width_height().into(),
+        );
 
         let mut viewport = Viewport {
             origin: [0.0, 0.0],
@@ -101,10 +113,13 @@ impl Vulkan {
                 images,
                 vs,
                 fs,
+                tvs,
+                tfs,
                 render_pass,
                 pipeline,
                 viewport,
                 framebuffers,
+                text_pipeline,
             },
             event_loop,
         )
