@@ -3,7 +3,7 @@ use rusttype::{gpu_cache::Cache, point, PositionedGlyph};
 use std::{
     collections::HashMap,
     io::Cursor,
-    sync::{mpsc::Receiver, Arc},
+    sync::{mpsc::Receiver, Arc, Mutex},
 };
 use vulkano::{
     buffer::{cpu_pool::CpuBufferPoolChunk, BufferUsage, CpuAccessibleBuffer, CpuBufferPool},
@@ -39,7 +39,7 @@ use super::{
     vulkan::{window_size_dependent_setup, Vulkan},
 };
 
-use crate::game::vulkan::shaders::*;
+use crate::{game::vulkan::shaders::*, ObjectNode};
 
 #[allow(unused)]
 pub struct Draw {
@@ -436,7 +436,7 @@ impl Draw {
         .unwrap();
     }
 
-    pub fn redrawevent(&mut self, vulkan: &mut Vulkan, objects: &Vec<Receiver<Object>>) {
+    pub fn redrawevent(&mut self, vulkan: &mut Vulkan, objects: &Vec<Arc<Mutex<ObjectNode>>>) {
         //windowevents
         let window = vulkan
             .surface
@@ -513,78 +513,83 @@ impl Draw {
         };
 
         //Draw Objects
-        for obj in objects.iter() {
-            let obj = obj.try_recv();
-            match obj {
-                Ok(obj) => {
-                    if let Some(visual_object) = obj.graphics {
-                        if visual_object.display == Display::Data {
-                            self.descriptors[1] = PersistentDescriptorSet::new(
-                                &self.descriptor_set_allocator,
-                                vulkan
-                                    .pipeline
-                                    .layout()
-                                    .set_layouts()
-                                    .get(1)
-                                    .unwrap()
-                                    .clone(),
-                                [WriteDescriptorSet::buffer(
-                                    0,
-                                    self.object_buffer
-                                        .from_data(vertexshader::ty::Object {
-                                            color: obj.color,
-                                            position: obj.position,
-                                            size: obj.size,
-                                            rotation: obj.rotation,
-                                            textureID: if let Some(name) = visual_object.texture {
-                                                *self.texture_hash.get(&name).unwrap()
-                                            } else {
-                                                0
-                                            },
-                                        })
-                                        .unwrap(),
-                                )],
-                            )
-                            .unwrap();
 
-                            let index_sub_buffer = self
-                                .index_buffer
-                                .from_iter(visual_object.data.indices.clone())
-                                .unwrap();
-                            let vertex_sub_buffer = self
-                                .vertex_buffer
-                                .from_iter(visual_object.data.vertices.clone())
-                                .unwrap();
-                            builder
-                                .bind_descriptor_sets(
-                                    vulkano::pipeline::PipelineBindPoint::Graphics,
-                                    vulkan.pipeline.layout().clone(),
-                                    0,
-                                    self.descriptors.to_vec(),
-                                )
-                                .bind_vertex_buffers(0, vertex_sub_buffer.clone())
-                                .bind_index_buffer(index_sub_buffer.clone())
-                                .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
-                                .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
-                                .unwrap();
-                        } else {
-                            // let vertex_subbuffer =
-                            //     self.text_vertex_buffer.from_iter(self.text_vertices.clone()).unwrap();
-                            // builder
-                            //     .bind_pipeline_graphics(vulkan.text_pipeline.clone())
-                            //     .bind_vertex_buffers(0, [vertex_subbuffer.clone()])
-                            //     .bind_descriptor_sets(
-                            //         vulkano::pipeline::PipelineBindPoint::Graphics,
-                            //         vulkan.text_pipeline.layout().clone(),
-                            //         0,
-                            //         self.font_set.clone(),
-                            //     )
-                            //     .draw(self.text_vertices.clone().len() as u32, 1, 0, 0)
-                            //     .unwrap();
-                        }
-                    }
+        let mut order: Vec<Object> = vec![];
+
+        for obj in objects {
+            let object = obj.lock().unwrap().object.clone();
+            order.push(object.clone());
+            ObjectNode::order_position(&mut order, obj);
+        }
+
+        
+
+        for obj in order {
+            if let Some(visual_object) = obj.graphics {
+                if visual_object.display == Display::Data {
+                    self.descriptors[1] = PersistentDescriptorSet::new(
+                        &self.descriptor_set_allocator,
+                        vulkan
+                            .pipeline
+                            .layout()
+                            .set_layouts()
+                            .get(1)
+                            .unwrap()
+                            .clone(),
+                        [WriteDescriptorSet::buffer(
+                            0,
+                            self.object_buffer
+                                .from_data(vertexshader::ty::Object {
+                                    color: obj.color,
+                                    position: obj.position,
+                                    size: obj.size,
+                                    rotation: obj.rotation,
+                                    textureID: if let Some(name) = visual_object.texture {
+                                        *self.texture_hash.get(&name).unwrap()
+                                    } else {
+                                        0
+                                    },
+                                })
+                                .unwrap(),
+                        )],
+                    )
+                    .unwrap();
+
+                    let index_sub_buffer = self
+                        .index_buffer
+                        .from_iter(visual_object.data.indices.clone())
+                        .unwrap();
+                    let vertex_sub_buffer = self
+                        .vertex_buffer
+                        .from_iter(visual_object.data.vertices.clone())
+                        .unwrap();
+                    builder
+                        .bind_descriptor_sets(
+                            vulkano::pipeline::PipelineBindPoint::Graphics,
+                            vulkan.pipeline.layout().clone(),
+                            0,
+                            self.descriptors.to_vec(),
+                        )
+                        .bind_vertex_buffers(0, vertex_sub_buffer.clone())
+                        .bind_index_buffer(index_sub_buffer.clone())
+                        .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
+                        .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
+                        .unwrap();
+                } else {
+                    // let vertex_subbuffer =
+                    //     self.text_vertex_buffer.from_iter(self.text_vertices.clone()).unwrap();
+                    // builder
+                    //     .bind_pipeline_graphics(vulkan.text_pipeline.clone())
+                    //     .bind_vertex_buffers(0, [vertex_subbuffer.clone()])
+                    //     .bind_descriptor_sets(
+                    //         vulkano::pipeline::PipelineBindPoint::Graphics,
+                    //         vulkan.text_pipeline.layout().clone(),
+                    //         0,
+                    //         self.font_set.clone(),
+                    //     )
+                    //     .draw(self.text_vertices.clone().len() as u32, 1, 0, 0)
+                    //     .unwrap();
                 }
-                Err(_) => {}
             }
         }
         //Draw Fonts
@@ -660,3 +665,4 @@ fn load_texture(png_bytes: Arc<Vec<u8>>) -> (Vec<u8>, ImageDimensions) {
 
     (image_data, dimensions)
 }
+

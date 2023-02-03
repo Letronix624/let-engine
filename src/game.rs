@@ -1,7 +1,7 @@
 pub mod resources;
 pub use resources::Resources;
 pub mod objects;
-pub use objects::{Display, Object, VisualObject, data::Data};
+pub use objects::{Display, Object, VisualObject, data::Data, ObjectNode};
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
@@ -11,8 +11,12 @@ use winit::{
 mod draw;
 use draw::Draw;
 
+use std::sync::{
+    Arc,
+    Mutex
+};
+
 use crate::AppInfo;
-use std::sync::mpsc::Receiver;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
@@ -82,7 +86,7 @@ impl GameBuilder {
 /// The struct that holds and executes all of the game data.
 #[allow(dead_code)]
 pub struct Game {
-    pub objects: Vec<Receiver<Object>>,
+    pub objects: Vec<Arc<Mutex<ObjectNode>>>,
     resources: Resources,
     app_info: AppInfo,
     draw: Draw,

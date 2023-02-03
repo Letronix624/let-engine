@@ -1,5 +1,10 @@
 pub mod data;
 use data::*;
+use winit::platform::unix::x11::ffi::ClipByChildren;
+use std::sync::{
+    Mutex,
+    Arc
+};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -33,25 +38,57 @@ impl Object {
             graphics: Some(VisualObject::new(Display::Data)),
         }
     }
-    // pub fn position(&self) -> [f32; 2] {
-    //     if let Some(parent) = &self.parent {
-    //         let pos: Vec<f32> = self
-    //             .position
-    //             .iter()
-    //             .zip(
-    //                 &GAME
-    //                     .lock()
-    //                     .unwrap()
-    //                     .getobject(parent.to_string())
-    //                     .position(),
-    //             )
-    //             .map(|(a, b)| a + b)
-    //             .collect();
-    //         [pos[0], pos[1]]
-    //     } else {
-    //         self.position
-    //     }
-    // }
+}
+impl std::ops::Add for Object {
+    type Output = Object;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let position: Vec<f32> = self.position.clone()
+            .iter()
+            .zip(rhs.position.clone())
+            .map(|(a, b)| a + b)
+            .collect();
+        let size: Vec<f32> = self.size.clone()
+            .iter()
+            .zip(rhs.size.clone())
+            .map(|(a, b)| a * b)
+            .collect();
+        let rotation = self.rotation + rhs.rotation;
+
+        Self {
+            position: [position[0], position[1]],
+            size: [size[0], size[1]],
+            rotation,
+            ..rhs.clone()
+        }
+    }
+}
+
+pub struct ObjectNode {
+    pub object: Object,
+    pub children: Vec<Arc<Mutex<ObjectNode>>>
+}
+
+impl ObjectNode {
+    pub fn new(object: Object, children: Vec<Arc<Mutex<ObjectNode>>>) -> Self {
+        Self {
+            object,
+            children
+        }
+    }
+    pub fn order_position(order: &mut Vec<Object>, objects: &Arc<Mutex<Self>>) {
+        let objects = objects.lock().unwrap();
+        for child in objects.children.clone(){
+            let child = child.lock().unwrap();
+            let object = objects.object.clone() + child.object.clone();
+            order.push(object.clone());
+            for child in child.children.clone(){
+                order.push(object.clone() + child.lock().unwrap().object.clone());
+                Self::order_position(order, &child.clone());
+            }
+            
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
