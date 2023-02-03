@@ -1,7 +1,7 @@
 pub mod resources;
 pub use resources::Resources;
 pub mod objects;
-pub use objects::{Display, Object, VisualObject, data::Data, ObjectNode};
+pub use objects::{data::Data, Display, Object, ObjectNode, VisualObject};
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
@@ -11,10 +11,7 @@ use winit::{
 mod draw;
 use draw::Draw;
 
-use std::sync::{
-    Arc,
-    Mutex
-};
+use std::sync::{Arc, Mutex};
 
 use crate::AppInfo;
 
@@ -86,7 +83,7 @@ impl GameBuilder {
 /// The struct that holds and executes all of the game data.
 #[allow(dead_code)]
 pub struct Game {
-    pub objects: Vec<Arc<Mutex<ObjectNode>>>,
+    pub objects: Vec<Arc<Mutex<ObjectNode>>>, // look here!
     resources: Resources,
     app_info: AppInfo,
     draw: Draw,
@@ -95,7 +92,8 @@ pub struct Game {
 
 impl Game {
     pub fn update(&mut self) {
-        self.draw.redrawevent(&mut self.vulkan, &self.objects);
+        self.draw
+            .redrawevent(&mut self.vulkan, &self.objects, &self.resources);
     }
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;

@@ -1,10 +1,6 @@
 pub mod data;
 use data::*;
-use winit::platform::unix::x11::ffi::ClipByChildren;
-use std::sync::{
-    Mutex,
-    Arc
-};
+use std::sync::{Arc, Mutex};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -43,12 +39,16 @@ impl std::ops::Add for Object {
     type Output = Object;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let position: Vec<f32> = self.position.clone()
+        let position: Vec<f32> = self
+            .position
+            .clone()
             .iter()
             .zip(rhs.position.clone())
             .map(|(a, b)| a + b)
             .collect();
-        let size: Vec<f32> = self.size.clone()
+        let size: Vec<f32> = self
+            .size
+            .clone()
             .iter()
             .zip(rhs.size.clone())
             .map(|(a, b)| a * b)
@@ -66,27 +66,23 @@ impl std::ops::Add for Object {
 
 pub struct ObjectNode {
     pub object: Object,
-    pub children: Vec<Arc<Mutex<ObjectNode>>>
+    pub children: Vec<Arc<Mutex<ObjectNode>>>,
 }
 
 impl ObjectNode {
     pub fn new(object: Object, children: Vec<Arc<Mutex<ObjectNode>>>) -> Self {
-        Self {
-            object,
-            children
-        }
+        Self { object, children }
     }
     pub fn order_position(order: &mut Vec<Object>, objects: &Arc<Mutex<Self>>) {
         let objects = objects.lock().unwrap();
-        for child in objects.children.clone(){
+        for child in objects.children.clone() {
             let child = child.lock().unwrap();
             let object = objects.object.clone() + child.object.clone();
             order.push(object.clone());
-            for child in child.children.clone(){
+            for child in child.children.clone() {
                 order.push(object.clone() + child.lock().unwrap().object.clone());
                 Self::order_position(order, &child.clone());
             }
-            
         }
     }
 }
@@ -125,22 +121,23 @@ impl VisualObject {
         Self {
             text: Some(text.to_string()),
             font: Some(font.to_string()),
+            display: Display::Labeled,
             ..Self::empty()
         }
     }
-    pub fn texture(mut self, texture: &str) -> Self{
+    pub fn texture(mut self, texture: &str) -> Self {
         self.texture = Some(texture.to_string());
         self
     }
-    pub fn data(mut self, data: Data) -> Self{
+    pub fn data(mut self, data: Data) -> Self {
         self.data = data;
         self
     }
-    pub fn text(mut self, text: &str) -> Self{
+    pub fn text(mut self, text: &str) -> Self {
         self.text = Some(text.to_string());
         self
     }
-    pub fn font(mut self, font: &str) -> Self{
+    pub fn font(mut self, font: &str) -> Self {
         self.font = Some(font.to_string());
         self
     }
@@ -151,47 +148,3 @@ pub enum Display {
     Data,
     Labeled,
 }
-
-// pub struct TextObject {
-//     pub position: [f32; 2],
-//     pub size: [f32; 2],
-//     pub rotation: f32,
-//     pub color: [f32; 4],
-//     pub font: String,
-//     pub text: String,
-//     pub scale: f32,
-//     pub parent: Option<String>,
-// }
-// impl TextObject {
-//     pub fn empty() -> Self {
-//         Self {
-//             position: [0.0, 0.0],
-//             size: [0.0, 0.0],
-//             rotation: 0.0,
-//             color: [0.0, 0.0, 0.0, 0.0],
-//             font: "Bani-Regular".into(),
-//             text: "".into(),
-//             scale: 24.0,
-//             parent: None,
-//         }
-//     }
-//     pub fn position(&self) -> [f32; 2] {
-//         if let Some(parent) = &self.parent {
-//             let pos: Vec<f32> = self
-//                 .position
-//                 .iter()
-//                 .zip(
-//                     &GAME
-//                         .lock()
-//                         .unwrap()
-//                         .getobject(parent.to_string())
-//                         .position(),
-//                 )
-//                 .map(|(a, b)| a + b)
-//                 .collect();
-//             [pos[0], pos[1]]
-//         } else {
-//             self.position
-//         }
-//     }
-// }

@@ -1,1 +1,1 @@
-use std::{io::ErrorKind, error::Error};
+use std::{error::Error, io::ErrorKind};

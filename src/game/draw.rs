@@ -3,13 +3,13 @@ use rusttype::{gpu_cache::Cache, point, PositionedGlyph};
 use std::{
     collections::HashMap,
     io::Cursor,
-    sync::{mpsc::Receiver, Arc, Mutex},
+    sync::{Arc, Mutex},
 };
 use vulkano::{
-    buffer::{cpu_pool::CpuBufferPoolChunk, BufferUsage, CpuAccessibleBuffer, CpuBufferPool},
+    buffer::{BufferUsage, CpuBufferPool},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer,
+        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
     },
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
@@ -33,13 +33,13 @@ use winit::window::Window;
 use super::{
     objects::{
         data::{TextVertex, Vertex},
-        Display, Object
+        Display, Object,
     },
     resources::Resources,
     vulkan::{window_size_dependent_setup, Vulkan},
 };
 
-use crate::{game::vulkan::shaders::*, ObjectNode};
+use crate::{game::vulkan::shaders::*, ObjectNode, VisualObject};
 
 #[allow(unused)]
 pub struct Draw {
@@ -53,23 +53,13 @@ pub struct Draw {
     commandbufferallocator: StandardCommandBufferAllocator,
     descriptor_set_allocator: StandardDescriptorSetAllocator,
     texture_hash: HashMap<String, u32>,
-    text_vertex_buffer: CpuBufferPool<TextVertex>,
     font_cache: Cache<'static>,
-    font_set: Arc<PersistentDescriptorSet>,
+    text_cache: HashMap<(String, String), (Vec<TextVertex>, Arc<PersistentDescriptorSet>)>,
+    text_vertex_buffer: CpuBufferPool<TextVertex>,
 }
 
 impl Draw {
     pub fn setup(vulkan: &Vulkan, resources: &Resources) -> Self {
-        let dimensions: [u32; 2] = vulkan
-            .surface
-            .object()
-            .unwrap()
-            .downcast_ref::<Window>()
-            .unwrap()
-            .inner_size()
-            .try_into()
-            .unwrap();
-
         let mut texture_hash: HashMap<String, u32> = HashMap::new();
 
         let recreate_swapchain = false;
@@ -172,8 +162,8 @@ impl Draw {
             )
             .unwrap()
         };
-        //fonts
 
+        //fonts
         let font_cache = Cache::builder().dimensions(512, 512).build();
 
         let text_vertex_buffer = CpuBufferPool::new(
@@ -184,39 +174,6 @@ impl Draw {
             },
             MemoryUsage::Upload,
         );
-        let cache_texture = ImmutableImage::from_iter(
-            &memoryallocator,
-            [100, 200, 255, 255],
-            ImageDimensions::Dim2d {
-                width: 1,
-                height: 1,
-                array_layers: 1,
-            },
-            MipmapsCount::One,
-            vulkano::format::Format::R8_UNORM,
-            &mut uploads,
-        )
-        .unwrap();
-
-        let cache_texture_view = ImageView::new_default(cache_texture).unwrap();
-        
-
-        let font_set = PersistentDescriptorSet::new(
-            &descriptor_set_allocator,
-            vulkan
-                .text_pipeline
-                .layout()
-                .set_layouts()
-                .get(0)
-                .unwrap()
-                .clone(),
-            [WriteDescriptorSet::image_view_sampler(
-                0,
-                cache_texture_view.clone(),
-                sampler.clone(),
-            )],
-        )
-        .unwrap();
 
         let descriptors = [
             PersistentDescriptorSet::new(
@@ -278,15 +235,18 @@ impl Draw {
             commandbufferallocator,
             descriptor_set_allocator,
             texture_hash,
-            text_vertex_buffer,
             font_cache,
-            font_set,
-
+            text_cache: HashMap::new(),
+            text_vertex_buffer,
         }
     }
 
-    pub fn update_font_objects(&mut self, vulkan: &mut Vulkan, resources: &Resources) {
-        
+    pub fn update_font_objects(
+        &mut self,
+        vulkan: &mut Vulkan,
+        resources: &Resources,
+        visual_object: VisualObject,
+    ) -> (Vec<TextVertex>, Arc<PersistentDescriptorSet>) {
         let dimensions: [u32; 2] = vulkan
             .surface
             .object()
@@ -301,10 +261,12 @@ impl Draw {
 
         let glyphs: Vec<PositionedGlyph>;
 
-        let font = resources.fonts.get("Bani-Regular").unwrap();
+        let font: String = visual_object.clone().font.unwrap();
+
+        let font = resources.fonts.get(&font).unwrap();
         glyphs = font
             .layout(
-                "SUPER TEST! RUSTY UGA!",
+                visual_object.text.unwrap().as_ref(),
                 rusttype::Scale::uniform(50.0),
                 point(0.0, 50.0),
             )
@@ -401,7 +363,6 @@ impl Draw {
                 }
             })
             .collect();
-        
 
         let sampler = Sampler::new(
             vulkan.device.clone(),
@@ -418,25 +379,33 @@ impl Draw {
         )
         .unwrap();
 
-        self.font_set = PersistentDescriptorSet::new(
-            &self.descriptor_set_allocator,
-            vulkan
-                .text_pipeline
-                .layout()
-                .set_layouts()
-                .get(0)
-                .unwrap()
-                .clone(),
-            [WriteDescriptorSet::image_view_sampler(
-                0,
-                cache_texture_view.clone(),
-                sampler.clone(),
-            )],
+        (
+            text_vertices,
+            PersistentDescriptorSet::new(
+                &self.descriptor_set_allocator,
+                vulkan
+                    .text_pipeline
+                    .layout()
+                    .set_layouts()
+                    .get(0)
+                    .unwrap()
+                    .clone(),
+                [WriteDescriptorSet::image_view_sampler(
+                    0,
+                    cache_texture_view.clone(),
+                    sampler.clone(),
+                )],
+            )
+            .unwrap(),
         )
-        .unwrap();
     }
 
-    pub fn redrawevent(&mut self, vulkan: &mut Vulkan, objects: &Vec<Arc<Mutex<ObjectNode>>>) {
+    pub fn redrawevent(
+        &mut self,
+        vulkan: &mut Vulkan,
+        objects: &Vec<Arc<Mutex<ObjectNode>>>,
+        resources: &Resources,
+    ) {
         //windowevents
         let window = vulkan
             .surface
@@ -522,8 +491,6 @@ impl Draw {
             ObjectNode::order_position(&mut order, obj);
         }
 
-        
-
         for obj in order {
             if let Some(visual_object) = obj.graphics {
                 if visual_object.display == Display::Data {
@@ -576,24 +543,43 @@ impl Draw {
                         .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
                         .unwrap();
                 } else {
-                    // let vertex_subbuffer =
-                    //     self.text_vertex_buffer.from_iter(self.text_vertices.clone()).unwrap();
-                    // builder
-                    //     .bind_pipeline_graphics(vulkan.text_pipeline.clone())
-                    //     .bind_vertex_buffers(0, [vertex_subbuffer.clone()])
-                    //     .bind_descriptor_sets(
-                    //         vulkano::pipeline::PipelineBindPoint::Graphics,
-                    //         vulkan.text_pipeline.layout().clone(),
-                    //         0,
-                    //         self.font_set.clone(),
-                    //     )
-                    //     .draw(self.text_vertices.clone().len() as u32, 1, 0, 0)
-                    //     .unwrap();
+                    loop {
+                        match self.text_cache.get(&(
+                            visual_object.clone().font.unwrap(),
+                            visual_object.clone().text.unwrap(),
+                        )) {
+                            Some((vertices, text_descriptor)) => {
+                                let vertex_subbuffer =
+                                    self.text_vertex_buffer.from_iter(vertices.clone()).unwrap();
+                                builder
+                                    .bind_pipeline_graphics(vulkan.text_pipeline.clone())
+                                    .bind_vertex_buffers(0, [vertex_subbuffer.clone()])
+                                    .bind_descriptor_sets(
+                                        vulkano::pipeline::PipelineBindPoint::Graphics,
+                                        vulkan.text_pipeline.layout().clone(),
+                                        0,
+                                        text_descriptor.clone(),
+                                    )
+                                    .draw(vertices.clone().len() as u32, 1, 0, 0)
+                                    .unwrap();
+                                break;
+                            }
+                            None => {
+                                let text_data = Self::update_font_objects(self, vulkan, resources, visual_object.clone());
+                                self.text_cache.insert(
+                                    (
+                                        visual_object.clone().font.unwrap(),
+                                        visual_object.clone().text.unwrap(),
+                                    ),
+                                    text_data,
+                                );
+                                println!("New text");
+                            }
+                        }
+                    }
                 }
             }
         }
-        //Draw Fonts
-        // let text = "Mein Kater Rusty";
 
         builder.end_render_pass().unwrap();
         let command_buffer = builder.build().unwrap();
@@ -665,4 +651,3 @@ fn load_texture(png_bytes: Arc<Vec<u8>>) -> (Vec<u8>, ImageDimensions) {
 
     (image_data, dimensions)
 }
-

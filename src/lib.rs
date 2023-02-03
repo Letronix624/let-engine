@@ -1,9 +1,9 @@
 pub mod discord;
 
-mod game;
 mod errors;
+mod game;
 
-pub use game::{Object, Game, GameBuilder, Resources, VisualObject, Display, Data, ObjectNode};
+pub use game::{Data, Display, Game, GameBuilder, Object, ObjectNode, Resources, VisualObject};
 
 /// Information about your game.
 #[derive(Clone, Copy)]
