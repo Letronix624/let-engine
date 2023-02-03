@@ -9,7 +9,7 @@ use vulkano::{
     buffer::{BufferUsage, CpuBufferPool},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents, PrimaryAutoCommandBuffer,
     },
     descriptor_set::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
@@ -378,6 +378,15 @@ impl Draw {
             },
         )
         .unwrap();
+
+        self.previous_frame_end = Some(
+            uploads
+                .build()
+                .unwrap()
+                .execute(vulkan.queue.clone())
+                .unwrap()
+                .boxed(),
+        );
 
         (
             text_vertices,

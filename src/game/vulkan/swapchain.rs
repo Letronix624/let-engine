@@ -34,66 +34,33 @@ pub fn create_swapchain_and_images(
         .unwrap()
         .inner_size()
         .into();
-    let create_info = SwapchainCreateInfo {
-        min_image_count: surface_capabilities.min_image_count,
-        image_format,
-        image_extent: innersize,
-        image_usage,
-        present_mode: PresentMode::Mailbox,
-        composite_alpha: surface_capabilities
-            .supported_composite_alpha
-            .iter()
-            .next()
-            .unwrap(),
-        ..Default::default()
+    let mut swapchain = None;
+    for present_mode in 
+        [
+            PresentMode::Mailbox,
+            PresentMode::FifoRelaxed,
+            PresentMode::Immediate,
+            PresentMode::Fifo
+        ] {
+        let create_info = SwapchainCreateInfo {
+            min_image_count: surface_capabilities.min_image_count,
+            image_format,
+            image_extent: innersize,
+            image_usage,
+            present_mode,
+            composite_alpha: surface_capabilities
+                .supported_composite_alpha
+                .iter()
+                .next()
+                .unwrap(),
+            ..Default::default()
+        };
+        swapchain = Some(match Swapchain::new(device.clone(), surface.clone(), create_info) {
+            Ok(t) => t,
+            Err(SwapchainCreationError::PresentModeNotSupported) => continue,
+            Err(e) => panic!("{e}"),
+        });
+        break;
     };
-
-    let swapchain = match Swapchain::new(device.clone(), surface.clone(), create_info) {
-        Ok(t) => t,
-        Err(e) => {
-            if e == SwapchainCreationError::PresentModeNotSupported {
-                let create_info = SwapchainCreateInfo {
-                    min_image_count: surface_capabilities.min_image_count,
-                    image_format,
-                    image_extent: innersize,
-                    image_usage,
-                    present_mode: PresentMode::Immediate,
-                    composite_alpha: surface_capabilities
-                        .supported_composite_alpha
-                        .iter()
-                        .next()
-                        .unwrap(),
-
-                    ..Default::default()
-                };
-                match Swapchain::new(device.clone(), surface.clone(), create_info) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        if e == SwapchainCreationError::PresentModeNotSupported {
-                            let create_info = SwapchainCreateInfo {
-                                min_image_count: surface_capabilities.min_image_count,
-                                image_format,
-                                image_extent: innersize,
-                                image_usage,
-                                present_mode: PresentMode::Fifo,
-                                composite_alpha: surface_capabilities
-                                    .supported_composite_alpha
-                                    .iter()
-                                    .next()
-                                    .unwrap(),
-
-                                ..Default::default()
-                            };
-                            Swapchain::new(device.clone(), surface.clone(), create_info).unwrap()
-                        } else {
-                            panic!("{e}")
-                        }
-                    }
-                }
-            } else {
-                panic!("{e}")
-            }
-        }
-    };
-    swapchain
+    swapchain.unwrap()
 }
