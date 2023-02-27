@@ -7,8 +7,11 @@ layout (set = 0, binding = 0) uniform sampler2DArray tex;
 
 void main() {
     vec4 color = vertex_color;
-    if (textureID == 1) {
+    if (textureID != 0) {
         color = texture(tex, vec3(tex_coords / 2 + 0.5, textureID));
+    }
+    if (textureID == 1) {
+        color = vec4(vertex_color.rgb, texture(tex, vec3(tex_coords / 2 + 0.5, textureID)).r);
     }
     f_color = color;// * 2.2;
 }

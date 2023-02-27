@@ -4,6 +4,7 @@ use crate::game::objects::data::*;
 use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
+use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
 use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::graphics::{
     input_assembly::InputAssemblyState, vertex_input::BuffersDefinition, viewport::ViewportState,
@@ -25,6 +26,7 @@ pub fn create_pipeline(
         .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
         .fragment_shader(fs.entry_point("main").unwrap(), ())
         .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
+        .rasterization_state(RasterizationState::new().polygon_mode(PolygonMode::Fill))
         .render_pass(subpass)
         .build(device.clone())
         .unwrap()
@@ -38,7 +40,7 @@ pub fn create_font_pipeline(
     dimension: &[u32; 2],
 ) -> Arc<GraphicsPipeline> {
     GraphicsPipeline::start()
-        .vertex_input_state(BuffersDefinition::new().vertex::<TextVertex>())
+        .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
         .vertex_shader(vs.entry_point("main").unwrap(), ())
         .input_assembly_state(InputAssemblyState::new())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([

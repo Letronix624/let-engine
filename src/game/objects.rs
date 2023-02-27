@@ -10,18 +10,16 @@ pub struct Object {
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub rotation: f32,
-    pub color: [f32; 4],
     pub graphics: Option<VisualObject>,
 }
 //game objects have position, size, rotation, color texture and data.
-//text objects have position, size, rotation, color, text and font.
+//text objects have position, size, rotation, color, text, font and font size.
 impl Object {
     pub fn new() -> Self {
         Self {
             position: [0.0, 0.0],
             size: [1.0, 1.0],
             rotation: 0.0,
-            color: [0.0, 0.0, 0.0, 1.0],
             graphics: None,
         }
     }
@@ -30,8 +28,7 @@ impl Object {
             position: [0.0, 0.0],
             size: [0.5, 0.5],
             rotation: 0.0,
-            color: [0.0, 0.0, 0.0, 1.0],
-            graphics: Some(VisualObject::new(Display::Data)),
+            graphics: Some(VisualObject::new()),
         }
     }
 }
@@ -91,37 +88,24 @@ impl ObjectNode {
 pub struct VisualObject {
     pub texture: Option<String>,
     pub data: Data,
-    pub text: Option<String>,
-    pub font: Option<String>,
-    pub display: Display,
+    pub color: [f32; 4]
 }
 impl VisualObject {
     pub fn empty() -> Self {
         Self {
             texture: None,
             data: Data::empty(),
-            text: None,
-            font: None,
-            display: Display::Data,
+            color: [0.0, 0.0, 0.0, 1.0]
         }
     }
-    pub fn new(display: Display) -> Self {
+    pub fn new() -> Self {
         Self {
-            display: display,
             ..Self::empty()
         }
     }
     pub fn new_square() -> Self {
         Self {
             data: Data::square(),
-            ..Self::empty()
-        }
-    }
-    pub fn new_text(text: &str, font: &str) -> Self {
-        Self {
-            text: Some(text.to_string()),
-            font: Some(font.to_string()),
-            display: Display::Labeled,
             ..Self::empty()
         }
     }
@@ -133,18 +117,11 @@ impl VisualObject {
         self.data = data;
         self
     }
-    pub fn text(mut self, text: &str) -> Self {
-        self.text = Some(text.to_string());
-        self
-    }
-    pub fn font(mut self, font: &str) -> Self {
-        self.font = Some(font.to_string());
+    pub fn color(mut self, color: [f32;4]) -> Self {
+        self.color = color;
         self
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Display {
-    Data,
-    Labeled,
-}
+
+//fn textdata() -> ()

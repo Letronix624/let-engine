@@ -5,12 +5,6 @@ use vulkano::impl_vertex;
 #[derive(Clone, Copy, Debug, Default, Zeroable, Pod)]
 pub struct Vertex {
     pub position: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Zeroable, Pod)]
-pub struct TextVertex {
-    pub position: [f32; 2],
     pub tex_position: [f32; 2],
 }
 
@@ -43,46 +37,57 @@ impl Data {
 
 //struct object with position, size, rotation.
 
-impl_vertex!(Vertex, position);
-impl_vertex!(TextVertex, position, tex_position);
+impl_vertex!(Vertex, position, tex_position);
 
 #[allow(dead_code)]
 pub const BACKGROUND: [Vertex; 12] = [
     Vertex {
         position: [-1.0, 0.0],
+        tex_position: [-1.0, 0.0],
     },
     Vertex {
         position: [-1.0, 1.0],
+        tex_position: [-1.0, 1.0],
     },
     Vertex {
         position: [1.0, 0.0],
+        tex_position: [1.0, 0.0],
     },
     Vertex {
         position: [-1.0, 1.0],
+        tex_position: [-1.0, 1.0],
     },
     Vertex {
         position: [1.0, 1.0],
+        tex_position: [1.0, 1.0],
     },
     Vertex {
         position: [1.0, 0.0],
+        tex_position: [1.0, 0.0],
     },
     Vertex {
         position: [-1.0, -1.0],
+        tex_position: [-1.0, -1.0],
     },
     Vertex {
         position: [-1.0, 0.0],
+        tex_position: [-1.0, 0.0],
     },
     Vertex {
         position: [1.0, -1.0],
+        tex_position: [1.0, -1.0],
     },
     Vertex {
         position: [-1.0, 0.0],
+        tex_position: [-1.0, 0.0],
     },
     Vertex {
         position: [1.0, 0.0],
+        tex_position: [1.0, 0.0],
     },
     Vertex {
         position: [1.0, -1.0],
+        tex_position: [1.0, -1.0],
     },
 ];
 #[allow(dead_code)]
@@ -92,12 +97,15 @@ pub const BACKGROUND_ID: [u16; 12] = [0, 1, 2, 1, 3, 2, 4, 0, 5, 0, 2, 5];
 pub const TRIANGLE: [Vertex; 3] = [
     Vertex {
         position: [0.0, -1.0],
+        tex_position: [0.0, -1.0],
     },
     Vertex {
         position: [-1.0, 1.0],
+        tex_position: [-1.0, 1.0],
     },
     Vertex {
         position: [1.0, 1.0],
+        tex_position: [1.0, 1.0],
     },
 ];
 #[allow(dead_code)]
@@ -107,21 +115,27 @@ pub const TRIANGLE_ID: [u16; 3] = [0, 1, 2];
 pub const SQUARE: [Vertex; 6] = [
     Vertex {
         position: [-1.0, -1.0],
+        tex_position: [-1.0, -1.0],
     },
     Vertex {
         position: [1.0, -1.0],
+        tex_position: [1.0, -1.0],
     },
     Vertex {
         position: [-1.0, 1.0],
+        tex_position: [-1.0, 1.0],
     },
     Vertex {
         position: [1.0, -1.0],
+        tex_position: [1.0, -1.0],
     },
     Vertex {
         position: [-1.0, 1.0],
+        tex_position: [-1.0, 1.0],
     },
     Vertex {
         position: [1.0, 1.0],
+        tex_position: [1.0, 1.0],
     },
 ];
 #[allow(dead_code)]
@@ -136,15 +150,24 @@ macro_rules! make_circle {
         for i in 0..corners {
             vertices.push(Vertex {
                 position: [0.0, 0.0],
+                tex_position: [0.0, 0.0],
             });
             vertices.push(Vertex {
                 position: [
                     (PI * 2.0 * ((i as f64) / corners as f64)).cos() as f32,
                     (PI * 2.0 * ((i as f64) / corners as f64)).sin() as f32,
                 ],
+                tex_position: [
+                    (PI * 2.0 * ((i as f64) / corners as f64)).cos() as f32,
+                    (PI * 2.0 * ((i as f64) / corners as f64)).sin() as f32,
+                ],
             });
             vertices.push(Vertex {
                 position: [
+                    (PI * 2.0 * (((i + 1) as f64) / corners as f64)).cos() as f32,
+                    (PI * 2.0 * (((i + 1) as f64) / corners as f64)).sin() as f32,
+                ],
+                tex_position: [
                     (PI * 2.0 * (((i + 1) as f64) / corners as f64)).cos() as f32,
                     (PI * 2.0 * (((i + 1) as f64) / corners as f64)).sin() as f32,
                 ],
@@ -178,9 +201,17 @@ macro_rules! make_circle {
                     (count * ((i as f64) / corners as f64)).cos() as f32,
                     (count * ((i as f64) / corners as f64)).sin() as f32,
                 ],
+                tex_position: [
+                    (count * ((i as f64) / corners as f64)).cos() as f32,
+                    (count * ((i as f64) / corners as f64)).sin() as f32,
+                ],
             });
             vertices.push(Vertex {
                 position: [
+                    (count * (((i + 1) as f64) / corners as f64)).cos() as f32,
+                    (count * (((i + 1) as f64) / corners as f64)).sin() as f32,
+                ],
+                tex_position: [
                     (count * (((i + 1) as f64) / corners as f64)).cos() as f32,
                     (count * (((i + 1) as f64) / corners as f64)).sin() as f32,
                 ],

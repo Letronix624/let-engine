@@ -27,6 +27,7 @@ png = "0.17.7"
 discord-presence = "0.5.14"
 rusttype = { version = "0.9.3", features = ["gpu_cache"]}
 error-stack = "0.3.0"
+hashbrown = "0.13.2"
 
 [profile.release]
 strip = "symbols"

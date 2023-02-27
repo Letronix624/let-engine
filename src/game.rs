@@ -1,7 +1,7 @@
 pub mod resources;
-pub use resources::Resources;
+use resources::Resources;
 pub mod objects;
-pub use objects::{data::Data, Display, Object, ObjectNode, VisualObject};
+pub use objects::{data::Data, Object, ObjectNode, VisualObject};
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
@@ -19,7 +19,7 @@ use crate::AppInfo;
 pub struct GameBuilder {
     window_builder: Option<WindowBuilder>,
     app_info: Option<AppInfo>,
-    resources: Resources,
+    //resources: Resources,
 }
 
 impl GameBuilder {
@@ -27,13 +27,13 @@ impl GameBuilder {
         Self {
             window_builder: None,
             app_info: None,
-            resources: Resources::new(),
+            //resources: Resources::new(),
         }
     }
-    pub fn with_resources(mut self, resources: Resources) -> Self {
-        self.resources = resources;
-        self
-    }
+    // pub fn with_resources(mut self, resources: Resources) -> Self {
+    //     self.resources = resources;
+    //     self
+    // }
     pub fn with_window_builder(mut self, window_builder: WindowBuilder) -> Self {
         self.window_builder = Some(window_builder);
         self
@@ -55,7 +55,7 @@ impl GameBuilder {
             panic!("no window builder");
         };
 
-        let resources = self.resources.clone();
+        let resources = Resources::new();
         let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
         let draw = Draw::setup(&vulkan, &resources);
 
@@ -97,5 +97,29 @@ impl Game {
     }
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;
+    }
+    pub fn load_font_bytes(&mut self, name: &str, data: &[u8], size: f32, characters: Vec<char>) {
+        self.resources.add_font_bytes(name, size, data, characters);
+        self.draw
+            .update_font_objects(&mut self.vulkan, &mut self.resources);
+    }
+    pub fn unload_font(&mut self, name: &str) {
+        self.resources.remove_font(name);
+        self.draw
+            .update_font_objects(&mut self.vulkan, &mut self.resources);
+    }
+    pub fn load_sound(&mut self, name: &str, sound: &[u8]) {
+        self.resources.add_sound(name, sound);
+    }
+    pub fn load_texture(&mut self, name: &str, texture: Vec<u8>, width: u32, height: u32) {
+        self.resources.add_texture(name, texture, width, height);
+        self.draw.update_textures(&self.vulkan, &self.resources);
+    }
+    pub fn get_window(&self) -> &Window {
+        self.vulkan.surface
+            .object()
+            .unwrap()
+            .downcast_ref::<Window>()
+            .unwrap()
     }
 }

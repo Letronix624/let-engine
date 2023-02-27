@@ -5,7 +5,7 @@ use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::{
     physical::PhysicalDeviceType, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
 };
-use vulkano::device::{Device, Queue};
+use vulkano::device::{Device, Queue, Features};
 use vulkano::instance::{debug::*, Instance, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
@@ -115,12 +115,14 @@ pub fn create_device_extensions() -> DeviceExtensions {
 pub fn create_physical_and_queue(
     instance: &Arc<Instance>,
     device_extensions: DeviceExtensions,
+    features: Features,
     surface: &Arc<Surface>,
 ) -> (Arc<PhysicalDevice>, u32) {
     instance
         .enumerate_physical_devices()
         .unwrap()
         .filter(|p| p.supported_extensions().contains(&device_extensions))
+        .filter(|p| p.supported_features().contains(&features))
         .filter_map(|p| {
             p.queue_family_properties()
                 .iter()
@@ -143,12 +145,14 @@ pub fn create_physical_and_queue(
 pub fn create_device_and_queues(
     physical_device: &Arc<PhysicalDevice>,
     device_extensions: &DeviceExtensions,
+    features: Features,
     queue_family_index: u32,
 ) -> (Arc<Device>, Arc<Queue>) {
     let (device, mut queues) = Device::new(
         physical_device.clone(),
         DeviceCreateInfo {
             enabled_extensions: device_extensions.clone(),
+            enabled_features: features,
             queue_create_infos: vec![QueueCreateInfo {
                 queue_family_index,
                 ..Default::default()

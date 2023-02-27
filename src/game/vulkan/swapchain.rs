@@ -35,13 +35,12 @@ pub fn create_swapchain_and_images(
         .inner_size()
         .into();
     let mut swapchain = None;
-    for present_mode in 
-        [
-            PresentMode::Mailbox,
-            PresentMode::FifoRelaxed,
-            PresentMode::Immediate,
-            PresentMode::Fifo
-        ] {
+    for present_mode in [
+        PresentMode::Mailbox,
+        PresentMode::Immediate,
+        PresentMode::FifoRelaxed,
+        PresentMode::Fifo,
+    ] {
         let create_info = SwapchainCreateInfo {
             min_image_count: surface_capabilities.min_image_count,
             image_format,
@@ -55,12 +54,14 @@ pub fn create_swapchain_and_images(
                 .unwrap(),
             ..Default::default()
         };
-        swapchain = Some(match Swapchain::new(device.clone(), surface.clone(), create_info) {
-            Ok(t) => t,
-            Err(SwapchainCreationError::PresentModeNotSupported) => continue,
-            Err(e) => panic!("{e}"),
-        });
+        swapchain = Some(
+            match Swapchain::new(device.clone(), surface.clone(), create_info) {
+                Ok(t) => t,
+                Err(SwapchainCreationError::PresentModeNotSupported) => continue,
+                Err(e) => panic!("{e}"),
+            },
+        );
         break;
-    };
+    }
     swapchain.unwrap()
 }

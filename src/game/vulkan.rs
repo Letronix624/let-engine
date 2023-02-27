@@ -6,7 +6,7 @@ mod swapchain;
 mod window;
 
 use vulkano::{
-    device::{physical::PhysicalDevice, Device, DeviceExtensions, Queue},
+    device::{physical::PhysicalDevice, Device, DeviceExtensions, Queue, Features},
     image::{view::ImageView, ImageAccess, SwapchainImage},
     instance::{debug::*, Instance},
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline},
@@ -25,6 +25,7 @@ pub struct Vulkan {
     pub debugmessenger: Option<DebugUtilsMessenger>,
     pub surface: Arc<Surface>,
     pub device_extensions: DeviceExtensions,
+    pub features: Features,
     pub physical_device: Arc<PhysicalDevice>,
     pub queue_family_index: u32,
     pub device: Arc<Device>,
@@ -48,11 +49,16 @@ impl Vulkan {
         let (event_loop, surface) = window::create_window(&instance, window_builder);
         let debugmessenger = instance::setup_debug(&instance);
         let device_extensions = instance::create_device_extensions();
+        let features = Features {
+            fill_mode_non_solid: true,
+            ..Features::empty()
+        };
         let (physical_device, queue_family_index) =
-            instance::create_physical_and_queue(&instance, device_extensions, &surface);
+            instance::create_physical_and_queue(&instance, device_extensions, features, &surface);
         let (device, queue) = instance::create_device_and_queues(
             &physical_device,
             &device_extensions,
+            features,
             queue_family_index,
         );
 
@@ -105,6 +111,7 @@ impl Vulkan {
                 debugmessenger,
                 surface,
                 device_extensions,
+                features,
                 physical_device,
                 queue_family_index,
                 device,
