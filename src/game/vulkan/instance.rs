@@ -5,7 +5,7 @@ use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::{
     physical::PhysicalDeviceType, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
 };
-use vulkano::device::{Device, Queue, Features};
+use vulkano::device::{Device, Features, Queue};
 use vulkano::instance::{debug::*, Instance, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};

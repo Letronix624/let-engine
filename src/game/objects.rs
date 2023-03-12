@@ -1,11 +1,11 @@
 pub mod data;
 use data::*;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
 /// of it to the main game object.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Object {
     pub position: [f32; 2],
     pub size: [f32; 2],
@@ -28,10 +28,11 @@ impl Object {
             position: [0.0, 0.0],
             size: [0.5, 0.5],
             rotation: 0.0,
-            graphics: Some(VisualObject::new()),
+            graphics: Some(VisualObject::new_square()),
         }
     }
 }
+
 impl std::ops::Add for Object {
     type Output = Object;
 
@@ -61,47 +62,54 @@ impl std::ops::Add for Object {
     }
 }
 
-pub struct ObjectNode {
-    pub object: Object,
-    pub children: Vec<Arc<Mutex<ObjectNode>>>,
+
+
+pub struct Node<T>{
+    pub object: T,
+    pub parent: Option<Weak<Mutex<Node<T>>>>,
+    pub children: Vec<Arc<Mutex<Node<T>>>>,
 }
 
-impl ObjectNode {
-    pub fn new(object: Object, children: Vec<Arc<Mutex<ObjectNode>>>) -> Self {
-        Self { object, children }
-    }
-    pub fn order_position(order: &mut Vec<Object>, objects: &Arc<Mutex<Self>>) {
-        let objects = objects.lock().unwrap();
-        for child in objects.children.clone() {
+impl Node<Arc<Mutex<Object>>> {
+    pub fn order_position(order: &mut Vec<Object>, objects: &Self) {
+        for child in objects.children.iter() {
             let child = child.lock().unwrap();
-            let object = objects.object.clone() + child.object.clone();
+            let object = objects.object.lock().unwrap().clone() + child.object.lock().unwrap().clone();
+            //objects.object.clone() + child.object.clone();
             order.push(object.clone());
-            for child in child.children.clone() {
-                order.push(object.clone() + child.lock().unwrap().object.clone());
-                Self::order_position(order, &child.clone());
+            for child in child.children.iter() {
+                let child = child.lock().unwrap();
+                order.push(object.clone() + child.object.lock().unwrap().clone());
+                Self::order_position(order, &*child);
             }
         }
     }
+    pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>) {
+        let index = self.children.clone().into_iter().position(|x| Arc::as_ptr(&x) == Arc::as_ptr(&object)).unwrap();
+        self.children.remove(index.clone());
+    }
 }
 
-#[derive(Debug, Clone)]
+
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct VisualObject {
     pub texture: Option<String>,
     pub data: Data,
-    pub color: [f32; 4]
+    pub color: [f32; 4],
+    pub material: u32,
 }
 impl VisualObject {
     pub fn empty() -> Self {
         Self {
             texture: None,
             data: Data::empty(),
-            color: [0.0, 0.0, 0.0, 1.0]
+            color: [0.0, 0.0, 0.0, 1.0],
+            material: 0,
         }
     }
     pub fn new() -> Self {
-        Self {
-            ..Self::empty()
-        }
+        Self { ..Self::empty() }
     }
     pub fn new_square() -> Self {
         Self {
@@ -117,11 +125,14 @@ impl VisualObject {
         self.data = data;
         self
     }
-    pub fn color(mut self, color: [f32;4]) -> Self {
+    pub fn color(mut self, color: [f32; 4]) -> Self {
         self.color = color;
         self
     }
+    pub fn material(mut self, material: u32) -> Self {
+        self.material = material;
+        self
+    }
 }
-
 
 //fn textdata() -> ()

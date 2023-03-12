@@ -6,7 +6,7 @@ mod swapchain;
 mod window;
 
 use vulkano::{
-    device::{physical::PhysicalDevice, Device, DeviceExtensions, Queue, Features},
+    device::{physical::PhysicalDevice, Device, DeviceExtensions, Features, Queue},
     image::{view::ImageView, ImageAccess, SwapchainImage},
     instance::{debug::*, Instance},
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline},

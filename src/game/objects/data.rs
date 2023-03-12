@@ -2,13 +2,13 @@ use bytemuck::{Pod, Zeroable};
 use vulkano::impl_vertex;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Zeroable, Pod)]
+#[derive(Clone, Copy, Debug, Default, Zeroable, Pod, PartialEq)]
 pub struct Vertex {
     pub position: [f32; 2],
     pub tex_position: [f32; 2],
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Data {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u16>,

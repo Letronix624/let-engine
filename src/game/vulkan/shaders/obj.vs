@@ -5,6 +5,7 @@ layout (location = 1) in vec2 tex_position;
 layout (location = 1) out vec2 tex_coords;
 layout (location = 2) out vec4 vertex_color;
 layout (location = 3) out uint textureID;
+layout (location = 4) out uint material;
 
 layout (set = 1, binding = 0) uniform Object {
     vec4 color;
@@ -12,6 +13,7 @@ layout (set = 1, binding = 0) uniform Object {
     vec2 size;
     float rotation;
     uint textureID;
+    uint material;
 } object;
 
 layout (push_constant) uniform PushConstant { // 128 bytes
@@ -42,6 +44,8 @@ void main() {
 
     vertex_color = object.color;
     textureID = object.textureID;
+    material = object.material;
+
 
     //vec2 resolutionscaler = vec2(pc.resolution.y / (pc.resolution.x + pc.resolution.y), pc.resolution.x / (pc.resolution.x + pc.resolution.y)); //cube
     //vec2 resolutionscaler = vec2(sin(atan(pc.resolution.y, pc.resolution.x)), cos(atan(pc.resolution.y, pc.resolution.x)))  / 0.707106781; //sphere

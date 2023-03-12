@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.1.6"
+version = "0.2.0"
 authors = ["Let"]
 edition = "2021"
 description = "A game engine to learn vulkan made by Let. Not done yet."
@@ -28,6 +28,7 @@ discord-presence = "0.5.14"
 rusttype = { version = "0.9.3", features = ["gpu_cache"]}
 error-stack = "0.3.0"
 hashbrown = "0.13.2"
+tokio = "1.26.0"
 
 [profile.release]
 strip = "symbols"

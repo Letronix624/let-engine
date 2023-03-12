@@ -1,8 +1,10 @@
 pub mod resources;
+use hashbrown::HashMap;
 use resources::Resources;
 pub mod objects;
-pub use objects::{data::Data, Object, ObjectNode, VisualObject};
+pub use objects::{data::Data, Node, Object, VisualObject};
 pub mod vulkan;
+use rusttype::{point, PositionedGlyph};
 use vulkan::Vulkan;
 use winit::{
     event_loop::EventLoop,
@@ -10,10 +12,13 @@ use winit::{
 };
 mod draw;
 use draw::Draw;
+mod font_layout;
 
 use std::sync::{Arc, Mutex};
 
 use crate::AppInfo;
+
+use self::objects::data::Vertex;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
@@ -57,19 +62,12 @@ impl GameBuilder {
 
         let resources = Resources::new();
         let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
-        let draw = Draw::setup(&vulkan, &resources);
-
-        vulkan
-            .surface
-            .object()
-            .unwrap()
-            .downcast_ref::<Window>()
-            .unwrap()
-            .set_visible(true);
+        let draw = Draw::setup(&vulkan);
 
         (
             Game {
                 objects: vec![],
+                objects_map: HashMap::new(),
                 resources,
                 app_info,
                 vulkan,
@@ -83,7 +81,11 @@ impl GameBuilder {
 /// The struct that holds and executes all of the game data.
 #[allow(dead_code)]
 pub struct Game {
-    pub objects: Vec<Arc<Mutex<ObjectNode>>>, // look here!
+    objects: Vec<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    objects_map: HashMap<
+        *const Mutex<Object>,
+        Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
+    >,
     resources: Resources,
     app_info: AppInfo,
     draw: Draw,
@@ -93,20 +95,65 @@ pub struct Game {
 impl Game {
     pub fn update(&mut self) {
         self.draw
-            .redrawevent(&mut self.vulkan, &self.objects, &self.resources);
+            .redrawevent(&mut self.vulkan, self.objects.clone());
     }
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;
     }
-    pub fn load_font_bytes(&mut self, name: &str, data: &[u8], size: f32, characters: Vec<char>) {
-        self.resources.add_font_bytes(name, size, data, characters);
-        self.draw
-            .update_font_objects(&mut self.vulkan, &mut self.resources);
+    pub fn add_object(&mut self, object: &Arc<Mutex<Object>>) {
+        let node = Arc::new(Mutex::new(Node {
+            object: object.clone(),
+            parent: None,
+            children: vec![],
+        }));
+        self.objects.push(node.clone());
+
+        self.objects_map.insert(Arc::as_ptr(&object), node.clone());
+    }
+    pub fn add_child_object(
+        &mut self,
+        parent: &Arc<Mutex<Object>>,
+        object: &Arc<Mutex<Object>>,
+    ) {
+        //future make it return an error on no parent found.
+
+        let parent = self.objects_map.get(&Arc::as_ptr(parent)).unwrap().clone(); //error on no parent. unwrap
+
+        let node = Arc::new(Mutex::new(Node {
+            object: object.clone(),
+            parent: Some(Arc::downgrade(&parent)),
+            children: vec![],
+        }));
+
+        parent.lock().unwrap().children.push(node.clone());
+
+        self.objects_map.insert(Arc::as_ptr(&object), node);
+    }
+    pub fn remove_object(&mut self, object: &Arc<Mutex<Object>>) {
+        let object = self.objects_map.get(&Arc::as_ptr(object)).unwrap().clone();
+        let objectguard = object.lock().unwrap();
+        if let Some(parent) = &objectguard.parent {
+            let parent = parent.clone().upgrade().unwrap();
+            
+            parent.lock().unwrap().remove_child(&object);
+        }
+        else {
+            let index = self.objects.clone().into_iter().position(|x| Arc::ptr_eq(&x, &object)).unwrap();
+            self.objects.remove(index);
+        }
+    }
+
+    pub fn load_font_bytes(&mut self, name: &str, data: &[u8]) {
+        self.resources.add_font_bytes(name, data);
     }
     pub fn unload_font(&mut self, name: &str) {
         self.resources.remove_font(name);
-        self.draw
-            .update_font_objects(&mut self.vulkan, &mut self.resources);
+    }
+    pub fn unload_texture(&mut self, name: &str) {
+        self.resources.remove_texture(name);
+    }
+    pub fn unload_sound(&mut self, name: &str) {
+        self.resources.remove_sound(name);
     }
     pub fn load_sound(&mut self, name: &str, sound: &[u8]) {
         self.resources.add_sound(name, sound);
@@ -116,10 +163,112 @@ impl Game {
         self.draw.update_textures(&self.vulkan, &self.resources);
     }
     pub fn get_window(&self) -> &Window {
-        self.vulkan.surface
+        self.vulkan
+            .surface
             .object()
             .unwrap()
             .downcast_ref::<Window>()
             .unwrap()
+    }
+    // fn check_used_fonts(&mut self) {
+    //     let mut result = vec![];
+    //     for i in self.textobjects.iter().enumerate() {
+    //         if Arc::strong_count(&i.1) < 1 {
+    //             result.push(i.0);
+
+    //         }
+    //     }
+    //     for i in result {
+    //         self.textobjects.remove(i);
+    //     }
+
+    // }
+    pub fn get_font_data(
+        &mut self,
+        font: &str,
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+    ) -> VisualObject {
+        let fontname = font;
+        let font = self.resources.fonts.get(font).unwrap().clone();
+
+        let glyphs: Vec<PositionedGlyph> = font
+            .0
+            .layout(
+                text, //text,
+                rusttype::Scale::uniform(size),
+                point(0.0, font.0.v_metrics(rusttype::Scale::uniform(size)).ascent),
+            )
+            .collect();
+
+        self.resources.update_cache(fontname, glyphs.clone());
+
+        let dimensions: [u32; 2] = [1000; 2];
+
+        let mut indices: Vec<u16> = vec![];
+
+        let vertices: Vec<Vertex> = glyphs
+            .clone()
+            .iter()
+            .flat_map(|g| {
+                if let Ok(Some((uv_rect, screen_rect))) = self.resources.cache.rect_for(font.1, g) {
+                    let gl_rect = rusttype::Rect {
+                        min: point(
+                            (screen_rect.min.x as f32 / dimensions[0] as f32 - 0.5) * 2.0,
+                            (screen_rect.min.y as f32 / dimensions[1] as f32 - 0.5) * 2.0,
+                        ),
+                        max: point(
+                            (screen_rect.max.x as f32 / dimensions[0] as f32 - 0.5) * 2.0,
+                            (screen_rect.max.y as f32 / dimensions[1] as f32 - 0.5) * 2.0,
+                        ),
+                    };
+                    indices.extend([0, 1, 2, 2, 3, 0]);
+                    vec![
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_position: [uv_rect.min.x, uv_rect.max.y],
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.min.y],
+                            tex_position: [uv_rect.min.x, uv_rect.min.y],
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_position: [uv_rect.max.x, uv_rect.min.y],
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_position: [uv_rect.max.x, uv_rect.min.y],
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.max.y],
+                            tex_position: [uv_rect.max.x, uv_rect.max.y],
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_position: [uv_rect.min.x, uv_rect.max.y],
+                        },
+                    ]
+                    .into_iter()
+                } else {
+                    vec![].into_iter()
+                }
+            })
+            .collect();
+        self.draw.update_font_objects(&self.vulkan, &self.resources);
+        let object = VisualObject {
+            texture: Some("fontatlas".to_string()),
+            data: Data {
+                vertices: vertices,
+                indices: indices,
+            },
+            //data: Data::square(),
+            color,
+            material: 2,
+            ..VisualObject::empty()
+        };
+        //self.textobjects.push(object.clone());
+        object
     }
 }
