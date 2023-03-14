@@ -29,6 +29,7 @@ rusttype = { version = "0.9.3", features = ["gpu_cache"]}
 error-stack = "0.3.0"
 hashbrown = "0.13.2"
 tokio = "1.26.0"
+parking_lot = "0.12.1"
 
 [profile.release]
 strip = "symbols"

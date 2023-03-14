@@ -1,6 +1,7 @@
 use hashbrown::HashMap;
+use parking_lot::Mutex;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc},
 };
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool},
@@ -451,10 +452,10 @@ impl Draw {
 
         for obj in objects.iter() {
             {
-                let object = &obj.lock().unwrap().object;
-                order.push(object.lock().unwrap().clone());
+                let object = &obj.lock().object;
+                order.push(object.lock().clone());
             }
-            Node::order_position(&mut order, &*obj.lock().unwrap());
+            Node::order_position(&mut order, &*obj.lock());
         }
 
         for obj in order {

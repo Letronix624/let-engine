@@ -14,7 +14,8 @@ mod draw;
 use draw::Draw;
 mod font_layout;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use parking_lot::Mutex;
 
 use crate::AppInfo;
 
@@ -125,17 +126,17 @@ impl Game {
             children: vec![],
         }));
 
-        parent.lock().unwrap().children.push(node.clone());
+        parent.lock().children.push(node.clone());
 
         self.objects_map.insert(Arc::as_ptr(&object), node);
     }
     pub fn remove_object(&mut self, object: &Arc<Mutex<Object>>) {
         let object = self.objects_map.get(&Arc::as_ptr(object)).unwrap().clone();
-        let objectguard = object.lock().unwrap();
+        let objectguard = object.lock();
         if let Some(parent) = &objectguard.parent {
             let parent = parent.clone().upgrade().unwrap();
             
-            parent.lock().unwrap().remove_child(&object);
+            parent.lock().remove_child(&object);
         }
         else {
             let index = self.objects.clone().into_iter().position(|x| Arc::ptr_eq(&x, &object)).unwrap();

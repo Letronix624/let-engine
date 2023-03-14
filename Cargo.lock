@@ -933,6 +933,7 @@ dependencies = [
  "error-stack",
  "hashbrown 0.13.2",
  "image",
+ "parking_lot",
  "png",
  "rodio",
  "rusttype",

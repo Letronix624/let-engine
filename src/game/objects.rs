@@ -1,6 +1,7 @@
 pub mod data;
 use data::*;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
+use parking_lot::Mutex;
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -73,13 +74,13 @@ pub struct Node<T>{
 impl Node<Arc<Mutex<Object>>> {
     pub fn order_position(order: &mut Vec<Object>, objects: &Self) {
         for child in objects.children.iter() {
-            let child = child.lock().unwrap();
-            let object = objects.object.lock().unwrap().clone() + child.object.lock().unwrap().clone();
+            let child = child.lock();
+            let object = objects.object.lock().clone() + child.object.lock().clone();
             //objects.object.clone() + child.object.clone();
             order.push(object.clone());
             for child in child.children.iter() {
-                let child = child.lock().unwrap();
-                order.push(object.clone() + child.object.lock().unwrap().clone());
+                let child = child.lock();
+                order.push(object.clone() + child.object.lock().clone());
                 Self::order_position(order, &*child);
             }
         }
