@@ -30,6 +30,8 @@ error-stack = "0.3.0"
 hashbrown = "0.13.2"
 tokio = "1.26.0"
 parking_lot = "0.12.1"
+anyhow = "1.0.70"
+thiserror = "1.0.40"
 
 [profile.release]
 strip = "symbols"

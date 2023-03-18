@@ -1,8 +1,6 @@
 use hashbrown::HashMap;
 use parking_lot::Mutex;
-use std::{
-    sync::{Arc},
-};
+use std::sync::Arc;
 use vulkano::{
     buffer::{BufferUsage, CpuBufferPool},
     command_buffer::{

@@ -1,7 +1,7 @@
 pub mod data;
 use data::*;
-use std::sync::{Arc, Weak};
 use parking_lot::Mutex;
+use std::sync::{Arc, Weak};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -11,7 +11,7 @@ pub struct Object {
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub rotation: f32,
-    pub graphics: Option<VisualObject>,
+    pub graphics: Option<Appearance>,
 }
 //game objects have position, size, rotation, color texture and data.
 //text objects have position, size, rotation, color, text, font and font size.
@@ -29,7 +29,7 @@ impl Object {
             position: [0.0, 0.0],
             size: [0.5, 0.5],
             rotation: 0.0,
-            graphics: Some(VisualObject::new_square()),
+            graphics: Some(Appearance::new_square()),
         }
     }
 }
@@ -63,9 +63,7 @@ impl std::ops::Add for Object {
     }
 }
 
-
-
-pub struct Node<T>{
+pub struct Node<T> {
     pub object: T,
     pub parent: Option<Weak<Mutex<Node<T>>>>,
     pub children: Vec<Arc<Mutex<Node<T>>>>,
@@ -86,21 +84,24 @@ impl Node<Arc<Mutex<Object>>> {
         }
     }
     pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>) {
-        let index = self.children.clone().into_iter().position(|x| Arc::as_ptr(&x) == Arc::as_ptr(&object)).unwrap();
+        let index = self
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::as_ptr(&x) == Arc::as_ptr(&object))
+            .unwrap();
         self.children.remove(index.clone());
     }
 }
 
-
-
 #[derive(Debug, Clone, PartialEq)]
-pub struct VisualObject {
+pub struct Appearance {
     pub texture: Option<String>,
     pub data: Data,
     pub color: [f32; 4],
     pub material: u32,
 }
-impl VisualObject {
+impl Appearance {
     pub fn empty() -> Self {
         Self {
             texture: None,

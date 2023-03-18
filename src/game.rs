@@ -1,8 +1,9 @@
 pub mod resources;
+use anyhow::Result;
 use hashbrown::HashMap;
 use resources::Resources;
 pub mod objects;
-pub use objects::{data::Data, Node, Object, VisualObject};
+pub use objects::{data::Data, Appearance, Node, Object};
 pub mod vulkan;
 use rusttype::{point, PositionedGlyph};
 use vulkan::Vulkan;
@@ -14,10 +15,10 @@ mod draw;
 use draw::Draw;
 mod font_layout;
 
-use std::sync::{Arc};
 use parking_lot::Mutex;
+use std::sync::Arc;
 
-use crate::AppInfo;
+use crate::{errors::*, AppInfo};
 
 use self::objects::data::Vertex;
 
@@ -83,10 +84,7 @@ impl GameBuilder {
 #[allow(dead_code)]
 pub struct Game {
     objects: Vec<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
-    objects_map: HashMap<
-        *const Mutex<Object>,
-        Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
-    >,
+    objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
     resources: Resources,
     app_info: AppInfo,
     draw: Draw,
@@ -101,7 +99,11 @@ impl Game {
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;
     }
-    pub fn add_object(&mut self, object: &Arc<Mutex<Object>>) {
+    pub fn add_object(&mut self, object: &Arc<Mutex<Object>>) -> Result<(), ObjectExistsError> {
+        if Self::contains_object(&self, object) {
+            return Err(ObjectExistsError);
+        }
+
         let node = Arc::new(Mutex::new(Node {
             object: object.clone(),
             parent: None,
@@ -110,15 +112,24 @@ impl Game {
         self.objects.push(node.clone());
 
         self.objects_map.insert(Arc::as_ptr(&object), node.clone());
+        Ok(())
     }
     pub fn add_child_object(
         &mut self,
         parent: &Arc<Mutex<Object>>,
         object: &Arc<Mutex<Object>>,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         //future make it return an error on no parent found.
 
-        let parent = self.objects_map.get(&Arc::as_ptr(parent)).unwrap().clone(); //error on no parent. unwrap
+        if Self::contains_object(&self, object) {
+            return Err(Box::new(ObjectExistsError));
+        }
+
+        let parent = if let Some(parent) = self.objects_map.get(&Arc::as_ptr(parent)) {
+            parent.clone()
+        } else {
+            return Err(Box::new(NoParentError));
+        };
 
         let node = Arc::new(Mutex::new(Node {
             object: object.clone(),
@@ -129,19 +140,34 @@ impl Game {
         parent.lock().children.push(node.clone());
 
         self.objects_map.insert(Arc::as_ptr(&object), node);
+        Ok(())
     }
-    pub fn remove_object(&mut self, object: &Arc<Mutex<Object>>) {
-        let object = self.objects_map.get(&Arc::as_ptr(object)).unwrap().clone();
-        let objectguard = object.lock();
+    pub fn contains_object(&self, object: &Arc<Mutex<Object>>) -> bool {
+        self.objects_map.contains_key(&Arc::as_ptr(object))
+    }
+    pub fn remove_object(&mut self, object: &Arc<Mutex<Object>>) -> Result<(), NoObjectError> {
+        let node: Arc<Mutex<Node<Arc<Mutex<Object>>>>>;
+        if let Some(obj) = self.objects_map.remove(&Arc::as_ptr(object)) {
+            node = obj.clone();
+        } else {
+            return Err(NoObjectError);
+        }
+        let objectguard = node.lock();
         if let Some(parent) = &objectguard.parent {
             let parent = parent.clone().upgrade().unwrap();
-            
-            parent.lock().remove_child(&object);
+
+            parent.lock().remove_child(&node);
+        } else {
+            if let Some(index) = self
+                .objects
+                .clone()
+                .into_iter()
+                .position(|x| Arc::ptr_eq(&x, &node))
+            {
+                self.objects.remove(index);
+            }
         }
-        else {
-            let index = self.objects.clone().into_iter().position(|x| Arc::ptr_eq(&x, &object)).unwrap();
-            self.objects.remove(index);
-        }
+        Ok(())
     }
 
     pub fn load_font_bytes(&mut self, name: &str, data: &[u8]) {
@@ -171,26 +197,14 @@ impl Game {
             .downcast_ref::<Window>()
             .unwrap()
     }
-    // fn check_used_fonts(&mut self) {
-    //     let mut result = vec![];
-    //     for i in self.textobjects.iter().enumerate() {
-    //         if Arc::strong_count(&i.1) < 1 {
-    //             result.push(i.0);
-
-    //         }
-    //     }
-    //     for i in result {
-    //         self.textobjects.remove(i);
-    //     }
-
-    // }
     pub fn get_font_data(
+        // make sepparate rs for this. add this to font_layout. ooga
         &mut self,
         font: &str,
         text: &str,
         size: f32,
         color: [f32; 4],
-    ) -> VisualObject {
+    ) -> Appearance {
         let fontname = font;
         let font = self.resources.fonts.get(font).unwrap().clone();
 
@@ -258,7 +272,7 @@ impl Game {
             })
             .collect();
         self.draw.update_font_objects(&self.vulkan, &self.resources);
-        let object = VisualObject {
+        let object = Appearance {
             texture: Some("fontatlas".to_string()),
             data: Data {
                 vertices: vertices,
@@ -267,7 +281,7 @@ impl Game {
             //data: Data::square(),
             color,
             material: 2,
-            ..VisualObject::empty()
+            ..Appearance::empty()
         };
         //self.textobjects.push(object.clone());
         object
