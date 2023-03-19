@@ -85,6 +85,7 @@ impl GameBuilder {
 pub struct Game {
     objects: Vec<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
     objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    //main_camera
     resources: Resources,
     app_info: AppInfo,
     draw: Draw,
@@ -119,7 +120,6 @@ impl Game {
         parent: &Arc<Mutex<Object>>,
         object: &Arc<Mutex<Object>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        //future make it return an error on no parent found.
 
         if Self::contains_object(&self, object) {
             return Err(Box::new(ObjectExistsError));
