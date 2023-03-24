@@ -12,3 +12,7 @@ pub struct ObjectExistsError;
 #[derive(Error, Debug)]
 #[error("This parent for this object isn't added to the objects list.")]
 pub struct NoParentError;
+
+#[derive(Error, Debug)]
+#[error("No Layer found")]
+pub struct NoLayerError;

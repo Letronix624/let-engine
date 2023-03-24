@@ -1,6 +1,7 @@
 pub mod data;
-use data::*;
+pub use data::*;
 use parking_lot::Mutex;
+use hashbrown::HashMap;
 use std::sync::{Arc, Weak};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
@@ -12,6 +13,7 @@ pub struct Object {
     pub size: [f32; 2],
     pub rotation: f32,
     pub graphics: Option<Appearance>,
+    pub camera: Option<CameraOption>,
 }
 //game objects have position, size, rotation, color texture and data.
 //text objects have position, size, rotation, color, text, font and font size.
@@ -22,6 +24,7 @@ impl Object {
             size: [1.0, 1.0],
             rotation: 0.0,
             graphics: None,
+            camera: None
         }
     }
     pub fn new_square() -> Self {
@@ -30,6 +33,7 @@ impl Object {
             size: [0.5, 0.5],
             rotation: 0.0,
             graphics: Some(Appearance::new_square()),
+            camera: None
         }
     }
 }
@@ -63,6 +67,31 @@ impl std::ops::Add for Object {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraOption {
+    pub zoom: f32,
+    pub mode: CameraScaling
+}
+
+impl CameraOption {
+    pub fn new() -> Self { // Best for in-game scenes
+        Self {
+            zoom: 1.0,
+            mode: CameraScaling::Circle
+        }
+    }
+    pub fn new_hud() -> Self { // Best for huds menus screen savers and consistant things.
+        Self {
+            zoom: 1.0,
+            mode: CameraScaling::Expand
+        }
+    }
+}
+
+impl std::default::Default for CameraOption {
+    fn default() -> Self { Self::new() }
+}
+
 pub struct Node<T> {
     pub object: T,
     pub parent: Option<Weak<Mutex<Node<T>>>>,
@@ -83,17 +112,37 @@ impl Node<Arc<Mutex<Object>>> {
             }
         }
     }
-    pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>) {
+    pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>, objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>) {
         let index = self
             .children
             .clone()
             .into_iter()
             .position(|x| Arc::as_ptr(&x) == Arc::as_ptr(&object))
             .unwrap();
+        self.children[index.clone()].lock().remove_children(objects);
         self.children.remove(index.clone());
+    }
+    pub fn remove_children(&mut self, objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>) {
+        for child in self.children.iter() {
+            child.clone().lock().remove_children(objects);
+        }
+        objects.remove(&Arc::as_ptr(&self.object));
+        self.children = vec![];
+    }
+    pub fn get_object(&self) -> Object {
+        if let Some(parent) = &self.parent {
+            let parent = parent.upgrade().unwrap();
+            let parent = parent.lock();
+            parent.get_object() + self.object.lock().clone()
+        }
+        else {
+            self.object.lock().clone()
+        }
     }
 }
 
+/// Holds everything about the appearance of objects like
+/// textures, vetex/index data, color and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
     pub texture: Option<String>,

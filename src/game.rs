@@ -3,7 +3,7 @@ use anyhow::Result;
 use hashbrown::HashMap;
 use resources::Resources;
 pub mod objects;
-pub use objects::{data::Data, Appearance, Node, Object};
+pub use objects::{CameraScaling, data::Data, Appearance, Node, Object, CameraOption};
 pub mod vulkan;
 use rusttype::{point, PositionedGlyph};
 use vulkan::Vulkan;
@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use crate::{errors::*, AppInfo};
 
-use self::objects::data::Vertex;
+use self::objects::{data::{Vertex}};
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
@@ -83,14 +83,23 @@ impl GameBuilder {
 /// The struct that holds and executes all of the game data.
 #[allow(dead_code)]
 pub struct Game {
-    objects: Vec<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    //camera layers here with each object as a child of a specific layer.
+    objects: Vec<(Arc<Mutex<Node<Arc<Mutex<Object>>>>>, Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>)>,
     objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
-    //main_camera
     resources: Resources,
     app_info: AppInfo,
     draw: Draw,
     vulkan: Vulkan,
 }
+
+/* notes
+One main camera for everything.
+Hud as children of the camera object.
+
+Multiple camera layers with different positions rotations or scaling modes.
+Layer struct with camera settings.
+
+*/
 
 impl Game {
     pub fn update(&mut self) {
@@ -100,27 +109,55 @@ impl Game {
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;
     }
-    pub fn add_object(&mut self, object: &Arc<Mutex<Object>>) -> Result<(), ObjectExistsError> {
-        if Self::contains_object(&self, object) {
-            return Err(ObjectExistsError);
-        }
+    pub fn new_layer(&mut self) -> Arc<Mutex<Object>> {
+        let object = Arc::new(Mutex::new(Object::new()));
 
         let node = Arc::new(Mutex::new(Node {
             object: object.clone(),
             parent: None,
             children: vec![],
         }));
-        self.objects.push(node.clone());
+        self.objects.push((node.clone(), None));
 
         self.objects_map.insert(Arc::as_ptr(&object), node.clone());
+        object
+    }
+    pub fn set_camera(&mut self, layer: &Arc<Mutex<Object>>, camera: &Arc<Mutex<Object>>) -> Result<(), Box<dyn std::error::Error>> {
+        {
+            let mut camera = camera.lock();
+
+            if let None = camera.camera {
+                camera.camera = Some(CameraOption::new())
+            }
+        }
+
+        if let Some(layer) = self.objects_map.get(&Arc::as_ptr(layer)) {
+            if let Some(index) = self.objects
+                .iter()
+                .position(
+                    |x|
+                    Arc::ptr_eq(&x.0, layer)
+                )
+            {
+                if let Some(camera) = self.objects_map.get(&Arc::as_ptr(camera)) {
+                    self.objects[index].1 = Some(camera.clone())
+                }
+                else {
+                    return Err(Box::new(NoObjectError))
+                }
+            }
+        }
+        else {
+            return Err(Box::new(NoLayerError))
+        }
+        
         Ok(())
     }
-    pub fn add_child_object(
+    pub fn add_object(
         &mut self,
         parent: &Arc<Mutex<Object>>,
         object: &Arc<Mutex<Object>>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-
         if Self::contains_object(&self, object) {
             return Err(Box::new(ObjectExistsError));
         }
@@ -156,13 +193,13 @@ impl Game {
         if let Some(parent) = &objectguard.parent {
             let parent = parent.clone().upgrade().unwrap();
 
-            parent.lock().remove_child(&node);
+            parent.lock().remove_child(&node, &mut self.objects_map);
         } else {
             if let Some(index) = self
                 .objects
                 .clone()
                 .into_iter()
-                .position(|x| Arc::ptr_eq(&x, &node))
+                .position(|x| Arc::ptr_eq(&x.0, &node))
             {
                 self.objects.remove(index);
             }

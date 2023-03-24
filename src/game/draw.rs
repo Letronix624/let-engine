@@ -27,7 +27,7 @@ use vulkano::{
 use winit::window::Window;
 
 use super::{
-    objects::{data::Vertex, Object},
+    objects::{data::Vertex, Object, Camera},
     resources::Resources,
     vulkan::{window_size_dependent_setup, Vulkan},
 };
@@ -37,11 +37,12 @@ use crate::{game::vulkan::shaders::*, game::Node};
 #[allow(unused)]
 pub struct Draw {
     pub recreate_swapchain: bool,
-    descriptors: [Arc<PersistentDescriptorSet>; 2],
+    descriptors: [Arc<PersistentDescriptorSet>; 3],
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
     vertex_buffer: CpuBufferPool<Vertex>,
     object_buffer: CpuBufferPool<vertexshader::ty::Object>,
     index_buffer: CpuBufferPool<u16>,
+    camera_buffer: CpuBufferPool<Camera>,
     pub memoryallocator: Arc<StandardMemoryAllocator>,
     pub commandbufferallocator: StandardCommandBufferAllocator,
     descriptor_set_allocator: StandardDescriptorSetAllocator,
@@ -73,7 +74,16 @@ impl Draw {
                 index_buffer: true,
                 ..Default::default()
             },
-            vulkano::memory::allocator::MemoryUsage::Upload,
+            MemoryUsage::Upload,
+        );
+
+        let camera_buffer: CpuBufferPool<Camera> = CpuBufferPool::new(
+            memoryallocator.clone(),
+            BufferUsage {
+                uniform_buffer: true,
+                ..Default::default()
+            },
+            MemoryUsage::Upload
         );
 
         let commandbufferallocator =
@@ -171,6 +181,21 @@ impl Draw {
                 )],
             )
             .unwrap(),
+            PersistentDescriptorSet::new(
+                &descriptor_set_allocator,
+                vulkan
+                .pipeline
+                .layout()
+                .set_layouts()
+                .get(2)
+                .unwrap()
+                .clone(),
+                [WriteDescriptorSet::buffer(0,
+                    camera_buffer.from_data(
+                        Camera::new()
+                ).unwrap()
+                )]
+            ).unwrap()
         ];
 
         let previous_frame_end = Some(
@@ -188,6 +213,7 @@ impl Draw {
             vertex_buffer,
             object_buffer,
             index_buffer,
+            camera_buffer,
             memoryallocator,
             commandbufferallocator,
             descriptor_set_allocator,
@@ -367,7 +393,7 @@ impl Draw {
     pub fn redrawevent(
         &mut self,
         vulkan: &mut Vulkan,
-        objects: Vec<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+        objects: Vec<(Arc<Mutex<Node<Arc<Mutex<Object>>>>>, Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>)>,
     ) {
         //windowevents
         let window = vulkan
@@ -441,76 +467,104 @@ impl Draw {
 
         let push_constants = vertexshader::ty::PushConstant {
             resolution: [dimensions.width as f32, dimensions.height as f32],
-            camera: [0.0, 0.0],
         };
 
         //Draw Objects
 
-        let mut order: Vec<Object> = vec![];
+        
 
-        for obj in objects.iter() {
-            {
-                let object = &obj.lock().object;
-                order.push(object.lock().clone());
+        for layer in objects.iter() {
+
+            let camera = if let Some(camera) = &layer.1 {
+                let camera = camera.lock().get_object();
+                Camera {
+                    position: camera.position,
+                    rotation: camera.rotation,
+                    zoom: camera.camera.unwrap_or_default().zoom,
+                    mode: camera.camera.unwrap_or_default().mode as u32
+                }
             }
-            Node::order_position(&mut order, &*obj.lock());
-        }
+            else {
+                Camera::new()
+            };
 
-        for obj in order {
-            if let Some(visual_object) = obj.graphics.clone() {
-                let mut descriptors = self.descriptors.clone();
+            let mut order: Vec<Object> = vec![];
+            
+            Node::order_position(&mut order, &*layer.0.lock());
 
-                descriptors[1] = PersistentDescriptorSet::new(
-                    &self.descriptor_set_allocator,
-                    vulkan
-                        .pipeline
-                        .layout()
-                        .set_layouts()
-                        .get(1)
-                        .unwrap()
-                        .clone(),
-                    [WriteDescriptorSet::buffer(
-                        0,
-                        self.object_buffer
-                            .from_data(vertexshader::ty::Object {
-                                color: visual_object.color,
-                                position: obj.position,
-                                size: obj.size,
-                                rotation: obj.rotation,
-                                textureID: if let Some(name) = &visual_object.texture {
-                                    descriptors[0] =
-                                        self.texture_hash.get(&name.clone()).unwrap().clone();
-                                    1
-                                } else {
-                                    0
-                                },
-                                material: visual_object.material,
-                            })
-                            .unwrap(),
-                    )],
-                )
-                .unwrap();
+            for obj in order {
+                if let Some(visual_object) = obj.graphics.clone() {
+                    let mut descriptors = self.descriptors.clone();
 
-                let index_sub_buffer = self
-                    .index_buffer
-                    .from_iter(visual_object.data.indices.clone())
-                    .unwrap();
-                let vertex_sub_buffer = self
-                    .vertex_buffer
-                    .from_iter(visual_object.data.vertices.clone())
-                    .unwrap();
-                builder
-                    .bind_descriptor_sets(
-                        vulkano::pipeline::PipelineBindPoint::Graphics,
-                        vulkan.pipeline.layout().clone(),
-                        0,
-                        descriptors.to_vec(),
+                    descriptors[1] = PersistentDescriptorSet::new(
+                        &self.descriptor_set_allocator,
+                        vulkan
+                            .pipeline
+                            .layout()
+                            .set_layouts()
+                            .get(1)
+                            .unwrap()
+                            .clone(),
+                        [WriteDescriptorSet::buffer(
+                            0,
+                            self.object_buffer
+                                .from_data(vertexshader::ty::Object {
+                                    color: visual_object.color,
+                                    position: obj.position,
+                                    size: obj.size,
+                                    rotation: obj.rotation,
+                                    textureID: if let Some(name) = &visual_object.texture {
+                                        descriptors[0] =
+                                            self.texture_hash.get(&name.clone()).unwrap().clone();
+                                        1
+                                    } else {
+                                        0
+                                    },
+                                    material: visual_object.material,
+                                })
+                                .unwrap(),
+                        )],
                     )
-                    .bind_vertex_buffers(0, vertex_sub_buffer.clone())
-                    .bind_index_buffer(index_sub_buffer.clone())
-                    .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
-                    .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
                     .unwrap();
+                    descriptors[2] = PersistentDescriptorSet::new(
+                        &self.descriptor_set_allocator,
+                        vulkan
+                            .pipeline
+                            .layout()
+                            .set_layouts()
+                            .get(2)
+                            .unwrap()
+                            .clone(),
+                        [WriteDescriptorSet::buffer(
+                            0,
+                            self.camera_buffer
+                                .from_data(camera)
+                                .unwrap(),
+                        )],
+                    )
+                    .unwrap();
+
+                    let index_sub_buffer = self
+                        .index_buffer
+                        .from_iter(visual_object.data.indices.clone())
+                        .unwrap();
+                    let vertex_sub_buffer = self
+                        .vertex_buffer
+                        .from_iter(visual_object.data.vertices.clone())
+                        .unwrap();
+                    builder
+                        .bind_descriptor_sets(
+                            vulkano::pipeline::PipelineBindPoint::Graphics,
+                            vulkan.pipeline.layout().clone(),
+                            0,
+                            descriptors.to_vec(),
+                        )
+                        .bind_vertex_buffers(0, vertex_sub_buffer.clone())
+                        .bind_index_buffer(index_sub_buffer.clone())
+                        .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
+                        .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
+                        .unwrap();
+                }
             }
         }
 
