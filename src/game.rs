@@ -3,7 +3,7 @@ use anyhow::Result;
 use hashbrown::HashMap;
 use resources::Resources;
 pub mod objects;
-pub use objects::{CameraScaling, data::Data, Appearance, Node, Object, CameraOption};
+pub use objects::{data::Data, Appearance, CameraOption, CameraScaling, Node, Object};
 pub mod vulkan;
 use rusttype::{point, PositionedGlyph};
 use vulkan::Vulkan;
@@ -16,11 +16,11 @@ use draw::Draw;
 mod font_layout;
 
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use crate::{errors::*, AppInfo};
 
-use self::objects::{data::{Vertex}};
+use self::objects::data::Vertex;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
@@ -71,6 +71,11 @@ impl GameBuilder {
                 objects: vec![],
                 objects_map: HashMap::new(),
                 resources,
+
+                time: Instant::now(),
+                delta_instant: Instant::now(),
+                delta_time: 0.0,
+
                 app_info,
                 vulkan,
                 draw,
@@ -84,9 +89,17 @@ impl GameBuilder {
 #[allow(dead_code)]
 pub struct Game {
     //camera layers here with each object as a child of a specific layer.
-    objects: Vec<(Arc<Mutex<Node<Arc<Mutex<Object>>>>>, Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>)>,
+    objects: Vec<(
+        Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
+        Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    )>,
     objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
     resources: Resources,
+
+    time: Instant,
+    delta_instant: Instant,
+    delta_time: f64,
+
     app_info: AppInfo,
     draw: Draw,
     vulkan: Vulkan,
@@ -105,6 +118,8 @@ impl Game {
     pub fn update(&mut self) {
         self.draw
             .redrawevent(&mut self.vulkan, self.objects.clone());
+        self.delta_time = self.delta_instant.elapsed().as_secs_f64();
+        self.delta_instant = Instant::now();
     }
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;
@@ -122,7 +137,11 @@ impl Game {
         self.objects_map.insert(Arc::as_ptr(&object), node.clone());
         object
     }
-    pub fn set_camera(&mut self, layer: &Arc<Mutex<Object>>, camera: &Arc<Mutex<Object>>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn set_camera(
+        &mut self,
+        layer: &Arc<Mutex<Object>>,
+        camera: &Arc<Mutex<Object>>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         {
             let mut camera = camera.lock();
 
@@ -132,40 +151,30 @@ impl Game {
         }
 
         if let Some(layer) = self.objects_map.get(&Arc::as_ptr(layer)) {
-            if let Some(index) = self.objects
-                .iter()
-                .position(
-                    |x|
-                    Arc::ptr_eq(&x.0, layer)
-                )
-            {
+            if let Some(index) = self.objects.iter().position(|x| Arc::ptr_eq(&x.0, layer)) {
                 if let Some(camera) = self.objects_map.get(&Arc::as_ptr(camera)) {
                     self.objects[index].1 = Some(camera.clone())
-                }
-                else {
-                    return Err(Box::new(NoObjectError))
+                } else {
+                    return Err(Box::new(NoObjectError));
                 }
             }
+        } else {
+            return Err(Box::new(NoLayerError));
         }
-        else {
-            return Err(Box::new(NoLayerError))
-        }
-        
+
         Ok(())
     }
     pub fn add_object(
         &mut self,
         parent: &Arc<Mutex<Object>>,
-        object: &Arc<Mutex<Object>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        if Self::contains_object(&self, object) {
-            return Err(Box::new(ObjectExistsError));
-        }
+        initial_object: Object,
+    ) -> Result<Arc<Mutex<Object>>, NoParentError> {
+        let object = Arc::new(Mutex::new(initial_object));
 
         let parent = if let Some(parent) = self.objects_map.get(&Arc::as_ptr(parent)) {
             parent.clone()
         } else {
-            return Err(Box::new(NoParentError));
+            return Err(NoParentError);
         };
 
         let node = Arc::new(Mutex::new(Node {
@@ -177,7 +186,7 @@ impl Game {
         parent.lock().children.push(node.clone());
 
         self.objects_map.insert(Arc::as_ptr(&object), node);
-        Ok(())
+        Ok(object)
     }
     pub fn contains_object(&self, object: &Arc<Mutex<Object>>) -> bool {
         self.objects_map.contains_key(&Arc::as_ptr(object))
@@ -205,6 +214,18 @@ impl Game {
             }
         }
         Ok(())
+    }
+
+    pub fn time(&self) -> f64 {
+        self.time.elapsed().as_secs_f64()
+    }
+
+    pub fn delta_time(&self) -> f64 {
+        self.delta_time
+    }
+
+    pub fn fps(&self) -> f64 {
+        1.0 / self.delta_time
     }
 
     pub fn load_font_bytes(&mut self, name: &str, data: &[u8]) {

@@ -1,7 +1,7 @@
 pub mod data;
 pub use data::*;
-use parking_lot::Mutex;
 use hashbrown::HashMap;
+use parking_lot::Mutex;
 use std::sync::{Arc, Weak};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
@@ -24,7 +24,7 @@ impl Object {
             size: [1.0, 1.0],
             rotation: 0.0,
             graphics: None,
-            camera: None
+            camera: None,
         }
     }
     pub fn new_square() -> Self {
@@ -33,7 +33,7 @@ impl Object {
             size: [0.5, 0.5],
             rotation: 0.0,
             graphics: Some(Appearance::new_square()),
-            camera: None
+            camera: None,
         }
     }
 }
@@ -70,26 +70,30 @@ impl std::ops::Add for Object {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CameraOption {
     pub zoom: f32,
-    pub mode: CameraScaling
+    pub mode: CameraScaling,
 }
 
 impl CameraOption {
-    pub fn new() -> Self { // Best for in-game scenes
+    pub fn new() -> Self {
+        // Best for in-game scenes
         Self {
             zoom: 1.0,
-            mode: CameraScaling::Circle
+            mode: CameraScaling::Circle,
         }
     }
-    pub fn new_hud() -> Self { // Best for huds menus screen savers and consistant things.
+    pub fn new_hud() -> Self {
+        // Best for huds menus screen savers and consistant things.
         Self {
             zoom: 1.0,
-            mode: CameraScaling::Expand
+            mode: CameraScaling::Expand,
         }
     }
 }
 
 impl std::default::Default for CameraOption {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct Node<T> {
@@ -112,7 +116,11 @@ impl Node<Arc<Mutex<Object>>> {
             }
         }
     }
-    pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>, objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>) {
+    pub fn remove_child(
+        &mut self,
+        object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
+        objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    ) {
         let index = self
             .children
             .clone()
@@ -122,7 +130,10 @@ impl Node<Arc<Mutex<Object>>> {
         self.children[index.clone()].lock().remove_children(objects);
         self.children.remove(index.clone());
     }
-    pub fn remove_children(&mut self, objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>) {
+    pub fn remove_children(
+        &mut self,
+        objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    ) {
         for child in self.children.iter() {
             child.clone().lock().remove_children(objects);
         }
@@ -134,8 +145,7 @@ impl Node<Arc<Mutex<Object>>> {
             let parent = parent.upgrade().unwrap();
             let parent = parent.lock();
             parent.get_object() + self.object.lock().clone()
-        }
-        else {
+        } else {
             self.object.lock().clone()
         }
     }

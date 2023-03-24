@@ -27,7 +27,7 @@ use vulkano::{
 use winit::window::Window;
 
 use super::{
-    objects::{data::Vertex, Object, Camera},
+    objects::{data::Vertex, Camera, Object},
     resources::Resources,
     vulkan::{window_size_dependent_setup, Vulkan},
 };
@@ -83,7 +83,7 @@ impl Draw {
                 uniform_buffer: true,
                 ..Default::default()
             },
-            MemoryUsage::Upload
+            MemoryUsage::Upload,
         );
 
         let commandbufferallocator =
@@ -184,18 +184,18 @@ impl Draw {
             PersistentDescriptorSet::new(
                 &descriptor_set_allocator,
                 vulkan
-                .pipeline
-                .layout()
-                .set_layouts()
-                .get(2)
-                .unwrap()
-                .clone(),
-                [WriteDescriptorSet::buffer(0,
-                    camera_buffer.from_data(
-                        Camera::new()
-                ).unwrap()
-                )]
-            ).unwrap()
+                    .pipeline
+                    .layout()
+                    .set_layouts()
+                    .get(2)
+                    .unwrap()
+                    .clone(),
+                [WriteDescriptorSet::buffer(
+                    0,
+                    camera_buffer.from_data(Camera::new()).unwrap(),
+                )],
+            )
+            .unwrap(),
         ];
 
         let previous_frame_end = Some(
@@ -393,7 +393,10 @@ impl Draw {
     pub fn redrawevent(
         &mut self,
         vulkan: &mut Vulkan,
-        objects: Vec<(Arc<Mutex<Node<Arc<Mutex<Object>>>>>, Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>)>,
+        objects: Vec<(
+            Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
+            Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+        )>,
     ) {
         //windowevents
         let window = vulkan
@@ -471,25 +474,21 @@ impl Draw {
 
         //Draw Objects
 
-        
-
         for layer in objects.iter() {
-
             let camera = if let Some(camera) = &layer.1 {
                 let camera = camera.lock().get_object();
                 Camera {
                     position: camera.position,
                     rotation: camera.rotation,
                     zoom: camera.camera.unwrap_or_default().zoom,
-                    mode: camera.camera.unwrap_or_default().mode as u32
+                    mode: camera.camera.unwrap_or_default().mode as u32,
                 }
-            }
-            else {
+            } else {
                 Camera::new()
             };
 
             let mut order: Vec<Object> = vec![];
-            
+
             Node::order_position(&mut order, &*layer.0.lock());
 
             for obj in order {
@@ -537,9 +536,7 @@ impl Draw {
                             .clone(),
                         [WriteDescriptorSet::buffer(
                             0,
-                            self.camera_buffer
-                                .from_data(camera)
-                                .unwrap(),
+                            self.camera_buffer.from_data(camera).unwrap(),
                         )],
                     )
                     .unwrap();

@@ -23,7 +23,7 @@ impl Camera {
             position: [0.0; 2],
             rotation: 0.0,
             zoom: 1.0,
-            mode: 0
+            mode: 0,
         }
     }
 }
@@ -32,13 +32,13 @@ impl Camera {
 /// Those are the options in this game engine:
 ///
 /// 1: Stretch - goes from -1 to 1 in both x and y. So the camera view stretches when the window is not square.
-/// 
+///
 /// 2: Linear - Tries to be fair with window scaling and tries to have the same width\*height surface all the time. But when Making the window really thin or something like that you can still see the same height\*width so you could see really far.
-/// 
+///
 /// 3: Circle - Imagine a rope tied to itself to make a circle and imagine trying to fit 4 corners of a rectangle as far away from each other. It's similar to Linear but you can't look that far the tighter the window is.
-/// 
+///
 /// 4: Limited - The biggest side is always -1 to 1. Simple and more unfair the tighter your window is.
-/// 
+///
 /// 5: Expand - The bigger the window is the more you can see. Good for HUDs, fonts and textures.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -47,12 +47,12 @@ pub enum CameraScaling {
     Linear = 2,
     Circle = 3,
     Limited = 4,
-    Expand = 5
+    Expand = 5,
 }
 
 /// Vertex and index data for the appearance and shape of objects.
 /// Has 3 simple presets.
-/// 
+///
 /// Empty, Square and Triangle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Data {
@@ -187,7 +187,6 @@ pub const SQUARE: [Vertex; 6] = [
 #[allow(dead_code)]
 pub const SQUARE_ID: [u16; 6] = [0, 1, 2, 1, 2, 3];
 
-
 /// A macro that makes it easy to create circles.
 #[allow(unused)]
 #[macro_export]
@@ -236,8 +235,8 @@ macro_rules! make_circle {
         Data { vertices, indices }
     }};
     ($corners:expr, $purrcent:expr) => {{
-        use let_engine::Vertex;
         use core::f64::consts::PI;
+        use let_engine::Vertex;
         let corners = $corners;
         let purrcent = $purrcent as f64;
         let purrcent: f64 = purrcent.clamp(0.0, 1.0);
