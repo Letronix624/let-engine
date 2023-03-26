@@ -57,7 +57,7 @@ pub enum CameraScaling {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Data {
     pub vertices: Vec<Vertex>,
-    pub indices: Vec<u16>,
+    pub indices: Vec<u32>,
 }
 
 impl Data {
@@ -86,60 +86,6 @@ impl Data {
 impl_vertex!(Vertex, position, tex_position);
 
 #[allow(dead_code)]
-pub const BACKGROUND: [Vertex; 12] = [
-    Vertex {
-        position: [-1.0, 0.0],
-        tex_position: [-1.0, 0.0],
-    },
-    Vertex {
-        position: [-1.0, 1.0],
-        tex_position: [-1.0, 1.0],
-    },
-    Vertex {
-        position: [1.0, 0.0],
-        tex_position: [1.0, 0.0],
-    },
-    Vertex {
-        position: [-1.0, 1.0],
-        tex_position: [-1.0, 1.0],
-    },
-    Vertex {
-        position: [1.0, 1.0],
-        tex_position: [1.0, 1.0],
-    },
-    Vertex {
-        position: [1.0, 0.0],
-        tex_position: [1.0, 0.0],
-    },
-    Vertex {
-        position: [-1.0, -1.0],
-        tex_position: [-1.0, -1.0],
-    },
-    Vertex {
-        position: [-1.0, 0.0],
-        tex_position: [-1.0, 0.0],
-    },
-    Vertex {
-        position: [1.0, -1.0],
-        tex_position: [1.0, -1.0],
-    },
-    Vertex {
-        position: [-1.0, 0.0],
-        tex_position: [-1.0, 0.0],
-    },
-    Vertex {
-        position: [1.0, 0.0],
-        tex_position: [1.0, 0.0],
-    },
-    Vertex {
-        position: [1.0, -1.0],
-        tex_position: [1.0, -1.0],
-    },
-];
-#[allow(dead_code)]
-pub const BACKGROUND_ID: [u16; 12] = [0, 1, 2, 1, 3, 2, 4, 0, 5, 0, 2, 5];
-
-#[allow(dead_code)]
 pub const TRIANGLE: [Vertex; 3] = [
     Vertex {
         position: [0.0, -1.0],
@@ -155,37 +101,29 @@ pub const TRIANGLE: [Vertex; 3] = [
     },
 ];
 #[allow(dead_code)]
-pub const TRIANGLE_ID: [u16; 3] = [0, 1, 2];
+pub const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
 
 #[allow(dead_code)]
-pub const SQUARE: [Vertex; 6] = [
-    Vertex {
+pub const SQUARE: [Vertex; 4] = [
+    Vertex { // 0
         position: [-1.0, -1.0],
         tex_position: [-1.0, -1.0],
     },
-    Vertex {
+    Vertex { // 1
         position: [1.0, -1.0],
         tex_position: [1.0, -1.0],
     },
-    Vertex {
+    Vertex { // 2
         position: [-1.0, 1.0],
         tex_position: [-1.0, 1.0],
     },
-    Vertex {
-        position: [1.0, -1.0],
-        tex_position: [1.0, -1.0],
-    },
-    Vertex {
-        position: [-1.0, 1.0],
-        tex_position: [-1.0, 1.0],
-    },
-    Vertex {
+    Vertex { // 3
         position: [1.0, 1.0],
         tex_position: [1.0, 1.0],
     },
 ];
 #[allow(dead_code)]
-pub const SQUARE_ID: [u16; 6] = [0, 1, 2, 1, 2, 3];
+pub const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 
 /// A macro that makes it easy to create circles.
 #[allow(unused)]
@@ -195,12 +133,14 @@ macro_rules! make_circle {
         use let_engine::Vertex;
         let corners = $corners;
         let mut vertices: Vec<Vertex> = vec![];
+        let mut indices: Vec<u32> = vec![];
         use core::f64::consts::PI;
+        vertices.push(Vertex {
+            position: [0.0, 0.0],
+            tex_position: [0.0, 0.0],
+        });
         for i in 0..corners {
-            vertices.push(Vertex {
-                position: [0.0, 0.0],
-                tex_position: [0.0, 0.0],
-            });
+            indices.extend([0, i+1, i+2]);
             vertices.push(Vertex {
                 position: [
                     (PI * 2.0 * ((i as f64) / corners as f64)).cos() as f32,
@@ -211,27 +151,9 @@ macro_rules! make_circle {
                     (PI * 2.0 * ((i as f64) / corners as f64)).sin() as f32,
                 ],
             });
-            vertices.push(Vertex {
-                position: [
-                    (PI * 2.0 * (((i + 1) as f64) / corners as f64)).cos() as f32,
-                    (PI * 2.0 * (((i + 1) as f64) / corners as f64)).sin() as f32,
-                ],
-                tex_position: [
-                    (PI * 2.0 * (((i + 1) as f64) / corners as f64)).cos() as f32,
-                    (PI * 2.0 * (((i + 1) as f64) / corners as f64)).sin() as f32,
-                ],
-            })
         }
-        let mut indices: Vec<u16> = vec![];
-        for i in 1..corners {
-            indices.push(0);
-            indices.push(i as u16);
-            indices.push(i as u16 + 1);
-        }
-        indices.push(0);
-        indices.push(indices.last().cloned().unwrap());
-        indices.push(indices[1]);
 
+        indices.extend([0, corners, 1]);
         Data { vertices, indices }
     }};
     ($corners:expr, $purrcent:expr) => {{
@@ -241,11 +163,17 @@ macro_rules! make_circle {
         let purrcent = $purrcent as f64;
         let purrcent: f64 = purrcent.clamp(0.0, 1.0);
         let mut vertices: Vec<Vertex> = vec![];
+        let mut indices: Vec<u32> = vec![];
+
         let count = (PI * 2.0) * purrcent;
-        for i in 0..corners {
-            vertices.push(Vertex {
-                position: [0.0, 0.0],
-            });
+
+        vertices.push(Vertex {
+            position: [0.0, 0.0],
+            tex_position: [0.0, 0.0],
+        });
+
+        for i in 0..corners + 1 {
+            indices.extend([0, i+1, i+2]);
             vertices.push(Vertex {
                 position: [
                     (count * ((i as f64) / corners as f64)).cos() as f32,
@@ -256,26 +184,7 @@ macro_rules! make_circle {
                     (count * ((i as f64) / corners as f64)).sin() as f32,
                 ],
             });
-            vertices.push(Vertex {
-                position: [
-                    (count * (((i + 1) as f64) / corners as f64)).cos() as f32,
-                    (count * (((i + 1) as f64) / corners as f64)).sin() as f32,
-                ],
-                tex_position: [
-                    (count * (((i + 1) as f64) / corners as f64)).cos() as f32,
-                    (count * (((i + 1) as f64) / corners as f64)).sin() as f32,
-                ],
-            });
         }
-        let mut indices: Vec<u16> = vec![];
-        for i in 1..corners {
-            indices.push(0);
-            indices.push(i as u16);
-            indices.push(i as u16 + 1);
-        }
-        indices.push(0);
-        indices.push(indices.last().cloned().unwrap());
-        indices.push(indices[1]);
 
         Data { vertices, indices }
     }};

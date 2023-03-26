@@ -5,7 +5,6 @@ use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
 use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
-use vulkano::pipeline::graphics::viewport::Viewport;
 use vulkano::pipeline::graphics::{
     input_assembly::InputAssemblyState, vertex_input::BuffersDefinition, viewport::ViewportState,
 };
@@ -27,31 +26,6 @@ pub fn create_pipeline(
         .fragment_shader(fs.entry_point("main").unwrap(), ())
         .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
         .rasterization_state(RasterizationState::new().polygon_mode(PolygonMode::Fill))
-        .render_pass(subpass)
-        .build(device.clone())
-        .unwrap()
-}
-
-pub fn create_font_pipeline(
-    device: &Arc<Device>,
-    vs: &Arc<ShaderModule>,
-    fs: &Arc<ShaderModule>,
-    subpass: Subpass,
-    dimension: &[u32; 2],
-) -> Arc<GraphicsPipeline> {
-    GraphicsPipeline::start()
-        .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
-        .vertex_shader(vs.entry_point("main").unwrap(), ())
-        .input_assembly_state(InputAssemblyState::new())
-        .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([
-            Viewport {
-                origin: [0.0, 0.0],
-                depth_range: 0.0..1.0,
-                dimensions: [dimension[0] as f32, dimension[1] as f32],
-            },
-        ]))
-        .fragment_shader(fs.entry_point("main").unwrap(), ())
-        .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
         .render_pass(subpass)
         .build(device.clone())
         .unwrap()

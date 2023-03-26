@@ -8,6 +8,7 @@ use std::rc::Rc;
 pub struct Resources {
     pub textures: HashMap<String, (Rc<Vec<u8>>, (u32, u32), u32, u8)>, //bytes, (width, height), material, format
     pub fonts: HashMap<String, (Rc<Font<'static>>, usize)>,            //name -> font, fontid
+    fontid: usize,
     pub cache: Cache<'static>,
     pub cache_pixel_buffer: Vec<u8>,
     pub sounds: HashMap<String, Rc<Vec<u8>>>,
@@ -24,6 +25,7 @@ impl Resources {
         Self {
             textures,
             fonts,
+            fontid: 0,
             cache,
             cache_pixel_buffer,
             sounds,
@@ -34,12 +36,12 @@ impl Resources {
         self.textures.insert(name.into(), texture);
     }
     pub fn add_font_bytes(&mut self, name: &str, font: &[u8]) {
-        let fontid = self.fonts.len();
 
         let font = Rc::new(Font::try_from_vec(font.to_vec()).unwrap());
 
-        self.fonts.insert(name.into(), (font.clone(), fontid));
+        self.fonts.insert(name.into(), (font.clone(), self.fontid));
 
+        self.fontid += 1;
         //Self::update_cache(self);
     }
     pub fn update_cache(&mut self, font: &str, glyphs: Vec<PositionedGlyph<'static>>) {

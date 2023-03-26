@@ -41,7 +41,7 @@ pub struct Draw {
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
     vertex_buffer: CpuBufferPool<Vertex>,
     object_buffer: CpuBufferPool<vertexshader::ty::Object>,
-    index_buffer: CpuBufferPool<u16>,
+    index_buffer: CpuBufferPool<u32>,
     camera_buffer: CpuBufferPool<Camera>,
     pub memoryallocator: Arc<StandardMemoryAllocator>,
     pub commandbufferallocator: StandardCommandBufferAllocator,
@@ -68,7 +68,7 @@ impl Draw {
             },
             MemoryUsage::Upload,
         );
-        let index_buffer: CpuBufferPool<u16> = CpuBufferPool::new(
+        let index_buffer: CpuBufferPool<u32> = CpuBufferPool::new(
             memoryallocator.clone(),
             BufferUsage {
                 index_buffer: true,
@@ -288,7 +288,7 @@ impl Draw {
             PersistentDescriptorSet::new(
                 &self.descriptor_set_allocator,
                 vulkan
-                    .text_pipeline
+                    .pipeline
                     .layout()
                     .set_layouts()
                     .get(0)
@@ -492,7 +492,7 @@ impl Draw {
             Node::order_position(&mut order, &*layer.0.lock());
 
             for obj in order {
-                if let Some(visual_object) = obj.graphics.clone() {
+                if let Some(appearance) = obj.graphics.clone() {
                     let mut descriptors = self.descriptors.clone();
 
                     descriptors[1] = PersistentDescriptorSet::new(
@@ -508,18 +508,18 @@ impl Draw {
                             0,
                             self.object_buffer
                                 .from_data(vertexshader::ty::Object {
-                                    color: visual_object.color,
+                                    color: appearance.color,
                                     position: obj.position,
                                     size: obj.size,
                                     rotation: obj.rotation,
-                                    textureID: if let Some(name) = &visual_object.texture {
+                                    textureID: if let Some(name) = &appearance.texture {
                                         descriptors[0] =
                                             self.texture_hash.get(&name.clone()).unwrap().clone();
                                         1
                                     } else {
                                         0
                                     },
-                                    material: visual_object.material,
+                                    material: appearance.material,
                                 })
                                 .unwrap(),
                         )],
@@ -543,11 +543,11 @@ impl Draw {
 
                     let index_sub_buffer = self
                         .index_buffer
-                        .from_iter(visual_object.data.indices.clone())
+                        .from_iter(appearance.data.indices.clone())
                         .unwrap();
                     let vertex_sub_buffer = self
                         .vertex_buffer
-                        .from_iter(visual_object.data.vertices.clone())
+                        .from_iter(appearance.data.vertices.clone())
                         .unwrap();
                     builder
                         .bind_descriptor_sets(
@@ -559,7 +559,8 @@ impl Draw {
                         .bind_vertex_buffers(0, vertex_sub_buffer.clone())
                         .bind_index_buffer(index_sub_buffer.clone())
                         .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
-                        .draw(visual_object.data.vertices.len() as u32, 1, 0, 0)
+                        //.draw(appearance.data.vertices.len() as u32, 1, 0, 0)
+                        .draw_indexed(appearance.data.indices.len() as u32, 1, 0, 0, 0)
                         .unwrap();
                 }
             }

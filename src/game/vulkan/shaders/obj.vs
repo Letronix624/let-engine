@@ -52,7 +52,7 @@ void main() {
     //     ) * hypo
     // ) + object.position;// * object.size;
 
-    vec2 processedpos = rotation_matrix(camera.rotation) * (rotation_matrix(-object.rotation) * position * object.size + object.position - camera.position);
+    vec2 position = rotation_matrix(camera.rotation) * (rotation_matrix(-object.rotation) * position * object.size + object.position - camera.position);
 
     
     // y bound (position + pc.camera / pc.resolution) * pc.resolution.y
@@ -86,9 +86,6 @@ void main() {
             break;
     }
     
-    gl_Position = vec4((processedpos * resolutionscaler), 0.0, camera.zoom);
+    gl_Position = vec4((position * resolutionscaler), 0.0, camera.zoom);
 
-    
-
-    
 }
