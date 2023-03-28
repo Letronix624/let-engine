@@ -5,7 +5,6 @@ use resources::Resources;
 pub mod objects;
 pub use objects::{data::Data, Appearance, CameraOption, CameraScaling, Node, Object};
 pub mod vulkan;
-use rusttype::{point, PositionedGlyph};
 use vulkan::Vulkan;
 use winit::{
     event_loop::EventLoop,

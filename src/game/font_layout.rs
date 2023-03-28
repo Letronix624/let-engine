@@ -58,19 +58,11 @@ pub fn get_data(
                         position: [gl_rect.max.x, gl_rect.min.y],
                         tex_position: [uv_rect.max.x, uv_rect.min.y],
                     },
-                    // Vertex { // 2
-                    //     position: [gl_rect.max.x, gl_rect.min.y],
-                    //     tex_position: [uv_rect.max.x, uv_rect.min.y],
-                    // },
                     Vertex {
                         // 3
                         position: [gl_rect.max.x, gl_rect.max.y],
                         tex_position: [uv_rect.max.x, uv_rect.max.y],
                     },
-                    // Vertex { // 0
-                    //     position: [gl_rect.min.x, gl_rect.max.y],
-                    //     tex_position: [uv_rect.min.x, uv_rect.max.y],
-                    // },
                 ]
                 .into_iter()
             } else {
@@ -82,39 +74,16 @@ pub fn get_data(
     let object = Appearance {
         texture: Some("fontatlas".to_string()),
         data: Data {
-            vertices: vertices,
-            indices: indices,
+            vertices,
+            indices,
         },
-        //data: Data::square(),
         color,
         material: 2,
         ..Appearance::empty()
     };
-    //game.textobjects.push(object.clone());
     Some(object)
 }
 
-fn layout<'a>(
-    font: Rc<Font<'static>>,
-    text: &str,
-    size: f32,
-    binding: [f32; 2],
-) -> Vec<PositionedGlyph<'a>> {
-    font.layout(
-        text, //text,
-        rusttype::Scale::uniform(size),
-        point(0.0, font.v_metrics(Scale::uniform(size)).ascent),
-    )
-    .collect()
-}
-
-/*
-Notes to program tomorrow.
-
-Bind the text to the right with NO by first making NW then shifting the line to the right by the bounding box (1000) - (last non space character + vmetrics)
-
-For N do the same but shifting it by bb ((1000) - (last non space character + vmetrics)) * 0.5
-*/
 fn layout_paragraph<'a>(
     //NW
     font: Rc<Font<'static>>,
@@ -122,7 +91,9 @@ fn layout_paragraph<'a>(
     size: f32,
     binding: [f32; 2],
 ) -> Vec<PositionedGlyph<'a>> {
-    if text == "" {return vec![]};
+    if text == "" {
+        return vec![];
+    };
     let mut result: Vec<Vec<PositionedGlyph>> = vec![vec![]];
     let scale = Scale::uniform(size);
     let v_metrics = font.v_metrics(scale);
@@ -159,25 +130,11 @@ fn layout_paragraph<'a>(
         result.last_mut().unwrap().push(glyph);
     }
 
-    // let shift = match binding {
-    //     Direction::N => [0.5, 0.0],
-    //     Direction::NO => [1.0, 0.0],
-    //     Direction::O => [1.0, 0.5],
-    //     Direction::SO => [1.0; 2],
-    //     Direction::S => [0.5, 1.0],
-    //     Direction::SW => [0.0, 1.0],
-    //     Direction::W => [0.0, 0.5],
-    //     Direction::Center => [0.5, 0.5],
-    //     _ => [0.0; 2]
-    // };
-
-    // if binding != Direction::NW {
-    let yshift =
-        1000.0 - result.len() as f32 * advance_height + v_metrics.descent;
+    let yshift = 1000.0 - result.len() as f32 * advance_height + v_metrics.descent;
     for line in result.clone().into_iter().enumerate() {
         if let Some(last) = line.1.last() {
             let xshift = 1000.0 - last.position().x - last.unpositioned().h_metrics().advance_width;
-                for glyph in result[line.0].clone().iter().enumerate() {
+            for glyph in result[line.0].clone().iter().enumerate() {
                 result[line.0][glyph.0].set_position(point(
                     glyph.1.position().x + xshift * binding[0],
                     glyph.1.position().y + yshift * binding[1],
@@ -185,7 +142,5 @@ fn layout_paragraph<'a>(
             }
         };
     }
-    // }
-
     result.into_iter().flatten().collect()
 }
