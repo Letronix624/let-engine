@@ -36,7 +36,6 @@ impl Resources {
         self.textures.insert(name.into(), texture);
     }
     pub fn add_font_bytes(&mut self, name: &str, font: &[u8]) {
-
         let font = Rc::new(Font::try_from_vec(font.to_vec()).unwrap());
 
         self.fonts.insert(name.into(), (font.clone(), self.fontid));

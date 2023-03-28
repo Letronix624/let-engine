@@ -23,7 +23,6 @@ bytemuck = "1.8.0"
 winit = "0.27.5"
 image = "0.24.4"
 rodio = "0.16.0"
-png = "0.17.7"
 rusttype = { version = "0.9.3", features = ["gpu_cache"] }
 error-stack = "0.3.0"
 hashbrown = "0.13.2"

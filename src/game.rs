@@ -20,7 +20,7 @@ use std::{sync::Arc, time::Instant};
 
 use crate::{errors::*, AppInfo};
 
-use self::objects::data::Vertex;
+pub use self::objects::data::Vertex;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
@@ -262,7 +262,8 @@ impl Game {
         text: &str,
         size: f32,
         color: [f32; 4],
+        binding: [f32; 2],
     ) -> Option<Appearance> {
-        font_layout::get_data(self, font, text, size, color)
-    } 
+        font_layout::get_data(self, font, text, size, color, binding)
+    }
 }

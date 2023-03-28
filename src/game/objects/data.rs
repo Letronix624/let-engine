@@ -50,6 +50,16 @@ pub enum CameraScaling {
     Expand = 5,
 }
 
+pub const CENTER: [f32; 2] = [0.5; 2];
+pub const N: [f32; 2] = [0.5, 0.0];
+pub const NO: [f32; 2] = [1.0, 0.0];
+pub const O: [f32; 2] = [1.0, 0.5];
+pub const SO: [f32; 2] = [1.0; 2];
+pub const S: [f32; 2] = [0.5, 1.0];
+pub const SW: [f32; 2] = [0.0, 1.0];
+pub const W: [f32; 2] = [0.0, 0.5];
+pub const NW: [f32; 2] = [0.0; 2];
+
 /// Vertex and index data for the appearance and shape of objects.
 /// Has 3 simple presets.
 ///
@@ -105,19 +115,23 @@ pub const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
 
 #[allow(dead_code)]
 pub const SQUARE: [Vertex; 4] = [
-    Vertex { // 0
+    Vertex {
+        // 0
         position: [-1.0, -1.0],
         tex_position: [-1.0, -1.0],
     },
-    Vertex { // 1
+    Vertex {
+        // 1
         position: [1.0, -1.0],
         tex_position: [1.0, -1.0],
     },
-    Vertex { // 2
+    Vertex {
+        // 2
         position: [-1.0, 1.0],
         tex_position: [-1.0, 1.0],
     },
-    Vertex { // 3
+    Vertex {
+        // 3
         position: [1.0, 1.0],
         tex_position: [1.0, 1.0],
     },
@@ -140,7 +154,7 @@ macro_rules! make_circle {
             tex_position: [0.0, 0.0],
         });
         for i in 0..corners {
-            indices.extend([0, i+1, i+2]);
+            indices.extend([0, i + 1, i + 2]);
             vertices.push(Vertex {
                 position: [
                     (PI * 2.0 * ((i as f64) / corners as f64)).cos() as f32,
@@ -173,7 +187,7 @@ macro_rules! make_circle {
         });
 
         for i in 0..corners + 1 {
-            indices.extend([0, i+1, i+2]);
+            indices.extend([0, i + 1, i + 2]);
             vertices.push(Vertex {
                 position: [
                     (count * ((i as f64) / corners as f64)).cos() as f32,
