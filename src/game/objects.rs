@@ -2,7 +2,10 @@ pub mod data;
 pub use data::*;
 use hashbrown::HashMap;
 use parking_lot::Mutex;
-use std::sync::{Arc, Weak};
+use std::{
+    default,
+    sync::{Arc, Weak},
+};
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -19,22 +22,18 @@ pub struct Object {
 //text objects have position, size, rotation, color, text, font and font size.
 impl Object {
     pub fn new() -> Self {
-        Self {
-            position: [0.0, 0.0],
-            size: [1.0, 1.0],
-            rotation: 0.0,
-            graphics: None,
-            camera: None,
-        }
+        Self::default()
     }
     pub fn new_square() -> Self {
         Self {
-            position: [0.0, 0.0],
             size: [0.5, 0.5],
-            rotation: 0.0,
             graphics: Some(Appearance::new_square()),
-            camera: None,
+            ..Default::default()
         }
+    }
+    pub fn graphics(mut self, graphics: Option<Appearance>) -> Self {
+        self.graphics = graphics;
+        self
     }
 }
 
@@ -63,6 +62,18 @@ impl std::ops::Add for Object {
             size: [size[0], size[1]],
             rotation,
             ..rhs.clone()
+        }
+    }
+}
+
+impl Default for Object {
+    fn default() -> Self {
+        Self {
+            position: [0.0, 0.0],
+            size: [1.0, 1.0],
+            rotation: 0.0,
+            graphics: None,
+            camera: None,
         }
     }
 }
@@ -157,25 +168,28 @@ impl Node<Arc<Mutex<Object>>> {
 pub struct Appearance {
     pub texture: Option<String>,
     pub data: Data,
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub rotation: f32,
     pub color: [f32; 4],
     pub material: u32,
 }
 impl Appearance {
-    pub fn empty() -> Self {
-        Self {
-            texture: None,
-            data: Data::empty(),
-            color: [0.0, 0.0, 0.0, 1.0],
-            material: 0,
-        }
-    }
     pub fn new() -> Self {
-        Self { ..Self::empty() }
+        Self {
+            ..Default::default()
+        }
     }
     pub fn new_square() -> Self {
         Self {
             data: Data::square(),
-            ..Self::empty()
+            ..Default::default()
+        }
+    }
+    pub fn new_color(color: [f32; 4]) -> Self {
+        Self {
+            color,
+            ..Default::default()
         }
     }
     pub fn texture(mut self, texture: &str) -> Self {
@@ -186,6 +200,18 @@ impl Appearance {
         self.data = data;
         self
     }
+    pub fn position(mut self, position: [f32; 2]) -> Self {
+        self.position = position;
+        self
+    }
+    pub fn size(mut self, size: [f32; 2]) -> Self {
+        self.size = size;
+        self
+    }
+    pub fn rotation(mut self, angle: f32) -> Self {
+        self.rotation = angle;
+        self
+    }
     pub fn color(mut self, color: [f32; 4]) -> Self {
         self.color = color;
         self
@@ -193,6 +219,20 @@ impl Appearance {
     pub fn material(mut self, material: u32) -> Self {
         self.material = material;
         self
+    }
+}
+
+impl default::Default for Appearance {
+    fn default() -> Self {
+        Self {
+            texture: None,
+            data: Data::empty(),
+            position: [0.0; 2],
+            size: [1.0; 2],
+            rotation: 0.0,
+            color: [0.0, 0.0, 0.0, 1.0],
+            material: 0,
+        }
     }
 }
 

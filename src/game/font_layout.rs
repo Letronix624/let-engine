@@ -2,24 +2,24 @@ use std::rc::Rc;
 
 use rusttype::{point, Font, PositionedGlyph, Scale};
 
-use crate::{Appearance, Data, Game, Vertex};
+use crate::{Data, Game, Vertex};
 
 pub fn get_data(
     game: &mut Game,
     font: &str,
     text: &str,
-    size: f32,
-    color: [f32; 4],
+    scale: f32,
+    size: [f32; 2],
     binding: [f32; 2],
-) -> Option<Appearance> {
+) -> Data {
     let fontname = font;
     let font = game.resources.fonts.get(font).unwrap().clone();
 
-    let glyphs: Vec<PositionedGlyph> = layout_paragraph(font.0, text, size, binding);
+    let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
+
+    let glyphs: Vec<PositionedGlyph> = layout_paragraph(font.0, text, scale, dimensions, binding);
 
     game.resources.update_cache(fontname, glyphs.clone());
-
-    let dimensions: [u32; 2] = [1000; 2];
 
     let mut indices: Vec<u32> = vec![];
 
@@ -71,31 +71,22 @@ pub fn get_data(
         })
         .collect();
     game.draw.update_font_objects(&game.vulkan, &game.resources);
-    let object = Appearance {
-        texture: Some("fontatlas".to_string()),
-        data: Data {
-            vertices,
-            indices,
-        },
-        color,
-        material: 2,
-        ..Appearance::empty()
-    };
-    Some(object)
+
+    Data { vertices, indices }
 }
 
 fn layout_paragraph<'a>(
-    //NW
     font: Rc<Font<'static>>,
     text: &str,
-    size: f32,
+    scale: f32,
+    dimensions: [f32; 2],
     binding: [f32; 2],
 ) -> Vec<PositionedGlyph<'a>> {
     if text == "" {
         return vec![];
     };
     let mut result: Vec<Vec<PositionedGlyph>> = vec![vec![]];
-    let scale = Scale::uniform(size);
+    let scale = Scale::uniform(scale);
     let v_metrics = font.v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
     let mut caret = point(0.0, v_metrics.ascent);
@@ -119,7 +110,7 @@ fn layout_paragraph<'a>(
         last_glyph_id = Some(base_glyph.id());
         let mut glyph = base_glyph.scaled(scale).positioned(caret);
         if let Some(bb) = glyph.pixel_bounding_box() {
-            if bb.max.x > 1000 as i32 {
+            if bb.max.x > dimensions[0] as i32 {
                 result.push(vec![]);
                 caret = point(0.0, caret.y + advance_height);
                 glyph.set_position(caret);
@@ -130,10 +121,11 @@ fn layout_paragraph<'a>(
         result.last_mut().unwrap().push(glyph);
     }
 
-    let yshift = 1000.0 - result.len() as f32 * advance_height + v_metrics.descent;
+    let yshift = dimensions[1] - result.len() as f32 * advance_height + v_metrics.descent;
     for line in result.clone().into_iter().enumerate() {
         if let Some(last) = line.1.last() {
-            let xshift = 1000.0 - last.position().x - last.unpositioned().h_metrics().advance_width;
+            let xshift =
+                dimensions[0] - last.position().x - last.unpositioned().h_metrics().advance_width;
             for glyph in result[line.0].clone().iter().enumerate() {
                 result[line.0][glyph.0].set_position(point(
                     glyph.1.position().x + xshift * binding[0],

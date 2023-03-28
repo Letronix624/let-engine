@@ -509,9 +509,15 @@ impl Draw {
                             self.object_buffer
                                 .from_data(vertexshader::ty::Object {
                                     color: appearance.color,
-                                    position: obj.position,
-                                    size: obj.size,
-                                    rotation: obj.rotation,
+                                    position: [
+                                        obj.position[0] + appearance.position[0],
+                                        obj.position[1] + appearance.position[1],
+                                    ],
+                                    size: [
+                                        obj.size[0] * appearance.size[0],
+                                        obj.size[1] * appearance.size[1],
+                                    ],
+                                    rotation: obj.rotation + appearance.rotation,
                                     textureID: if let Some(name) = &appearance.texture {
                                         descriptors[0] =
                                             self.texture_hash.get(&name.clone()).unwrap().clone();

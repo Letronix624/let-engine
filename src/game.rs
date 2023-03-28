@@ -21,6 +21,8 @@ use crate::{errors::*, AppInfo};
 
 pub use self::objects::data::Vertex;
 
+type AObject = Arc<Mutex<Object>>;
+
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
     window_builder: Option<WindowBuilder>,
@@ -88,11 +90,8 @@ impl GameBuilder {
 #[allow(dead_code)]
 pub struct Game {
     //camera layers here with each object as a child of a specific layer.
-    objects: Vec<(
-        Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
-        Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
-    )>,
-    objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
+    objects: Vec<(Arc<Mutex<Node<AObject>>>, Option<Arc<Mutex<Node<AObject>>>>)>,
+    objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<AObject>>>>,
     resources: Resources,
 
     time: Instant,
@@ -123,7 +122,7 @@ impl Game {
     pub fn recreate_swapchain(&mut self) {
         self.draw.recreate_swapchain = true;
     }
-    pub fn new_layer(&mut self) -> Arc<Mutex<Object>> {
+    pub fn new_layer(&mut self) -> AObject {
         let object = Arc::new(Mutex::new(Object::new()));
 
         let node = Arc::new(Mutex::new(Node {
@@ -138,8 +137,8 @@ impl Game {
     }
     pub fn set_camera(
         &mut self,
-        layer: &Arc<Mutex<Object>>,
-        camera: &Arc<Mutex<Object>>,
+        layer: &AObject,
+        camera: &AObject,
     ) -> Result<(), Box<dyn std::error::Error>> {
         {
             let mut camera = camera.lock();
@@ -165,9 +164,9 @@ impl Game {
     }
     pub fn add_object(
         &mut self,
-        parent: &Arc<Mutex<Object>>,
+        parent: &AObject,
         initial_object: Object,
-    ) -> Result<Arc<Mutex<Object>>, NoParentError> {
+    ) -> Result<AObject, NoParentError> {
         let object = Arc::new(Mutex::new(initial_object));
 
         let parent = if let Some(parent) = self.objects_map.get(&Arc::as_ptr(parent)) {
@@ -187,11 +186,11 @@ impl Game {
         self.objects_map.insert(Arc::as_ptr(&object), node);
         Ok(object)
     }
-    pub fn contains_object(&self, object: &Arc<Mutex<Object>>) -> bool {
+    pub fn contains_object(&self, object: &AObject) -> bool {
         self.objects_map.contains_key(&Arc::as_ptr(object))
     }
-    pub fn remove_object(&mut self, object: &Arc<Mutex<Object>>) -> Result<(), NoObjectError> {
-        let node: Arc<Mutex<Node<Arc<Mutex<Object>>>>>;
+    pub fn remove_object(&mut self, object: &AObject) -> Result<(), NoObjectError> {
+        let node: Arc<Mutex<Node<AObject>>>;
         if let Some(obj) = self.objects_map.remove(&Arc::as_ptr(object)) {
             node = obj.clone();
         } else {
@@ -254,15 +253,29 @@ impl Game {
             .downcast_ref::<Window>()
             .unwrap()
     }
-    pub fn get_font_data(
-        // make sepparate rs for this. add this to font_layout. ooga
+    pub fn label(
         &mut self,
+        object: &AObject,
         font: &str,
         text: &str,
-        size: f32,
-        color: [f32; 4],
+        scale: f32,
         binding: [f32; 2],
-    ) -> Option<Appearance> {
-        font_layout::get_data(self, font, text, size, color, binding)
+    ) {
+        let mut object = object.lock();
+        if let Some(mut appearance) = object.graphics.as_mut() {
+            let data = font_layout::get_data(self, font, text, scale, appearance.size, binding);
+            appearance.texture = Some("fontatlas".to_string());
+            appearance.data = data;
+            appearance.material = 2;
+        } else {
+            let data = font_layout::get_data(self, font, text, scale, [1.0; 2], binding);
+            object.graphics = Some(Appearance {
+                texture: Some("fontatlas".to_string()),
+                data,
+                material: 2,
+                color: [1.0; 4],
+                ..Default::default()
+            });
+        }
     }
 }
