@@ -22,12 +22,13 @@ use crate::{errors::*, AppInfo};
 pub use self::objects::data::Vertex;
 
 type AObject = Arc<Mutex<Object>>;
+type NObject = Arc<Mutex<Node<AObject>>>;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
     window_builder: Option<WindowBuilder>,
     app_info: Option<AppInfo>,
-    //resources: Resources,
+    clear_background_color: [f32; 4],
 }
 
 impl GameBuilder {
@@ -35,19 +36,19 @@ impl GameBuilder {
         Self {
             window_builder: None,
             app_info: None,
-            //resources: Resources::new(),
+            clear_background_color: [0.0; 4],
         }
     }
-    // pub fn with_resources(mut self, resources: Resources) -> Self {
-    //     self.resources = resources;
-    //     self
-    // }
     pub fn with_window_builder(mut self, window_builder: WindowBuilder) -> Self {
         self.window_builder = Some(window_builder);
         self
     }
     pub fn with_app_info(mut self, app_info: AppInfo) -> Self {
         self.app_info = Some(app_info);
+        self
+    }
+    pub fn with_clear_background_clear_color(mut self, color: [f32; 4]) -> Self {
+        self.clear_background_color = color;
         self
     }
     pub fn build(&mut self) -> (Game, EventLoop<()>) {
@@ -63,6 +64,8 @@ impl GameBuilder {
             panic!("no window builder");
         };
 
+        let clear_background_color = self.clear_background_color;
+
         let resources = Resources::new();
         let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
         let draw = Draw::setup(&vulkan);
@@ -76,6 +79,7 @@ impl GameBuilder {
                 time: Instant::now(),
                 delta_instant: Instant::now(),
                 delta_time: 0.0,
+                clear_background_color,
 
                 app_info,
                 vulkan,
@@ -89,33 +93,27 @@ impl GameBuilder {
 /// The struct that holds and executes all of the game data.
 #[allow(dead_code)]
 pub struct Game {
-    //camera layers here with each object as a child of a specific layer.
-    objects: Vec<(Arc<Mutex<Node<AObject>>>, Option<Arc<Mutex<Node<AObject>>>>)>,
-    objects_map: HashMap<*const Mutex<Object>, Arc<Mutex<Node<AObject>>>>,
+    objects: Vec<(NObject, Option<Arc<Mutex<Node<AObject>>>>)>,
+    objects_map: HashMap<*const Mutex<Object>, NObject>,
     resources: Resources,
 
     time: Instant,
     delta_instant: Instant,
     delta_time: f64,
+    clear_background_color: [f32; 4],
 
     app_info: AppInfo,
     draw: Draw,
     vulkan: Vulkan,
 }
 
-/* notes
-One main camera for everything.
-Hud as children of the camera object.
-
-Multiple camera layers with different positions rotations or scaling modes.
-Layer struct with camera settings.
-
-*/
-
 impl Game {
     pub fn update(&mut self) {
-        self.draw
-            .redrawevent(&mut self.vulkan, self.objects.clone());
+        self.draw.redrawevent(
+            &mut self.vulkan,
+            self.objects.clone(),
+            self.clear_background_color,
+        );
         self.delta_time = self.delta_instant.elapsed().as_secs_f64();
         self.delta_instant = Instant::now();
     }
@@ -190,7 +188,7 @@ impl Game {
         self.objects_map.contains_key(&Arc::as_ptr(object))
     }
     pub fn remove_object(&mut self, object: &AObject) -> Result<(), NoObjectError> {
-        let node: Arc<Mutex<Node<AObject>>>;
+        let node: NObject;
         if let Some(obj) = self.objects_map.remove(&Arc::as_ptr(object)) {
             node = obj.clone();
         } else {
@@ -225,7 +223,9 @@ impl Game {
     pub fn fps(&self) -> f64 {
         1.0 / self.delta_time
     }
-
+    pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
+        self.clear_background_color = color;
+    }
     pub fn load_font_bytes(&mut self, name: &str, data: &[u8]) {
         self.resources.add_font_bytes(name, data);
     }

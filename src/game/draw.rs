@@ -397,6 +397,7 @@ impl Draw {
             Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
             Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
         )>,
+        clear_color: [f32; 4],
     ) {
         //windowevents
         let window = vulkan
@@ -448,10 +449,11 @@ impl Draw {
             CommandBufferUsage::OneTimeSubmit,
         )
         .unwrap();
+
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some([0.0, 0.0, 0.0, 0.0].into())],
+                    clear_values: vec![Some(clear_color.into())],
                     ..RenderPassBeginInfo::framebuffer(
                         vulkan.framebuffers[image_num as usize].clone(),
                     )
