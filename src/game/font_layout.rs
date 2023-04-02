@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use anyhow::Result;
+
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font, PositionedGlyph, Scale};
 
@@ -25,7 +27,7 @@ pub struct Labelifier {
 
 impl Labelifier {
     pub fn new(vulkan: &Vulkan, draw: &mut Draw) -> Self {
-        let cache = Cache::builder().dimensions(512, 512).build();
+        let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
         let texture = Texture::new(
             cache_pixel_buffer.clone(),
@@ -42,25 +44,27 @@ impl Labelifier {
             ready: false,
         }
     }
-    fn update_cache(&mut self, vulkan: &Vulkan, draw: &mut Draw) {
-        let dimensions = 512;
+    fn update_cache(
+        &mut self,
+        vulkan: &Vulkan,
+        draw: &mut Draw,
+    ) -> Result<(), rusttype::gpu_cache::CacheWriteErr> {
+        let dimensions = self.cache.dimensions().0 as usize;
 
-        self.cache
-            .cache_queued(|rect, src_data| {
-                let width = (rect.max.x - rect.min.x) as usize;
-                let height = (rect.max.y - rect.min.y) as usize;
-                let mut dst_index = rect.min.y as usize * dimensions + rect.min.x as usize;
-                let mut src_index = 0;
-                for _ in 0..height {
-                    let dst_slice = &mut self.cache_pixel_buffer[dst_index..dst_index + width];
-                    let src_slice = &src_data[src_index..src_index + width];
-                    dst_slice.copy_from_slice(src_slice);
+        self.cache.cache_queued(|rect, src_data| {
+            let width = (rect.max.x - rect.min.x) as usize;
+            let height = (rect.max.y - rect.min.y) as usize;
+            let mut dst_index = rect.min.y as usize * dimensions + rect.min.x as usize;
+            let mut src_index = 0;
+            for _ in 0..height {
+                let dst_slice = &mut self.cache_pixel_buffer[dst_index..dst_index + width];
+                let src_slice = &src_data[src_index..src_index + width];
+                dst_slice.copy_from_slice(src_slice);
 
-                    dst_index += dimensions;
-                    src_index += width;
-                }
-            })
-            .unwrap();
+                dst_index += dimensions;
+                src_index += width;
+            }
+        })?;
         self.texture = Texture::new(
             self.cache_pixel_buffer.clone(),
             self.cache.dimensions(),
@@ -72,18 +76,34 @@ impl Labelifier {
             ),
             2,
         );
+        Ok(())
     }
     pub fn update(&mut self, vulkan: &Vulkan, draw: &mut Draw) {
         if !self.ready {
             return ();
         }
-        for task in self.queued.iter() {
-            for glyph in task.glyphs.clone() {
-                self.cache.queue_glyph(task.font.fontid, glyph);
-            }
-        }
-        self.update_cache(vulkan, draw);
 
+        loop {
+            for task in self.queued.iter() {
+                for glyph in task.glyphs.clone() {
+                    self.cache.queue_glyph(task.font.fontid, glyph);
+                }
+            }
+
+            match self.update_cache(vulkan, draw) {
+                Ok(_) => (),
+                _ => {
+                    let dimensions = self.cache.dimensions().0 * 2;
+                    self.cache
+                        .to_builder()
+                        .dimensions(dimensions, dimensions)
+                        .rebuild(&mut self.cache);
+                    self.cache_pixel_buffer = vec![0; (dimensions * dimensions) as usize];
+                    continue;
+                }
+            };
+            break;
+        }
         for task in self.queued.iter() {
             let mut object = task.object.lock();
 
@@ -125,22 +145,18 @@ impl Labelifier {
                         id += 4;
                         vec![
                             Vertex {
-                                // 0
                                 position: [gl_rect.min.x, gl_rect.max.y],
                                 tex_position: [uv_rect.min.x, uv_rect.max.y],
                             },
                             Vertex {
-                                // 1
                                 position: [gl_rect.min.x, gl_rect.min.y],
                                 tex_position: [uv_rect.min.x, uv_rect.min.y],
                             },
                             Vertex {
-                                // 2
                                 position: [gl_rect.max.x, gl_rect.min.y],
                                 tex_position: [uv_rect.max.x, uv_rect.min.y],
                             },
                             Vertex {
-                                // 3
                                 position: [gl_rect.max.x, gl_rect.max.y],
                                 tex_position: [uv_rect.max.x, uv_rect.max.y],
                             },
@@ -155,6 +171,7 @@ impl Labelifier {
             appearance.data = Data { vertices, indices };
             appearance.texture = Some(self.texture.clone());
         }
+        self.queued = vec![];
         self.ready = false;
     }
     pub fn queue(
