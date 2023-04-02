@@ -1,7 +1,7 @@
 pub mod vertexshader {
     vulkano_shaders::shader! {
         ty: "vertex",
-        path: "src/game/vulkan/shaders/obj.vs",
+        path: "src/game/vulkan/shaders/obj.vert",
         types_meta: {
             use bytemuck::{Pod, Zeroable};
 
@@ -13,6 +13,6 @@ pub mod vertexshader {
 pub mod fragmentshader {
     vulkano_shaders::shader! {
         ty: "fragment",
-        path: "src/game/vulkan/shaders/obj.fs"
+        path: "src/game/vulkan/shaders/obj.frag"
     }
 }

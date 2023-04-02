@@ -1,4 +1,5 @@
 pub mod data;
+use super::resources::*;
 pub use data::*;
 use hashbrown::HashMap;
 use parking_lot::Mutex;
@@ -127,18 +128,13 @@ impl Node<Arc<Mutex<Object>>> {
             }
         }
     }
-    pub fn remove_child(
-        &mut self,
-        object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
-        objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
-    ) {
+    pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>) {
         let index = self
             .children
             .clone()
             .into_iter()
             .position(|x| Arc::as_ptr(&x) == Arc::as_ptr(&object))
             .unwrap();
-        self.children[index.clone()].lock().remove_children(objects);
         self.children.remove(index.clone());
     }
     pub fn remove_children(
@@ -166,13 +162,12 @@ impl Node<Arc<Mutex<Object>>> {
 /// textures, vetex/index data, color and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
-    pub texture: Option<String>,
+    pub texture: Option<Arc<Texture>>,
     pub data: Data,
     pub position: [f32; 2],
     pub size: [f32; 2],
     pub rotation: f32,
     pub color: [f32; 4],
-    pub material: u32,
 }
 impl Appearance {
     pub fn new() -> Self {
@@ -192,8 +187,8 @@ impl Appearance {
             ..Default::default()
         }
     }
-    pub fn texture(mut self, texture: &str) -> Self {
-        self.texture = Some(texture.to_string());
+    pub fn texture(mut self, texture: &Arc<Texture>) -> Self {
+        self.texture = Some(texture.clone());
         self
     }
     pub fn data(mut self, data: Data) -> Self {
@@ -216,10 +211,6 @@ impl Appearance {
         self.color = color;
         self
     }
-    pub fn material(mut self, material: u32) -> Self {
-        self.material = material;
-        self
-    }
 }
 
 impl default::Default for Appearance {
@@ -231,9 +222,6 @@ impl default::Default for Appearance {
             size: [1.0; 2],
             rotation: 0.0,
             color: [0.0, 0.0, 0.0, 1.0],
-            material: 0,
         }
     }
 }
-
-//fn textdata() -> ()

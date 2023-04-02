@@ -1,4 +1,3 @@
-use hashbrown::HashMap;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::{
@@ -27,8 +26,7 @@ use vulkano::{
 use winit::window::Window;
 
 use super::{
-    objects::{data::Vertex, Camera, Object},
-    resources::Resources,
+    objects::{data::*, Object},
     vulkan::{window_size_dependent_setup, Vulkan},
 };
 
@@ -46,13 +44,10 @@ pub struct Draw {
     pub memoryallocator: Arc<StandardMemoryAllocator>,
     pub commandbufferallocator: StandardCommandBufferAllocator,
     descriptor_set_allocator: StandardDescriptorSetAllocator,
-    texture_hash: HashMap<String, Arc<PersistentDescriptorSet>>,
 }
 
 impl Draw {
     pub fn setup(vulkan: &Vulkan) -> Self {
-        let texture_hash = HashMap::new();
-
         let recreate_swapchain = false;
 
         let memoryallocator = Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
@@ -217,13 +212,16 @@ impl Draw {
             memoryallocator,
             commandbufferallocator,
             descriptor_set_allocator,
-            texture_hash,
         }
     }
 
-    pub fn update_font_objects(&mut self, vulkan: &Vulkan, resources: &Resources) {
-        let dimensions = resources.cache.dimensions();
-
+    pub fn load_texture(
+        &mut self,
+        vulkan: &Vulkan,
+        data: Vec<u8>,
+        dimensions: (u32, u32),
+        format: u32,
+    ) -> Arc<PersistentDescriptorSet> {
         let mut uploads = AutoCommandBufferBuilder::primary(
             &self.commandbufferallocator,
             vulkan.queue.queue_family_index(),
@@ -231,31 +229,30 @@ impl Draw {
         )
         .unwrap();
 
-        let cache_texture = ImmutableImage::from_iter(
+        let format = match format {
+            1 => Format::R8_UNORM,
+            _ => Format::R8G8B8A8_UNORM,
+        };
+
+        let image = ImmutableImage::from_iter(
             &self.memoryallocator,
-            resources
-                .textures
-                .get("fontatlas")
-                .unwrap()
-                .0
-                .iter()
-                .cloned(),
+            data,
             ImageDimensions::Dim2d {
                 width: dimensions.0,
                 height: dimensions.1,
                 array_layers: 1,
             },
             MipmapsCount::One,
-            vulkano::format::Format::R8_UNORM,
+            format,
             &mut uploads,
         )
         .unwrap();
 
-        let cache_texture_view = ImageView::new(
-            cache_texture.clone(),
+        let texture_view = ImageView::new(
+            image.clone(),
             ImageViewCreateInfo {
                 view_type: ImageViewType::Dim2dArray,
-                ..ImageViewCreateInfo::from_image(&cache_texture)
+                ..ImageViewCreateInfo::from_image(&image)
             },
         )
         .unwrap();
@@ -275,110 +272,22 @@ impl Draw {
         )
         .unwrap();
 
-        self.previous_frame_end = Some(
-            uploads
-                .build()
+        let set = PersistentDescriptorSet::new(
+            &self.descriptor_set_allocator,
+            vulkan
+                .pipeline
+                .layout()
+                .set_layouts()
+                .get(0)
                 .unwrap()
-                .execute(vulkan.queue.clone())
-                .unwrap()
-                .boxed(),
-        );
-        self.texture_hash.insert(
-            "fontatlas".into(),
-            PersistentDescriptorSet::new(
-                &self.descriptor_set_allocator,
-                vulkan
-                    .pipeline
-                    .layout()
-                    .set_layouts()
-                    .get(0)
-                    .unwrap()
-                    .clone(),
-                [WriteDescriptorSet::image_view_sampler(
-                    0,
-                    cache_texture_view.clone(),
-                    sampler.clone(),
-                )],
-            )
-            .unwrap(),
-        );
-    }
-    pub fn update_textures(&mut self, vulkan: &Vulkan, resources: &Resources) {
-        self.texture_hash = HashMap::new();
-
-        let mut uploads = AutoCommandBufferBuilder::primary(
-            &self.commandbufferallocator,
-            vulkan.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
+                .clone(),
+            [WriteDescriptorSet::image_view_sampler(
+                0,
+                texture_view.clone(),
+                sampler.clone(),
+            )],
         )
         .unwrap();
-
-        let sampler = Sampler::new(
-            vulkan.device.clone(),
-            SamplerCreateInfo {
-                mag_filter: Filter::Nearest,
-                min_filter: Filter::Linear,
-                address_mode: [
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::Repeat,
-                ],
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        for tex in resources.textures.clone().iter() {
-            if tex.0 != "fontatlas" {
-                let texture = {
-                    let dimensions = ImageDimensions::Dim2d {
-                        width: tex.1 .1 .0,
-                        height: tex.1 .1 .1,
-                        array_layers: 1, // 1 FOR NOW! WILL CHANGE WHEN TEXTURE ARRAY GETS ADDED TO THE THING!! OOG A BOOGA~~
-                    };
-
-                    let format = match tex.1 .3 {
-                        1 => Format::R8_UNORM,
-                        _ => Format::R8G8B8A8_UNORM,
-                    };
-
-                    let image = ImmutableImage::from_iter(
-                        &self.memoryallocator,
-                        tex.1 .0.clone().to_vec(),
-                        dimensions,
-                        MipmapsCount::One,
-                        format,
-                        &mut uploads,
-                    )
-                    .unwrap();
-                    ImageView::new(
-                        image.clone(),
-                        ImageViewCreateInfo {
-                            view_type: ImageViewType::Dim2dArray,
-                            ..ImageViewCreateInfo::from_image(&image)
-                        },
-                    )
-                    .unwrap()
-                };
-                let set = PersistentDescriptorSet::new(
-                    &self.descriptor_set_allocator,
-                    vulkan
-                        .pipeline
-                        .layout()
-                        .set_layouts()
-                        .get(0)
-                        .unwrap()
-                        .clone(),
-                    [WriteDescriptorSet::image_view_sampler(
-                        0,
-                        texture.clone(),
-                        sampler.clone(),
-                    )],
-                )
-                .unwrap();
-                self.texture_hash.insert(tex.0.to_string(), set);
-            }
-        }
 
         self.previous_frame_end = Some(
             uploads
@@ -388,6 +297,7 @@ impl Draw {
                 .unwrap()
                 .boxed(),
         );
+        set
     }
 
     pub fn redrawevent(
@@ -520,14 +430,17 @@ impl Draw {
                                         obj.size[1] * appearance.size[1],
                                     ],
                                     rotation: obj.rotation + appearance.rotation,
-                                    textureID: if let Some(name) = &appearance.texture {
-                                        descriptors[0] =
-                                            self.texture_hash.get(&name.clone()).unwrap().clone();
+                                    textureID: if let Some(texture) = &appearance.texture {
+                                        descriptors[0] = texture.set.clone();
                                         1
                                     } else {
                                         0
                                     },
-                                    material: appearance.material,
+                                    material: if let Some(texture) = &appearance.texture {
+                                        texture.material
+                                    } else {
+                                        0
+                                    },
                                 })
                                 .unwrap(),
                         )],

@@ -1,18 +1,20 @@
 pub mod resources;
 use anyhow::Result;
 use hashbrown::HashMap;
-use resources::Resources;
+use resources::{GameFont, Resources, Texture};
 pub mod objects;
 pub use objects::{data::Data, Appearance, CameraOption, CameraScaling, Node, Object};
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
+    event::{Event, WindowEvent},
     event_loop::EventLoop,
     window::{Window, WindowBuilder},
 };
 mod draw;
 use draw::Draw;
 mod font_layout;
+use font_layout::Labelifier;
 
 use parking_lot::Mutex;
 use std::{sync::Arc, time::Instant};
@@ -68,13 +70,15 @@ impl GameBuilder {
 
         let resources = Resources::new();
         let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
-        let draw = Draw::setup(&vulkan);
+        let mut draw = Draw::setup(&vulkan);
+        let labelifier = Labelifier::new(&vulkan, &mut draw);
 
         (
             Game {
                 objects: vec![],
                 objects_map: HashMap::new(),
                 resources,
+                labelifier,
 
                 time: Instant::now(),
                 delta_instant: Instant::now(),
@@ -96,6 +100,7 @@ pub struct Game {
     objects: Vec<(NObject, Option<Arc<Mutex<Node<AObject>>>>)>,
     objects_map: HashMap<*const Mutex<Object>, NObject>,
     resources: Resources,
+    labelifier: Labelifier,
 
     time: Instant,
     delta_instant: Instant,
@@ -108,17 +113,26 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn update(&mut self) {
-        self.draw.redrawevent(
-            &mut self.vulkan,
-            self.objects.clone(),
-            self.clear_background_color,
-        );
-        self.delta_time = self.delta_instant.elapsed().as_secs_f64();
-        self.delta_instant = Instant::now();
-    }
-    pub fn recreate_swapchain(&mut self) {
-        self.draw.recreate_swapchain = true;
+    pub fn update<T: 'static>(&mut self, event: &Event<T>) {
+        match event {
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => {
+                self.draw.recreate_swapchain = true;
+            }
+            Event::RedrawEventsCleared => {
+                self.draw.redrawevent(
+                    &mut self.vulkan,
+                    self.objects.clone(),
+                    self.clear_background_color,
+                );
+                self.labelifier.update(&self.vulkan, &mut self.draw);
+                self.delta_time = self.delta_instant.elapsed().as_secs_f64();
+                self.delta_instant = Instant::now();
+            }
+            _ => (),
+        }
     }
     pub fn new_layer(&mut self) -> AObject {
         let object = Arc::new(Mutex::new(Object::new()));
@@ -132,6 +146,17 @@ impl Game {
 
         self.objects_map.insert(Arc::as_ptr(&object), node.clone());
         object
+    }
+    pub fn load_texture(&mut self, texture: Vec<u8>, dimensions: (u32, u32)) -> Arc<Texture> {
+        Texture::new(
+            texture.clone(),
+            dimensions,
+            self.draw.load_texture(&self.vulkan, texture, dimensions, 0),
+            1,
+        )
+    }
+    pub fn load_font(&mut self, data: &[u8]) -> Arc<GameFont> {
+        self.resources.load_font(data)
     }
     pub fn set_camera(
         &mut self,
@@ -194,11 +219,14 @@ impl Game {
         } else {
             return Err(NoObjectError);
         }
-        let objectguard = node.lock();
+        let mut objectguard = node.lock();
+
+        objectguard.remove_children(&mut self.objects_map);
+
         if let Some(parent) = &objectguard.parent {
             let parent = parent.clone().upgrade().unwrap();
-
-            parent.lock().remove_child(&node, &mut self.objects_map);
+            let mut parent = parent.lock();
+            parent.remove_child(&node);
         } else {
             if let Some(index) = self
                 .objects
@@ -226,25 +254,6 @@ impl Game {
     pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
         self.clear_background_color = color;
     }
-    pub fn load_font_bytes(&mut self, name: &str, data: &[u8]) {
-        self.resources.add_font_bytes(name, data);
-    }
-    pub fn unload_font(&mut self, name: &str) {
-        self.resources.remove_font(name);
-    }
-    pub fn unload_texture(&mut self, name: &str) {
-        self.resources.remove_texture(name);
-    }
-    pub fn unload_sound(&mut self, name: &str) {
-        self.resources.remove_sound(name);
-    }
-    pub fn load_sound(&mut self, name: &str, sound: &[u8]) {
-        self.resources.add_sound(name, sound);
-    }
-    pub fn load_texture(&mut self, name: &str, texture: Vec<u8>, width: u32, height: u32) {
-        self.resources.add_texture(name, texture, width, height);
-        self.draw.update_textures(&self.vulkan, &self.resources);
-    }
     pub fn get_window(&self) -> &Window {
         self.vulkan
             .surface
@@ -253,29 +262,44 @@ impl Game {
             .downcast_ref::<Window>()
             .unwrap()
     }
-    pub fn label(
+    pub fn queue_to_label(
         &mut self,
         object: &AObject,
-        font: &str,
+        font: &Arc<GameFont>,
         text: &str,
         scale: f32,
-        binding: [f32; 2],
+        align: [f32; 2],
     ) {
-        let mut object = object.lock();
-        if let Some(mut appearance) = object.graphics.as_mut() {
-            let data = font_layout::get_data(self, font, text, scale, appearance.size, binding);
-            appearance.texture = Some("fontatlas".to_string());
-            appearance.data = data;
-            appearance.material = 2;
-        } else {
-            let data = font_layout::get_data(self, font, text, scale, [1.0; 2], binding);
-            object.graphics = Some(Appearance {
-                texture: Some("fontatlas".to_string()),
-                data,
-                material: 2,
-                color: [1.0; 4],
-                ..Default::default()
-            });
-        }
+        self.labelifier
+            .queue(object.clone(), font, text.to_string(), scale, align);
     }
+
+    pub fn execute_label(&mut self) {
+        todo!();
+    }
+    //pub fn label(
+    //    &mut self,
+    //    object: &AObject,
+    //    font: &str,
+    //    text: &str,
+    //    scale: f32,
+    //    binding: [f32; 2],
+    //) {
+    //    let mut object = object.lock();
+    //    if let Some(mut appearance) = object.graphics.as_mut() {
+    //        let data = font_layout::get_data(self, font, text, scale, appearance.size, binding);
+    //        appearance.texture = Some("fontatlas".to_string());
+    //        appearance.data = data;
+    //        appearance.material = 2;
+    //    } else {
+    //        let data = font_layout::get_data(self, font, text, scale, [1.0; 2], binding);
+    //        object.graphics = Some(Appearance {
+    //            texture: Some("fontatlas".to_string()),
+    //            data,
+    //            material: 2,
+    //            color: [1.0; 4],
+    //            ..Default::default()
+    //        });
+    //    }
+    //}
 }
