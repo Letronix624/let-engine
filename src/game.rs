@@ -19,7 +19,7 @@ use font_layout::Labelifier;
 use parking_lot::Mutex;
 use std::{sync::Arc, time::Instant};
 
-use crate::{errors::*, AppInfo};
+use crate::{error::objects::*, texture::*, AppInfo};
 
 pub use self::objects::data::Vertex;
 
@@ -147,11 +147,19 @@ impl Game {
         self.objects_map.insert(Arc::as_ptr(&object), node.clone());
         object
     }
-    pub fn load_texture(&mut self, texture: Vec<u8>, dimensions: (u32, u32)) -> Arc<Texture> {
+    pub fn load_texture(
+        &mut self,
+        texture: Vec<u8>,
+        dimensions: (u32, u32),
+        layers: u32,
+        settings: TextureSettings,
+    ) -> Arc<Texture> {
         Texture::new(
             texture.clone(),
             dimensions,
-            self.draw.load_texture(&self.vulkan, texture, dimensions, 0),
+            layers,
+            self.draw
+                .load_texture(&self.vulkan, texture, dimensions, layers, settings),
             1,
         )
     }
@@ -277,29 +285,4 @@ impl Game {
     pub fn execute_label(&mut self) {
         todo!();
     }
-    //pub fn label(
-    //    &mut self,
-    //    object: &AObject,
-    //    font: &str,
-    //    text: &str,
-    //    scale: f32,
-    //    binding: [f32; 2],
-    //) {
-    //    let mut object = object.lock();
-    //    if let Some(mut appearance) = object.graphics.as_mut() {
-    //        let data = font_layout::get_data(self, font, text, scale, appearance.size, binding);
-    //        appearance.texture = Some("fontatlas".to_string());
-    //        appearance.data = data;
-    //        appearance.material = 2;
-    //    } else {
-    //        let data = font_layout::get_data(self, font, text, scale, [1.0; 2], binding);
-    //        object.graphics = Some(Appearance {
-    //            texture: Some("fontatlas".to_string()),
-    //            data,
-    //            material: 2,
-    //            color: [1.0; 4],
-    //            ..Default::default()
-    //        });
-    //    }
-    //}
 }

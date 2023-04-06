@@ -40,24 +40,9 @@ mat2 rotation_matrix (float angle) { // Rotates a vertex.
 
 void main() {
 
-    tex_coords = tex_position - camera.position;// / pc.resolution) * resolutionscaler;
-
-    // float hypo = sqrt(pow(position.x, 2) + pow(position.y, 2));
-    // vec2 processedpos = vec2(
-    //     cos(
-    //         atan(position.y, position.x) + object.rotation
-    //     ) * hypo,
-    //     sin(
-    //         atan(position.y, position.x) + object.rotation
-    //     ) * hypo
-    // ) + object.position;// * object.size;
+    tex_coords = tex_position - camera.position;
 
     vec2 position = rotation_matrix(camera.rotation) * (rotation_matrix(-object.rotation) * position * object.size + object.position - camera.position);
-
-    
-    // y bound (position + pc.camera / pc.resolution) * pc.resolution.y
-
-    // y / (x + y)
 
     vertex_color = object.color;
     textureID = object.textureID;

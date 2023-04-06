@@ -1,5 +1,7 @@
 pub mod data;
 use super::resources::*;
+use crate::error::textures::*;
+use anyhow::Result;
 pub use data::*;
 use hashbrown::HashMap;
 use parking_lot::Mutex;
@@ -19,8 +21,7 @@ pub struct Object {
     pub graphics: Option<Appearance>,
     pub camera: Option<CameraOption>,
 }
-//game objects have position, size, rotation, color texture and data.
-//text objects have position, size, rotation, color, text, font and font size.
+
 impl Object {
     pub fn new() -> Self {
         Self::default()
@@ -119,7 +120,6 @@ impl Node<Arc<Mutex<Object>>> {
         for child in objects.children.iter() {
             let child = child.lock();
             let object = objects.object.lock().clone() + child.object.lock().clone();
-            //objects.object.clone() + child.object.clone();
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();
@@ -156,6 +156,14 @@ impl Node<Arc<Mutex<Object>>> {
             self.object.lock().clone()
         }
     }
+    #[allow(dead_code)]
+    pub fn print_tree(&self, indent_level: usize) {
+        let indent = "  ".repeat(indent_level);
+        println!("{}{:?}", indent, Arc::as_ptr(&self.object));
+        for child in &self.children {
+            child.lock().print_tree(indent_level + 1);
+        }
+    }
 }
 
 /// Holds everything about the appearance of objects like
@@ -163,6 +171,7 @@ impl Node<Arc<Mutex<Object>>> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
     pub texture: Option<Arc<Texture>>,
+    pub texture_id: u32,
     pub data: Data,
     pub position: [f32; 2],
     pub size: [f32; 2],
@@ -191,6 +200,17 @@ impl Appearance {
         self.texture = Some(texture.clone());
         self
     }
+    pub fn texture_id(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(texture) = &self.texture {
+            if id > texture.frames - 1 {
+                return Err(Box::new(TextureIDError));
+            }
+        } else {
+            return Err(Box::new(NoTextureError));
+        }
+        self.texture_id = id;
+        Ok(())
+    }
     pub fn data(mut self, data: Data) -> Self {
         self.data = data;
         self
@@ -211,12 +231,27 @@ impl Appearance {
         self.color = color;
         self
     }
+    pub fn get_texture_id(&self) -> u32 {
+        self.texture_id
+    }
+    pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(texture) = &self.texture {
+            if texture.frames <= self.texture_id + 1 {
+                return Err(Box::new(TextureIDError));
+            }
+        } else {
+            return Err(Box::new(NoTextureError));
+        }
+        self.texture_id += 1;
+        Ok(())
+    }
 }
 
 impl default::Default for Appearance {
     fn default() -> Self {
         Self {
             texture: None,
+            texture_id: 0,
             data: Data::empty(),
             position: [0.0; 2],
             size: [1.0; 2],

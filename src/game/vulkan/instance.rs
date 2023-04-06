@@ -1,5 +1,3 @@
-extern crate image;
-extern crate vulkano;
 use std::sync::Arc;
 use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::{

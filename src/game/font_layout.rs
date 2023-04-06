@@ -7,7 +7,7 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font, PositionedGlyph, Scale};
 
-use crate::{Data, Vertex};
+use crate::{texture::*, Data, Vertex};
 
 use super::{
     objects::Object,
@@ -32,7 +32,18 @@ impl Labelifier {
         let texture = Texture::new(
             cache_pixel_buffer.clone(),
             cache.dimensions(),
-            draw.load_texture(vulkan, cache_pixel_buffer.clone(), cache.dimensions(), 1),
+            1,
+            draw.load_texture(
+                vulkan,
+                cache_pixel_buffer.clone(),
+                cache.dimensions(),
+                1,
+                TextureSettings {
+                    format: Format::R8,
+                    srgb: false,
+                    sampler: Sampler::default(),
+                },
+            ),
             2,
         );
 
@@ -68,11 +79,17 @@ impl Labelifier {
         self.texture = Texture::new(
             self.cache_pixel_buffer.clone(),
             self.cache.dimensions(),
+            1,
             draw.load_texture(
                 vulkan,
                 self.cache_pixel_buffer.clone(),
                 self.cache.dimensions(),
                 1,
+                TextureSettings {
+                    format: Format::R8,
+                    srgb: false,
+                    sampler: Sampler::default(),
+                },
             ),
             2,
         );

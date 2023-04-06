@@ -30,7 +30,7 @@ use super::{
     vulkan::{window_size_dependent_setup, Vulkan},
 };
 
-use crate::{game::vulkan::shaders::*, game::Node};
+use crate::{game::vulkan::shaders::*, game::Node, texture::Format as tFormat, texture::*};
 
 #[allow(unused)]
 pub struct Draw {
@@ -220,7 +220,8 @@ impl Draw {
         vulkan: &Vulkan,
         data: Vec<u8>,
         dimensions: (u32, u32),
-        format: u32,
+        layers: u32,
+        settings: TextureSettings,
     ) -> Arc<PersistentDescriptorSet> {
         let mut uploads = AutoCommandBufferBuilder::primary(
             &self.commandbufferallocator,
@@ -229,9 +230,18 @@ impl Draw {
         )
         .unwrap();
 
-        let format = match format {
-            1 => Format::R8_UNORM,
-            _ => Format::R8G8B8A8_UNORM,
+        let format = if settings.srgb {
+            match settings.format {
+                tFormat::R8 => Format::R8_SRGB,
+                tFormat::RGBA8 => Format::R8G8B8A8_SRGB,
+                tFormat::RGBA16 => Format::R16G16B16A16_UNORM,
+            }
+        } else {
+            match settings.format {
+                tFormat::R8 => Format::R8_UNORM,
+                tFormat::RGBA8 => Format::R8G8B8A8_UNORM,
+                tFormat::RGBA16 => Format::R16G16B16A16_UNORM,
+            }
         };
 
         let image = ImmutableImage::from_iter(
@@ -240,7 +250,7 @@ impl Draw {
             ImageDimensions::Dim2d {
                 width: dimensions.0,
                 height: dimensions.1,
-                array_layers: 1,
+                array_layers: layers,
             },
             MipmapsCount::One,
             format,
@@ -257,20 +267,9 @@ impl Draw {
         )
         .unwrap();
 
-        let sampler = Sampler::new(
-            vulkan.device.clone(),
-            SamplerCreateInfo {
-                mag_filter: Filter::Nearest,
-                min_filter: Filter::Linear,
-                address_mode: [
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::Repeat,
-                ],
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let samplercreateinfo = settings.sampler.to_vulkano();
+
+        let sampler = Sampler::new(vulkan.device.clone(), samplercreateinfo).unwrap();
 
         let set = PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
@@ -432,7 +431,7 @@ impl Draw {
                                     rotation: obj.rotation + appearance.rotation,
                                     textureID: if let Some(texture) = &appearance.texture {
                                         descriptors[0] = texture.set.clone();
-                                        1
+                                        appearance.texture_id
                                     } else {
                                         0
                                     },

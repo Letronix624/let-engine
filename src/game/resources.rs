@@ -26,6 +26,7 @@ impl Resources {
 pub struct Texture {
     pub data: Vec<u8>,
     pub dimensions: (u32, u32),
+    pub frames: u32,
     pub material: u32,
     pub set: Arc<PersistentDescriptorSet>,
 }
@@ -45,12 +46,14 @@ impl Texture {
     pub fn new(
         texture: Vec<u8>,
         dimensions: (u32, u32),
+        frames: u32,
         set: Arc<PersistentDescriptorSet>,
         material: u32,
     ) -> Arc<Texture> {
         Arc::new(Texture {
             data: texture,
             dimensions,
+            frames,
             material,
             set: set,
         })
@@ -74,6 +77,7 @@ impl std::fmt::Debug for Texture {
         f.debug_struct("Texture")
             .field("size", &self.data.len())
             .field("dimensions", &self.dimensions)
+            .field("frames", &self.frames)
             .field("material", &self.material)
             .finish()
     }
