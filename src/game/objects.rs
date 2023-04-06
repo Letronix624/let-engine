@@ -28,7 +28,6 @@ impl Object {
     }
     pub fn new_square() -> Self {
         Self {
-            size: [0.5, 0.5],
             graphics: Some(Appearance::new_square()),
             ..Default::default()
         }
@@ -200,6 +199,17 @@ impl Appearance {
         self.texture = Some(texture.clone());
         self
     }
+    pub fn auto_scale(&mut self) -> Result<(), NoTextureError> {
+        let dimensions = if let Some(texture) = &self.texture {
+            texture.dimensions
+        } else {
+            return Err(NoTextureError);
+        };
+
+        self.size = [dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0];
+
+        Ok(())
+    }
     pub fn texture_id(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
             if id > texture.frames - 1 {
@@ -256,7 +266,7 @@ impl default::Default for Appearance {
             position: [0.0; 2],
             size: [1.0; 2],
             rotation: 0.0,
-            color: [0.0, 0.0, 0.0, 1.0],
+            color: [1.0, 1.0, 1.0, 1.0],
         }
     }
 }

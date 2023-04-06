@@ -17,6 +17,7 @@ use vulkano::{
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use std::sync::Arc;
+use std::env;
 
 use super::AppInfo;
 
@@ -44,7 +45,11 @@ impl Vulkan {
     pub fn init(window_builder: WindowBuilder, app_info: AppInfo) -> (Self, EventLoop<()>) {
         let instance = instance::create_instance(app_info.app_name.to_string());
         let (event_loop, surface) = window::create_window(&instance, window_builder);
-        let debugmessenger = instance::setup_debug(&instance);
+        
+        let debugmessenger = if env::args().collect::<Vec<String>>().contains(&"--debug".to_string()) {
+            instance::setup_debug(&instance)
+        } else {None};
+        
         let device_extensions = instance::create_device_extensions();
         let features = Features {
             fill_mode_non_solid: true,
