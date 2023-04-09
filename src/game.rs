@@ -15,11 +15,11 @@ mod draw;
 use draw::Draw;
 mod font_layout;
 use font_layout::Labelifier;
-
+use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
 use std::{sync::Arc, time::Instant};
 
-use crate::{error::objects::*, texture::*, AppInfo};
+use crate::{error::objects::*, error::textures::*, texture::*, AppInfo};
 
 pub use self::objects::data::Vertex;
 
@@ -147,9 +147,10 @@ impl Game {
         self.objects_map.insert(Arc::as_ptr(&object), node.clone());
         object
     }
-    pub fn load_texture(
+    pub fn load_texture_from_raw(
         &mut self,
         texture: Vec<u8>,
+        format: Format,
         dimensions: (u32, u32),
         layers: u32,
         settings: TextureSettings,
@@ -159,9 +160,101 @@ impl Game {
             dimensions,
             layers,
             self.draw
-                .load_texture(&self.vulkan, texture, dimensions, layers, settings),
+                .load_texture(&self.vulkan, texture, dimensions, layers, format, settings),
             1,
         )
+    }
+    pub fn load_texture(
+        &mut self,
+        texture: &[u8],
+        format: ImageFormat,
+        layers: u32,
+        settings: TextureSettings,
+    ) -> Result<Arc<Texture>, InvalidFormatError> {
+        let image_format = match format {
+            ImageFormat::PNG => IFormat::Png,
+            ImageFormat::JPG => IFormat::Jpeg,
+            ImageFormat::BMP => IFormat::Bmp,
+            ImageFormat::TIFF => IFormat::Tiff,
+            ImageFormat::WebP => IFormat::WebP,
+            ImageFormat::TGA => IFormat::Tga,
+        };
+        let image = match load_from_memory_with_format(texture, image_format) {
+            Err(_) => return Err(InvalidFormatError),
+            Ok(v) => v,
+        };
+
+        let mut dimensions: (u32, u32);
+
+        let mut format = Format::RGBA8;
+
+        let image: Vec<u8> = match image {
+            DynamicImage::ImageLuma8(image) => {
+                format = Format::R8;
+                dimensions = image.dimensions();
+                image.into_vec()
+            }
+            DynamicImage::ImageLumaA8(_) => {
+                let image = image.to_rgba8();
+                dimensions = image.dimensions();
+                image.into_vec()
+            }
+            DynamicImage::ImageLuma16(_) => {
+                let image = image.to_luma8();
+                dimensions = image.dimensions();
+                format = Format::R8;
+                image.into_vec()
+            }
+            DynamicImage::ImageLumaA16(_) => {
+                let image = image.to_rgba16();
+                dimensions = image.dimensions();
+                format = Format::RGBA16;
+                u16tou8vec(image.into_vec())
+            }
+            DynamicImage::ImageRgb8(_) => {
+                let image = image.to_rgba8();
+                dimensions = image.dimensions();
+                image.into_vec()
+            }
+            DynamicImage::ImageRgba8(image) => {
+                dimensions = image.dimensions();
+                image.into_vec()
+            }
+            DynamicImage::ImageRgb16(_) => {
+                let image = image.to_rgba16();
+                dimensions = image.dimensions();
+                format = Format::RGBA16;
+                u16tou8vec(image.into_vec())
+            }
+            DynamicImage::ImageRgba16(image) => {
+                format = Format::RGBA16;
+                dimensions = image.dimensions();
+                u16tou8vec(image.into_vec())
+            }
+            DynamicImage::ImageRgb32F(_) => {
+                let image = image.to_rgba16();
+                dimensions = image.dimensions();
+                format = Format::RGBA16;
+                u16tou8vec(image.into_vec())
+            }
+            DynamicImage::ImageRgba32F(_) => {
+                let image = image.to_rgba16();
+                dimensions = image.dimensions();
+                format = Format::RGBA16;
+                u16tou8vec(image.into_vec())
+            }
+            _ => {
+                let image = image.to_rgba8();
+                dimensions = image.dimensions();
+                image.into_vec()
+            }
+        };
+
+        dimensions.1 = dimensions.1 / layers;
+
+        Ok(Self::load_texture_from_raw(
+            self, image, format, dimensions, layers, settings,
+        ))
     }
     pub fn load_font(&mut self, data: &[u8]) -> Arc<GameFont> {
         self.resources.load_font(data)
@@ -281,8 +374,14 @@ impl Game {
         self.labelifier
             .queue(object.clone(), font, text.to_string(), scale, align);
     }
+}
 
-    pub fn execute_label(&mut self) {
-        todo!();
-    }
+fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
+    data.iter()
+        .flat_map(|&u16_value| {
+            let high_byte = ((u16_value >> 8) & 0xff) as u8;
+            let low_byte = (u16_value & 0xff) as u8;
+            vec![high_byte, low_byte]
+        })
+        .collect()
 }

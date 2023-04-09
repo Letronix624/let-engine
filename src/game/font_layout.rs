@@ -38,8 +38,8 @@ impl Labelifier {
                 cache_pixel_buffer.clone(),
                 cache.dimensions(),
                 1,
+                Format::R8,
                 TextureSettings {
-                    format: Format::R8,
                     srgb: false,
                     sampler: Sampler::default(),
                 },
@@ -85,8 +85,8 @@ impl Labelifier {
                 self.cache_pixel_buffer.clone(),
                 self.cache.dimensions(),
                 1,
+                Format::R8,
                 TextureSettings {
-                    format: Format::R8,
                     srgb: false,
                     sampler: Sampler::default(),
                 },

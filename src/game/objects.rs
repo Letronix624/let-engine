@@ -255,6 +255,17 @@ impl Appearance {
         self.texture_id += 1;
         Ok(())
     }
+    pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(_) = &self.texture {
+            if self.texture_id == 0 {
+                return Err(Box::new(TextureIDError));
+            }
+        } else {
+            return Err(Box::new(NoTextureError));
+        }
+        self.texture_id -= 1;
+        Ok(())
+    }
 }
 
 impl default::Default for Appearance {

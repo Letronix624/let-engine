@@ -221,6 +221,7 @@ impl Draw {
         data: Vec<u8>,
         dimensions: (u32, u32),
         layers: u32,
+        format: tFormat,
         settings: TextureSettings,
     ) -> Arc<PersistentDescriptorSet> {
         let mut uploads = AutoCommandBufferBuilder::primary(
@@ -231,13 +232,13 @@ impl Draw {
         .unwrap();
 
         let format = if settings.srgb {
-            match settings.format {
+            match format {
                 tFormat::R8 => Format::R8_SRGB,
                 tFormat::RGBA8 => Format::R8G8B8A8_SRGB,
                 tFormat::RGBA16 => Format::R16G16B16A16_UNORM,
             }
         } else {
-            match settings.format {
+            match format {
                 tFormat::R8 => Format::R8_UNORM,
                 tFormat::RGBA8 => Format::R8G8B8A8_UNORM,
                 tFormat::RGBA16 => Format::R16G16B16A16_UNORM,

@@ -11,3 +11,9 @@ pub struct TextureIDError;
 #[derive(Error, Debug)]
 #[error("This object doesn't have a texture.")]
 pub struct NoTextureError;
+
+/// This error gets returned when you give the wrong format to the texture when trying to create a
+/// new texture.
+#[derive(Error, Debug)]
+#[error("The format doesn't work with this image.")]
+pub struct InvalidFormatError;

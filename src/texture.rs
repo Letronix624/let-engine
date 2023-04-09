@@ -28,6 +28,16 @@ pub enum AddressMode {
     ClampToBorder,
 }
 
+/// Format of the image.
+pub enum ImageFormat {
+    PNG,
+    JPG,
+    BMP,
+    TIFF,
+    WebP,
+    TGA,
+}
+
 /// The sampler of the texture that determines how the shader should handle textures.
 pub struct Sampler {
     /// Way to filter the texture when the texture is bigger than it's actual resolution.
@@ -44,8 +54,6 @@ pub struct Sampler {
 
 /// The main texture settings.
 pub struct TextureSettings {
-    /// Raw image format
-    pub format: Format,
     /// SRGB mode.
     pub srgb: bool,
     /// Image sampler
@@ -112,7 +120,6 @@ impl Sampler {
 impl Default for TextureSettings {
     fn default() -> Self {
         Self {
-            format: Format::RGBA8,
             srgb: true,
             sampler: Sampler::default(),
         }
@@ -120,10 +127,6 @@ impl Default for TextureSettings {
 }
 
 impl TextureSettings {
-    pub fn format(mut self, format: Format) -> Self {
-        self.format = format;
-        self
-    }
     pub fn srgb(mut self, srgb: bool) -> Self {
         self.srgb = srgb;
         self

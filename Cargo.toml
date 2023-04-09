@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Let"]
 edition = "2021"
 description = "A game engine to learn vulkan made by Let. Not done yet."
@@ -21,7 +21,7 @@ vulkano-win = "0.32.0"
 vulkano-shaders = "0.31.1"
 bytemuck = "1.8.0"
 winit = "0.27.5"
-image = "0.24.4"
+image = "0.24.6"
 rodio = "0.16.0"
 rusttype = { version = "0.9.3", features = ["gpu_cache"] }
 error-stack = "0.3.0"
