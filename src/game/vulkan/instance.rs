@@ -3,8 +3,8 @@ use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::{
     physical::PhysicalDeviceType, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
 };
-use vulkano::device::{Device, Features, Queue};
-use vulkano::instance::{debug::*, Instance, InstanceCreateInfo, InstanceExtensions};
+use vulkano::device::{Device, Features, Queue, QueueFlags};
+use vulkano::instance::{Instance, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 
@@ -48,62 +48,6 @@ pub fn create_instance(appname: String) -> Arc<Instance> {
     };
     Instance::new(library, gameinfo).expect("Couldn't start Vulkan.")
 }
-pub fn setup_debug(instance: &Arc<Instance>) -> Option<DebugUtilsMessenger> {
-    unsafe {
-        DebugUtilsMessenger::new(
-            instance.clone(),
-            DebugUtilsMessengerCreateInfo {
-                message_severity: DebugUtilsMessageSeverity {
-                    error: true,
-                    warning: true,
-                    information: true,
-                    verbose: true,
-                    ..DebugUtilsMessageSeverity::empty()
-                },
-                message_type: DebugUtilsMessageType {
-                    general: true,
-                    validation: true,
-                    performance: true,
-                    ..DebugUtilsMessageType::empty()
-                },
-                ..DebugUtilsMessengerCreateInfo::user_callback(Arc::new(|msg| {
-                    let severity = if msg.severity.error {
-                        "error"
-                    } else if msg.severity.warning {
-                        "warning"
-                    } else if msg.severity.information {
-                        "information"
-                    } else if msg.severity.verbose {
-                        "verbose"
-                    } else {
-                        panic!("no-impl");
-                    };
-
-                    let ty = if msg.ty.general {
-                        "general"
-                    } else if msg.ty.validation {
-                        "validation"
-                    } else if msg.ty.performance {
-                        "performance"
-                    } else {
-                        panic!("no-impl");
-                    };
-                    if severity != "verbose" {
-                        println!(
-                            "{} {} {}: {}",
-                            msg.layer_prefix.unwrap_or("unknown"),
-                            ty,
-                            severity,
-                            msg.description
-                        );
-                    }
-                }))
-            },
-        )
-        .ok()
-    }
-}
-
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
@@ -126,7 +70,9 @@ pub fn create_physical_and_queue(
                 .iter()
                 .enumerate()
                 .position(|(i, q)| {
-                    q.queue_flags.graphics && p.surface_support(i as u32, surface).unwrap_or(false)
+                    q.queue_flags.intersects(QueueFlags::GRAPHICS)
+                        && p.surface_support(i as u32, &surface).unwrap_or(false)
+                    //q.queue_flags.graphics && p.surface_support(i as u32, surface).unwrap_or(false)
                 })
                 .map(|i| (p, i as u32))
         })

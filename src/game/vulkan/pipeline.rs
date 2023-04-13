@@ -1,12 +1,12 @@
 extern crate image;
 extern crate vulkano;
-use crate::game::objects::data::*;
+use crate::game::objects::data::Vertex as GameVertex;
 use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
 use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
 use vulkano::pipeline::graphics::{
-    input_assembly::InputAssemblyState, vertex_input::BuffersDefinition, viewport::ViewportState,
+    input_assembly::InputAssemblyState, vertex_input::Vertex, viewport::ViewportState,
 };
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::Subpass;
@@ -19,7 +19,7 @@ pub fn create_pipeline(
     subpass: Subpass,
 ) -> Arc<GraphicsPipeline> {
     GraphicsPipeline::start()
-        .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
+        .vertex_input_state(GameVertex::per_vertex())
         .input_assembly_state(InputAssemblyState::new())
         .vertex_shader(vs.entry_point("main").unwrap(), ())
         .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())

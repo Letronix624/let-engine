@@ -23,10 +23,6 @@ pub fn create_swapchain_and_images(
             .unwrap()[0]
             .0,
     );
-    let image_usage = ImageUsage {
-        color_attachment: true,
-        ..ImageUsage::empty()
-    };
     let innersize = surface
         .object()
         .unwrap()
@@ -45,11 +41,11 @@ pub fn create_swapchain_and_images(
             min_image_count: surface_capabilities.min_image_count,
             image_format,
             image_extent: innersize,
-            image_usage,
+            image_usage: ImageUsage::COLOR_ATTACHMENT,
             present_mode,
             composite_alpha: surface_capabilities
                 .supported_composite_alpha
-                .iter()
+                .into_iter()
                 .next()
                 .unwrap(),
             ..Default::default()

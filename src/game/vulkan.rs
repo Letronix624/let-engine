@@ -8,7 +8,7 @@ mod window;
 use vulkano::{
     device::{physical::PhysicalDevice, Device, DeviceExtensions, Features, Queue},
     image::{view::ImageView, ImageAccess, SwapchainImage},
-    instance::{debug::*, Instance},
+    instance::Instance,
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline},
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     shader::ShaderModule,
@@ -16,14 +16,12 @@ use vulkano::{
 };
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
-use std::env;
 use std::sync::Arc;
 
 use super::AppInfo;
 
 pub struct Vulkan {
     pub instance: Arc<Instance>,
-    pub debugmessenger: Option<DebugUtilsMessenger>,
     pub surface: Arc<Surface>,
     pub device_extensions: DeviceExtensions,
     pub features: Features,
@@ -45,15 +43,6 @@ impl Vulkan {
     pub fn init(window_builder: WindowBuilder, app_info: AppInfo) -> (Self, EventLoop<()>) {
         let instance = instance::create_instance(app_info.app_name.to_string());
         let (event_loop, surface) = window::create_window(&instance, window_builder);
-
-        let debugmessenger = if env::args()
-            .collect::<Vec<String>>()
-            .contains(&"--debug".to_string())
-        {
-            instance::setup_debug(&instance)
-        } else {
-            None
-        };
 
         let device_extensions = instance::create_device_extensions();
         let features = Features {
@@ -106,7 +95,6 @@ impl Vulkan {
         (
             Self {
                 instance,
-                debugmessenger,
                 surface,
                 device_extensions,
                 features,

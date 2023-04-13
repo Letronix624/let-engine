@@ -25,8 +25,8 @@ pub fn create_window(
     //     // ))
     //     .with_always_on_top(true)
     //     .with_decorations(true)
+
     let surface = builder
-        .with_visible(false)
         .build_vk_surface(&event_loop, instance.clone())
         .unwrap();
 

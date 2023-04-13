@@ -1,20 +1,51 @@
-use bytemuck::{Pod, Zeroable};
-use vulkano::impl_vertex;
+use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Zeroable, Pod, PartialEq)]
+#[derive(BufferContents, VTX, Debug, Clone, Copy, PartialEq)]
 pub struct Vertex {
+    #[format(R32G32_SFLOAT)]
     pub position: [f32; 2],
+    #[format(R32G32_SFLOAT)]
     pub tex_position: [f32; 2],
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Zeroable, Pod, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, BufferContents)]
 pub struct Camera {
     pub position: [f32; 2],
     pub rotation: f32,
     pub zoom: f32,
     pub mode: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
+pub struct DrawObject {
+    pub color: [f32; 4],
+    pub position: [f32; 2],
+    pub size: [f32; 2],
+    pub rotation: f32,
+    pub texture_id: u32,
+    pub material: u32,
+}
+
+impl Default for DrawObject {
+    fn default() -> Self {
+        Self {
+            color: [0.0, 0.0, 0.0, 0.0],
+            position: [0.0, 0.0],
+            size: [1.0, 1.0],
+            rotation: 0.0,
+            texture_id: 0,
+            material: 0,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, BufferContents)]
+pub struct PushConstant {
+    pub resolution: [f32; 2],
 }
 
 impl Camera {
@@ -92,8 +123,6 @@ impl Data {
 }
 
 //struct object with position, size, rotation.
-
-impl_vertex!(Vertex, position, tex_position);
 
 #[allow(dead_code)]
 pub const TRIANGLE: [Vertex; 3] = [

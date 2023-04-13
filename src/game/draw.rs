@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::{
-    buffer::{BufferUsage, CpuBufferPool},
+    buffer::{allocator::*, BufferUsage, Subbuffer},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
         PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
@@ -14,7 +14,7 @@ use vulkano::{
         view::{ImageView, ImageViewCreateInfo},
         ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
     },
-    memory::allocator::{MemoryUsage, StandardMemoryAllocator},
+    memory::allocator::StandardMemoryAllocator,
     pipeline::Pipeline,
     sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
     swapchain::{
@@ -30,17 +30,17 @@ use super::{
     vulkan::{window_size_dependent_setup, Vulkan},
 };
 
-use crate::{game::vulkan::shaders::*, game::Node, texture::Format as tFormat, texture::*};
+use crate::{game::Node, texture::Format as tFormat, texture::*};
 
 #[allow(unused)]
 pub struct Draw {
     pub recreate_swapchain: bool,
     descriptors: [Arc<PersistentDescriptorSet>; 3],
+    pub vertex_buffer_allocator: SubbufferAllocator,
+    pub index_buffer_allocator: SubbufferAllocator,
+    pub object_sub_buffer: Subbuffer<DrawObject>,
+    pub camera_sub_buffer: Subbuffer<Camera>,
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
-    vertex_buffer: CpuBufferPool<Vertex>,
-    object_buffer: CpuBufferPool<vertexshader::ty::Object>,
-    index_buffer: CpuBufferPool<u32>,
-    camera_buffer: CpuBufferPool<Camera>,
     pub memoryallocator: Arc<StandardMemoryAllocator>,
     pub commandbufferallocator: StandardCommandBufferAllocator,
     descriptor_set_allocator: StandardDescriptorSetAllocator,
@@ -52,33 +52,28 @@ impl Draw {
 
         let memoryallocator = Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
 
-        let vertex_buffer: CpuBufferPool<Vertex> =
-            CpuBufferPool::vertex_buffer(memoryallocator.clone());
-
-        let object_buffer: CpuBufferPool<vertexshader::ty::Object> = CpuBufferPool::new(
+        let vertex_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
             memoryallocator.clone(),
-            BufferUsage {
-                uniform_buffer: true,
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
-            MemoryUsage::Upload,
-        );
-        let index_buffer: CpuBufferPool<u32> = CpuBufferPool::new(
-            memoryallocator.clone(),
-            BufferUsage {
-                index_buffer: true,
-                ..Default::default()
-            },
-            MemoryUsage::Upload,
         );
 
-        let camera_buffer: CpuBufferPool<Camera> = CpuBufferPool::new(
+        let index_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
             memoryallocator.clone(),
-            BufferUsage {
-                uniform_buffer: true,
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::INDEX_BUFFER,
                 ..Default::default()
             },
-            MemoryUsage::Upload,
+        );
+
+        let object_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
+            memoryallocator.clone(),
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::UNIFORM_BUFFER,
+                ..Default::default()
+            },
         );
 
         let commandbufferallocator =
@@ -135,6 +130,12 @@ impl Draw {
             .unwrap()
         };
 
+        let object_sub_buffer = object_buffer_allocator.allocate_sized().unwrap();
+        let camera_sub_buffer = object_buffer_allocator.allocate_sized().unwrap();
+
+        *object_sub_buffer.write().unwrap() = DrawObject::default();
+        *camera_sub_buffer.write().unwrap() = Camera::new();
+
         let descriptors = [
             PersistentDescriptorSet::new(
                 &descriptor_set_allocator,
@@ -161,19 +162,7 @@ impl Draw {
                     .get(1)
                     .unwrap()
                     .clone(),
-                [WriteDescriptorSet::buffer(
-                    0,
-                    object_buffer
-                        .from_data(vertexshader::ty::Object {
-                            color: [0.0, 0.0, 0.0, 0.0],
-                            position: [0.0, 0.0],
-                            size: [1.0, 1.0],
-                            rotation: 0.0,
-                            textureID: 0,
-                            material: 0,
-                        })
-                        .unwrap(),
-                )],
+                [WriteDescriptorSet::buffer(0, object_sub_buffer.clone())],
             )
             .unwrap(),
             PersistentDescriptorSet::new(
@@ -185,10 +174,7 @@ impl Draw {
                     .get(2)
                     .unwrap()
                     .clone(),
-                [WriteDescriptorSet::buffer(
-                    0,
-                    camera_buffer.from_data(Camera::new()).unwrap(),
-                )],
+                [WriteDescriptorSet::buffer(0, camera_sub_buffer.clone())],
             )
             .unwrap(),
         ];
@@ -204,11 +190,11 @@ impl Draw {
         Self {
             recreate_swapchain,
             descriptors,
+            vertex_buffer_allocator,
+            index_buffer_allocator,
+            object_sub_buffer,
+            camera_sub_buffer,
             previous_frame_end,
-            vertex_buffer,
-            object_buffer,
-            index_buffer,
-            camera_buffer,
             memoryallocator,
             commandbufferallocator,
             descriptor_set_allocator,
@@ -380,7 +366,7 @@ impl Draw {
 
         //buffer updates
 
-        let push_constants = vertexshader::ty::PushConstant {
+        let push_constants = PushConstant {
             resolution: [dimensions.width as f32, dimensions.height as f32],
         };
 
@@ -407,6 +393,30 @@ impl Draw {
                 if let Some(appearance) = obj.graphics.clone() {
                     let mut descriptors = self.descriptors.clone();
 
+                    *self.object_sub_buffer.write().unwrap() = DrawObject {
+                        color: appearance.color,
+                        position: [
+                            obj.position[0] + appearance.position[0],
+                            obj.position[1] + appearance.position[1],
+                        ],
+                        size: [
+                            obj.size[0] * appearance.size[0],
+                            obj.size[1] * appearance.size[1],
+                        ],
+                        rotation: obj.rotation + appearance.rotation,
+                        texture_id: if let Some(texture) = &appearance.texture {
+                            descriptors[0] = texture.set.clone();
+                            appearance.texture_id
+                        } else {
+                            0
+                        },
+                        material: if let Some(texture) = &appearance.texture {
+                            texture.material
+                        } else {
+                            0
+                        },
+                    };
+
                     descriptors[1] = PersistentDescriptorSet::new(
                         &self.descriptor_set_allocator,
                         vulkan
@@ -418,34 +428,11 @@ impl Draw {
                             .clone(),
                         [WriteDescriptorSet::buffer(
                             0,
-                            self.object_buffer
-                                .from_data(vertexshader::ty::Object {
-                                    color: appearance.color,
-                                    position: [
-                                        obj.position[0] + appearance.position[0],
-                                        obj.position[1] + appearance.position[1],
-                                    ],
-                                    size: [
-                                        obj.size[0] * appearance.size[0],
-                                        obj.size[1] * appearance.size[1],
-                                    ],
-                                    rotation: obj.rotation + appearance.rotation,
-                                    textureID: if let Some(texture) = &appearance.texture {
-                                        descriptors[0] = texture.set.clone();
-                                        appearance.texture_id
-                                    } else {
-                                        0
-                                    },
-                                    material: if let Some(texture) = &appearance.texture {
-                                        texture.material
-                                    } else {
-                                        0
-                                    },
-                                })
-                                .unwrap(),
+                            self.object_sub_buffer.clone(),
                         )],
                     )
                     .unwrap();
+                    *self.camera_sub_buffer.write().unwrap() = camera;
                     descriptors[2] = PersistentDescriptorSet::new(
                         &self.descriptor_set_allocator,
                         vulkan
@@ -457,19 +444,29 @@ impl Draw {
                             .clone(),
                         [WriteDescriptorSet::buffer(
                             0,
-                            self.camera_buffer.from_data(camera).unwrap(),
+                            self.camera_sub_buffer.clone(),
                         )],
                     )
                     .unwrap();
 
-                    let index_sub_buffer = self
-                        .index_buffer
-                        .from_iter(appearance.data.indices.clone())
-                        .unwrap();
                     let vertex_sub_buffer = self
-                        .vertex_buffer
-                        .from_iter(appearance.data.vertices.clone())
+                        .vertex_buffer_allocator
+                        .allocate_slice(appearance.data.vertices.clone().len() as _)
                         .unwrap();
+                    let index_sub_buffer = self
+                        .index_buffer_allocator
+                        .allocate_slice(appearance.data.indices.clone().len() as _)
+                        .unwrap();
+
+                    vertex_sub_buffer
+                        .write()
+                        .unwrap()
+                        .copy_from_slice(&appearance.data.vertices);
+                    index_sub_buffer
+                        .write()
+                        .unwrap()
+                        .copy_from_slice(&appearance.data.indices);
+
                     builder
                         .bind_descriptor_sets(
                             vulkano::pipeline::PipelineBindPoint::Graphics,
@@ -480,7 +477,6 @@ impl Draw {
                         .bind_vertex_buffers(0, vertex_sub_buffer.clone())
                         .bind_index_buffer(index_sub_buffer.clone())
                         .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
-                        //.draw(appearance.data.vertices.len() as u32, 1, 0, 0)
                         .draw_indexed(appearance.data.indices.len() as u32, 1, 0, 0, 0)
                         .unwrap();
                 }
