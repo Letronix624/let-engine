@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::{
-    buffer::{allocator::*, BufferUsage, Subbuffer},
+    buffer::{allocator::*, BufferUsage},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
         PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
@@ -38,8 +38,7 @@ pub struct Draw {
     descriptors: [Arc<PersistentDescriptorSet>; 3],
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,
-    pub object_sub_buffer: Subbuffer<DrawObject>,
-    pub camera_sub_buffer: Subbuffer<Camera>,
+    pub object_buffer_allocator: SubbufferAllocator,
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
     pub memoryallocator: Arc<StandardMemoryAllocator>,
     pub commandbufferallocator: StandardCommandBufferAllocator,
@@ -192,8 +191,7 @@ impl Draw {
             descriptors,
             vertex_buffer_allocator,
             index_buffer_allocator,
-            object_sub_buffer,
-            camera_sub_buffer,
+            object_buffer_allocator,
             previous_frame_end,
             memoryallocator,
             commandbufferallocator,
@@ -393,7 +391,10 @@ impl Draw {
                 if let Some(appearance) = obj.graphics.clone() {
                     let mut descriptors = self.descriptors.clone();
 
-                    *self.object_sub_buffer.write().unwrap() = DrawObject {
+                    let object_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();
+                    let camera_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();
+
+                    *object_sub_buffer.write().unwrap() = DrawObject {
                         color: appearance.color,
                         position: [
                             obj.position[0] + appearance.position[0],
@@ -426,13 +427,10 @@ impl Draw {
                             .get(1)
                             .unwrap()
                             .clone(),
-                        [WriteDescriptorSet::buffer(
-                            0,
-                            self.object_sub_buffer.clone(),
-                        )],
+                        [WriteDescriptorSet::buffer(0, object_sub_buffer.clone())],
                     )
                     .unwrap();
-                    *self.camera_sub_buffer.write().unwrap() = camera;
+                    *camera_sub_buffer.write().unwrap() = camera;
                     descriptors[2] = PersistentDescriptorSet::new(
                         &self.descriptor_set_allocator,
                         vulkan
@@ -442,10 +440,7 @@ impl Draw {
                             .get(2)
                             .unwrap()
                             .clone(),
-                        [WriteDescriptorSet::buffer(
-                            0,
-                            self.camera_sub_buffer.clone(),
-                        )],
+                        [WriteDescriptorSet::buffer(0, camera_sub_buffer.clone())],
                     )
                     .unwrap();
 
