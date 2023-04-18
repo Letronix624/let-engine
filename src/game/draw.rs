@@ -389,8 +389,10 @@ impl Draw {
 
             for obj in order {
                 if let Some(appearance) = obj.graphics.clone() {
+                    if &appearance.data.vertices.len() == &0 {
+                        continue
+                    }
                     let mut descriptors = self.descriptors.clone();
-
                     let object_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();
                     let camera_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();
 
