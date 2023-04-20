@@ -1,5 +1,3 @@
-extern crate image;
-extern crate vulkano;
 use crate::game::objects::data::Vertex as GameVertex;
 use std::sync::Arc;
 use vulkano::device::Device;

@@ -15,6 +15,7 @@ mod draw;
 use draw::Draw;
 mod font_layout;
 use font_layout::Labelifier;
+pub mod materials;
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
 use std::{sync::Arc, time::Instant};
@@ -69,7 +70,7 @@ impl GameBuilder {
         let clear_background_color = self.clear_background_color;
 
         let resources = Resources::new();
-        let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
+        let (shaders, vulkan, event_loop) = Vulkan::init(window_builder, app_info);
         let mut draw = Draw::setup(&vulkan);
         let labelifier = Labelifier::new(&vulkan, &mut draw);
 
@@ -86,8 +87,9 @@ impl GameBuilder {
                 clear_background_color,
 
                 app_info,
-                vulkan,
                 draw,
+                vulkan,
+                shaders,
             },
             event_loop,
         )
@@ -110,6 +112,7 @@ pub struct Game {
     app_info: AppInfo,
     draw: Draw,
     vulkan: Vulkan,
+    shaders: materials::Shaders,
 }
 
 impl Game {
@@ -163,6 +166,23 @@ impl Game {
                 .load_texture(&self.vulkan, texture, dimensions, layers, format, settings),
             1,
         )
+    }
+
+    pub unsafe fn new_shader_from_raw(
+        // loading things all temporary. Will get sepparated to their own things soon.
+        &self,
+        vertex_bytes: &[u8],
+        fragment_bytes: &[u8],
+    ) -> materials::Shaders {
+        unsafe { materials::Shaders::from_bytes(vertex_bytes, fragment_bytes, &self.vulkan) }
+    }
+
+    pub fn default_shader(&self) -> &materials::Shaders {
+        &self.shaders
+    }
+
+    pub fn new_material(&mut self, settings: materials::MaterialSettings) -> materials::Material {
+        self.draw.load_material(&self.vulkan, settings)
     }
     pub fn load_texture(
         &mut self,

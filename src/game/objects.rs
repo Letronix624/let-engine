@@ -1,5 +1,5 @@
 pub mod data;
-use super::resources::*;
+use super::{resources::*, materials};
 use crate::error::textures::*;
 use anyhow::Result;
 pub use data::*;
@@ -171,6 +171,7 @@ impl Node<Arc<Mutex<Object>>> {
 pub struct Appearance {
     pub texture: Option<Arc<Texture>>,
     pub texture_id: u32,
+    pub material: Option<materials::Material>,
     pub data: Data,
     pub position: [f32; 2],
     pub size: [f32; 2],
@@ -241,6 +242,10 @@ impl Appearance {
         self.color = color;
         self
     }
+    pub fn material(mut self, material: materials::Material) -> Self {
+        self.material = Some(material);
+        self
+    }
     pub fn get_texture_id(&self) -> u32 {
         self.texture_id
     }
@@ -273,6 +278,7 @@ impl default::Default for Appearance {
         Self {
             texture: None,
             texture_id: 0,
+            material: None,
             data: Data::empty(),
             position: [0.0; 2],
             size: [1.0; 2],

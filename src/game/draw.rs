@@ -16,6 +16,7 @@ use vulkano::{
     },
     memory::allocator::StandardMemoryAllocator,
     pipeline::Pipeline,
+    render_pass::Subpass,
     sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
     swapchain::{
         acquire_next_image, AcquireError, SwapchainCreateInfo, SwapchainCreationError,
@@ -26,6 +27,7 @@ use vulkano::{
 use winit::window::Window;
 
 use super::{
+    materials,
     objects::{data::*, Object},
     vulkan::{window_size_dependent_setup, Vulkan},
 };
@@ -197,6 +199,15 @@ impl Draw {
             commandbufferallocator,
             descriptor_set_allocator,
         }
+    }
+
+    pub fn load_material(
+        &mut self,
+        vulkan: &Vulkan,
+        settings: materials::MaterialSettings,
+    ) -> materials::Material {
+        let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
+        materials::Material::new(settings, vulkan, subpass)
     }
 
     pub fn load_texture(
@@ -390,7 +401,7 @@ impl Draw {
             for obj in order {
                 if let Some(appearance) = obj.graphics.clone() {
                     if &appearance.data.vertices.len() == &0 {
-                        continue
+                        continue;
                     }
                     let mut descriptors = self.descriptors.clone();
                     let object_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();

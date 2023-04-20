@@ -11,14 +11,13 @@ use vulkano::{
     instance::Instance,
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline},
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
-    shader::ShaderModule,
     swapchain::{Surface, Swapchain},
 };
 use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use std::sync::Arc;
 
-use super::AppInfo;
+use super::{materials, AppInfo};
 
 pub struct Vulkan {
     pub instance: Arc<Instance>,
@@ -31,8 +30,6 @@ pub struct Vulkan {
     pub queue: Arc<Queue>,
     pub swapchain: Arc<Swapchain>,
     pub images: Vec<Arc<SwapchainImage>>,
-    pub vs: Arc<ShaderModule>,
-    pub fs: Arc<ShaderModule>,
     pub render_pass: Arc<RenderPass>,
     pub pipeline: Arc<GraphicsPipeline>,
     pub viewport: Viewport,
@@ -40,13 +37,17 @@ pub struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn init(window_builder: WindowBuilder, app_info: AppInfo) -> (Self, EventLoop<()>) {
+    pub fn init(
+        window_builder: WindowBuilder,
+        app_info: AppInfo,
+    ) -> (materials::Shaders, Self, EventLoop<()>) {
         let instance = instance::create_instance(app_info.app_name.to_string());
         let (event_loop, surface) = window::create_window(&instance, window_builder);
 
         let device_extensions = instance::create_device_extensions();
         let features = Features {
             fill_mode_non_solid: true,
+            wide_lines: true,
             ..Features::empty()
         };
         let (physical_device, queue_family_index) =
@@ -93,6 +94,10 @@ impl Vulkan {
         let framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut viewport);
 
         (
+            materials::Shaders {
+                vertex: vs,
+                fragment: fs,
+            },
             Self {
                 instance,
                 surface,
@@ -104,8 +109,6 @@ impl Vulkan {
                 queue,
                 swapchain,
                 images,
-                vs,
-                fs,
                 render_pass,
                 pipeline,
                 viewport,
