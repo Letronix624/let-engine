@@ -6,6 +6,8 @@ pub mod objects;
 pub use objects::{data::Data, Appearance, CameraOption, CameraScaling, Node, Object};
 pub mod vulkan;
 use vulkan::Vulkan;
+use vulkano::descriptor_set::WriteDescriptorSet;
+use vulkano::buffer::BufferContents;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::EventLoop,
@@ -70,10 +72,9 @@ impl GameBuilder {
         let clear_background_color = self.clear_background_color;
 
         let resources = Resources::new();
-        let (shaders, vulkan, event_loop) = Vulkan::init(window_builder, app_info);
+        let (vulkan, event_loop) = Vulkan::init(window_builder, app_info);
         let mut draw = Draw::setup(&vulkan);
         let labelifier = Labelifier::new(&vulkan, &mut draw);
-
         (
             Game {
                 objects: vec![],
@@ -89,7 +90,6 @@ impl GameBuilder {
                 app_info,
                 draw,
                 vulkan,
-                shaders,
             },
             event_loop,
         )
@@ -111,8 +111,7 @@ pub struct Game {
 
     app_info: AppInfo,
     draw: Draw,
-    vulkan: Vulkan,
-    shaders: materials::Shaders,
+    pub vulkan: Vulkan, // temporary pub before packing it to be thread safe.
 }
 
 impl Game {
@@ -158,14 +157,19 @@ impl Game {
         layers: u32,
         settings: TextureSettings,
     ) -> Arc<Texture> {
-        Texture::new(
-            texture.clone(),
+        Arc::new(Texture {
+            data: texture.clone(),
             dimensions,
             layers,
-            self.draw
-                .load_texture(&self.vulkan, texture, dimensions, layers, format, settings),
-            1,
-        )
+            set: self.draw.load_texture(
+                &self.vulkan,
+                texture,
+                dimensions,
+                layers,
+                format,
+                settings,
+            ),
+        })
     }
 
     pub unsafe fn new_shader_from_raw(
@@ -177,13 +181,57 @@ impl Game {
         unsafe { materials::Shaders::from_bytes(vertex_bytes, fragment_bytes, &self.vulkan) }
     }
 
-    pub fn default_shader(&self) -> &materials::Shaders {
-        &self.shaders
+    pub fn default_textured_material(&mut self, texture: &Arc<Texture>) -> materials::Material {
+        let default = if texture.layers == 1 {
+            self.vulkan.textured_material.clone()
+        } else {
+            self.vulkan.texture_array_material.clone()
+        };
+        materials::Material {
+            texture: Some(Arc::clone(texture)),
+            ..default
+        }
     }
 
-    pub fn new_material(&mut self, settings: materials::MaterialSettings) -> materials::Material {
-        self.draw.load_material(&self.vulkan, settings)
+    /// Simplification of making a texture and putting it into a material.
+    pub fn new_material_from_texture(&mut self, texture: &[u8], format: ImageFormat, layers: u32, settings: TextureSettings) -> Result<materials::Material, InvalidFormatError> {
+        let texture = Self::load_texture(self, texture, format, layers, settings);
+        
+        if let Err(error) = texture {
+            return Err(error);
+        }
+        
+        Ok(Self::default_textured_material(self, &texture.unwrap()))
     }
+
+    /// Simplification of making a texture and putting it into a material.
+    pub fn new_material_from_raw_texture(
+        &mut self,
+        texture: Vec<u8>,
+        format: Format,
+        dimensions: (u32, u32),
+        layers: u32,
+        settings: TextureSettings,
+    ) -> materials::Material {
+        let texture = Self::load_texture_from_raw(
+            self,
+            texture,
+            format,
+            dimensions,
+            layers,
+            settings,
+        );
+        Self::default_textured_material(self, &texture)
+    }
+
+    pub fn new_material(&mut self, settings: materials::MaterialSettings, descriptor_bindings: Vec<WriteDescriptorSet>) -> materials::Material {
+        self.draw.load_material(&self.vulkan, settings, descriptor_bindings)
+    }
+    
+    pub fn new_descriptor_write<T: BufferContents>(&mut self, buf: T, set: u32) -> WriteDescriptorSet {
+        self.draw.write_descriptor(buf, set)
+    }
+    
     pub fn load_texture(
         &mut self,
         texture: &[u8],

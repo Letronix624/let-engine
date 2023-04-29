@@ -1,7 +1,7 @@
 mod instance;
 mod pipeline;
 pub mod shaders;
-use shaders::*;
+pub use shaders::*;
 mod swapchain;
 mod window;
 
@@ -31,7 +31,9 @@ pub struct Vulkan {
     pub swapchain: Arc<Swapchain>,
     pub images: Vec<Arc<SwapchainImage>>,
     pub render_pass: Arc<RenderPass>,
-    pub pipeline: Arc<GraphicsPipeline>,
+    pub default_material: materials::Material,
+    pub textured_material: materials::Material,
+    pub texture_array_material: materials::Material,
     pub viewport: Viewport,
     pub framebuffers: Vec<Arc<Framebuffer>>,
 }
@@ -40,7 +42,7 @@ impl Vulkan {
     pub fn init(
         window_builder: WindowBuilder,
         app_info: AppInfo,
-    ) -> (materials::Shaders, Self, EventLoop<()>) {
+    ) -> (Self, EventLoop<()>) {
         let instance = instance::create_instance(app_info.app_name.to_string());
         let (event_loop, surface) = window::create_window(&instance, window_builder);
 
@@ -61,9 +63,6 @@ impl Vulkan {
 
         let (swapchain, images) = swapchain::create_swapchain_and_images(&device, &surface);
 
-        let vs = vertexshader::load(device.clone()).unwrap();
-        let fs = fragmentshader::load(device.clone()).unwrap();
-
         let render_pass = vulkano::single_pass_renderpass!(
             device.clone(),
             attachments: {
@@ -82,8 +81,37 @@ impl Vulkan {
         .unwrap();
 
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+        
+        //Materials
+        let vs = vertexshader::load(device.clone()).unwrap();
+        let fs = fragmentshader::load(device.clone()).unwrap();
+        let tfs = textured_fragmentshader::load(device.clone()).unwrap();
+        let tafs = texture_array_fragmentshader::load(device.clone()).unwrap();
+
         let pipeline: Arc<GraphicsPipeline> =
             pipeline::create_pipeline(&device, &vs, &fs, subpass.clone());
+        let textured_pipeline = pipeline::create_pipeline(&device, &vs, &tfs, subpass.clone());
+        let texture_array_pipeline = pipeline::create_pipeline(&device, &vs, &tafs, subpass.clone());
+
+        let default_material = materials::Material {
+            pipeline: pipeline,
+            descriptor: None,
+            texture: None,
+            layer: 0
+        };
+        let textured_material = materials::Material {
+            pipeline: textured_pipeline,
+            descriptor: None,
+            texture: None,
+            layer: 0
+        };
+        let texture_array_material = materials::Material {
+            pipeline: texture_array_pipeline,
+            descriptor: None,
+            texture: None,
+            layer: 0
+        };
+        //
 
         let mut viewport = Viewport {
             origin: [0.0, 0.0],
@@ -94,10 +122,6 @@ impl Vulkan {
         let framebuffers = window_size_dependent_setup(&images, render_pass.clone(), &mut viewport);
 
         (
-            materials::Shaders {
-                vertex: vs,
-                fragment: fs,
-            },
             Self {
                 instance,
                 surface,
@@ -110,7 +134,9 @@ impl Vulkan {
                 swapchain,
                 images,
                 render_pass,
-                pipeline,
+                default_material,
+                textured_material,
+                texture_array_material,
                 viewport,
                 framebuffers,
             },

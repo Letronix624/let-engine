@@ -23,12 +23,13 @@ winit = "0.28.3"
 image = "0.24.6"
 rodio = "0.16.0"
 rusttype = { version = "0.9.3", features = ["gpu_cache"] }
-error-stack = "0.3.0"
+error-stack = "0.3.1"
 hashbrown = "0.13.2"
 parking_lot = "0.12.1"
 anyhow = "1.0.70"
 thiserror = "1.0.40"
 derive_builder = "0.12.0"
+cgmath = "0.18.0"
 
 [profile.release]
 strip = "symbols"

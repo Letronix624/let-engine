@@ -1,5 +1,5 @@
 pub mod data;
-use super::{resources::*, materials};
+use super::{materials};
 use crate::error::textures::*;
 use anyhow::Result;
 pub use data::*;
@@ -169,8 +169,6 @@ impl Node<Arc<Mutex<Object>>> {
 /// textures, vetex/index data, color and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
-    pub texture: Option<Arc<Texture>>,
-    pub texture_id: u32,
     pub material: Option<materials::Material>,
     pub data: Data,
     pub position: [f32; 2],
@@ -196,30 +194,20 @@ impl Appearance {
             ..Default::default()
         }
     }
-    pub fn texture(mut self, texture: &Arc<Texture>) -> Self {
-        self.texture = Some(texture.clone());
-        self
-    }
     pub fn auto_scale(&mut self) -> Result<(), NoTextureError> {
-        let dimensions = if let Some(texture) = &self.texture {
-            texture.dimensions
+        let dimensions;
+        if let Some(material) = &self.material {
+            dimensions = if let Some(texture) = &material.texture {
+                texture.dimensions
+            } else {
+                return Err(NoTextureError);
+            };
         } else {
             return Err(NoTextureError);
         };
 
         self.size = [dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0];
 
-        Ok(())
-    }
-    pub fn texture_id(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(texture) = &self.texture {
-            if id > texture.frames - 1 {
-                return Err(Box::new(TextureIDError));
-            }
-        } else {
-            return Err(Box::new(NoTextureError));
-        }
-        self.texture_id = id;
         Ok(())
     }
     pub fn data(mut self, data: Data) -> Self {
@@ -246,38 +234,11 @@ impl Appearance {
         self.material = Some(material);
         self
     }
-    pub fn get_texture_id(&self) -> u32 {
-        self.texture_id
-    }
-    pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(texture) = &self.texture {
-            if texture.frames <= self.texture_id + 1 {
-                return Err(Box::new(TextureIDError));
-            }
-        } else {
-            return Err(Box::new(NoTextureError));
-        }
-        self.texture_id += 1;
-        Ok(())
-    }
-    pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(_) = &self.texture {
-            if self.texture_id == 0 {
-                return Err(Box::new(TextureIDError));
-            }
-        } else {
-            return Err(Box::new(NoTextureError));
-        }
-        self.texture_id -= 1;
-        Ok(())
-    }
 }
 
 impl default::Default for Appearance {
     fn default() -> Self {
         Self {
-            texture: None,
-            texture_id: 0,
             material: None,
             data: Data::empty(),
             position: [0.0; 2],

@@ -26,8 +26,7 @@ impl Resources {
 pub struct Texture {
     pub data: Vec<u8>,
     pub dimensions: (u32, u32),
-    pub frames: u32,
-    pub material: u32,
+    pub layers: u32,
     pub set: Arc<PersistentDescriptorSet>,
 }
 
@@ -40,31 +39,10 @@ pub struct Sound {
     pub data: Vec<u8>,
 }
 
-impl Texture {
-    /// Loads the texture with given rgba8 data and dimensions to the gpu
-    /// ready to be used with an object appearance.
-    pub fn new(
-        texture: Vec<u8>,
-        dimensions: (u32, u32),
-        frames: u32,
-        set: Arc<PersistentDescriptorSet>,
-        material: u32,
-    ) -> Arc<Texture> {
-        Arc::new(Texture {
-            data: texture,
-            dimensions,
-            frames,
-            material,
-            set: set,
-        })
-    }
-}
-
 impl PartialEq for Texture {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
             && self.dimensions == other.dimensions
-            && self.material == other.material
             && Arc::ptr_eq(&self.set, &other.set)
     }
     fn ne(&self, other: &Self) -> bool {
@@ -77,8 +55,7 @@ impl std::fmt::Debug for Texture {
         f.debug_struct("Texture")
             .field("size", &self.data.len())
             .field("dimensions", &self.dimensions)
-            .field("frames", &self.frames)
-            .field("material", &self.material)
+            .field("frames", &self.layers)
             .finish()
     }
 }

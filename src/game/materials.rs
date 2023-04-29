@@ -1,6 +1,11 @@
-use super::{objects::data::Vertex as GameVertex, Vulkan};
+use super::{objects::data::Vertex as GameVertex, Texture, Vulkan};
+use crate::error::textures::*;
 use derive_builder::Builder;
 use std::sync::Arc;
+
+use vulkano::descriptor_set::{
+    allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
+};
 use vulkano::pipeline::{
     graphics::{
         color_blend::ColorBlendState,
@@ -9,7 +14,7 @@ use vulkano::pipeline::{
         vertex_input::Vertex,
         viewport::ViewportState,
     },
-    GraphicsPipeline, StateMode,
+    GraphicsPipeline, Pipeline, StateMode,
 };
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
@@ -23,14 +28,31 @@ pub enum Topology {
     PointList,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Material {
-    pub shaders: Shaders,
-    pipeline: Arc<GraphicsPipeline>,
+    pub pipeline: Arc<GraphicsPipeline>,
+    pub descriptor: Option<Arc<PersistentDescriptorSet>>,
+    pub texture: Option<Arc<Texture>>,
+    pub layer: u32,
+}
+
+impl std::fmt::Debug for Material {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Material")
+            .field("texture", &self.texture)
+            .field("layer", &self.layer)
+            .finish()
+    }
 }
 
 impl Material {
-    pub fn new(settings: MaterialSettings, vulkan: &Vulkan, subpass: Subpass) -> Self {
+    pub fn new(
+        settings: MaterialSettings,
+        descriptor: Vec<WriteDescriptorSet>,
+        vulkan: &Vulkan,
+        subpass: Subpass,
+        allocator: &StandardDescriptorSetAllocator,
+    ) -> Self {
         let vs = &settings.shaders.vertex;
         let fs = &settings.shaders.fragment;
 
@@ -56,13 +78,87 @@ impl Material {
             .render_pass(subpass)
             .build(vulkan.device.clone())
             .unwrap();
+        let descriptor = if descriptor.len() != 0 {
+            Some(
+                PersistentDescriptorSet::new(
+                    allocator,
+                    pipeline
+                        .layout()
+                        .set_layouts()
+                        .get(2) // on set 2
+                        .unwrap()
+                        .clone(),
+                    descriptor,
+                )
+                .unwrap(),
+            )
+        } else {
+            None
+        };
         Self {
-            shaders: settings.shaders,
             pipeline,
+            descriptor,
+            layer: settings.initial_layer,
+            texture: settings.texture,
         }
+    }
+    pub fn write(
+        &mut self,
+        descriptor: Vec<WriteDescriptorSet>,
+        allocator: &StandardDescriptorSetAllocator,
+    ) {
+        self.descriptor = Some(
+            PersistentDescriptorSet::new(
+                allocator,
+                self.pipeline
+                    .layout()
+                    .set_layouts()
+                    .get(1)
+                    .unwrap()
+                    .clone(),
+                descriptor,
+            )
+            .unwrap(),
+        );
     }
     pub fn pipeline(&self) -> &Arc<GraphicsPipeline> {
         &self.pipeline
+    }
+    pub fn layer(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(texture) = &self.texture {
+            if id > texture.layers - 1 {
+                return Err(Box::new(TextureIDError));
+            }
+        } else {
+            return Err(Box::new(NoTextureError));
+        }
+        self.layer = id;
+        Ok(())
+    }
+    pub fn get_layer(&self) -> u32 {
+        self.layer
+    }
+    pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(texture) = &self.texture {
+            if texture.layers <= self.layer + 1 {
+                return Err(Box::new(TextureIDError));
+            }
+        } else {
+            return Err(Box::new(NoTextureError));
+        }
+        self.layer += 1;
+        Ok(())
+    }
+    pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(_) = &self.texture {
+            if self.layer == 0 {
+                return Err(Box::new(TextureIDError));
+            }
+        } else {
+            return Err(Box::new(NoTextureError));
+        }
+        self.layer -= 1;
+        Ok(())
     }
 }
 
@@ -72,10 +168,14 @@ impl Material {
 pub struct MaterialSettings {
     #[builder(setter(into))]
     pub shaders: Shaders,
-    #[builder(setter(into))]
+    #[builder(setter(into), default = "Topology::TriangleList")]
     pub topology: Topology,
-    #[builder(setter(into))]
+    #[builder(setter(into), default = "1.0")]
     pub line_width: f32,
+    #[builder(setter(into), default = "None")]
+    pub texture: Option<Arc<Texture>>,
+    #[builder(setter(into), default = "0")]
+    pub initial_layer: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -91,21 +191,5 @@ impl Shaders {
         let fragment: Arc<ShaderModule> =
             unsafe { ShaderModule::from_bytes(vulkan.device.clone(), fragment_bytes).unwrap() };
         Self { vertex, fragment }
-    }
-}
-
-impl Default for MaterialSettings {
-    fn default() -> Self {
-        Self {
-            shaders: Shaders::default(),
-            topology: Topology::TriangleList,
-            line_width: 1.,
-        }
-    }
-}
-
-impl Default for Shaders {
-    fn default() -> Self {
-        todo!();
     }
 }

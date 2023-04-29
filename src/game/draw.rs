@@ -1,7 +1,7 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::{
-    buffer::{allocator::*, BufferUsage},
+    buffer::{allocator::*, BufferContents, BufferUsage},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
         PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
@@ -15,9 +15,11 @@ use vulkano::{
         ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
     },
     memory::allocator::StandardMemoryAllocator,
-    pipeline::Pipeline,
+    pipeline::{
+        Pipeline, 
+    },
     render_pass::Subpass,
-    sampler::{Filter, Sampler, SamplerAddressMode, SamplerCreateInfo},
+    sampler::Sampler,
     swapchain::{
         acquire_next_image, AcquireError, SwapchainCreateInfo, SwapchainCreationError,
         SwapchainPresentInfo,
@@ -34,10 +36,10 @@ use super::{
 
 use crate::{game::Node, texture::Format as tFormat, texture::*};
 
-#[allow(unused)]
+use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector2, Vector3};
+
 pub struct Draw {
     pub recreate_swapchain: bool,
-    descriptors: [Arc<PersistentDescriptorSet>; 3],
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,
     pub object_buffer_allocator: SubbufferAllocator,
@@ -81,104 +83,12 @@ impl Draw {
             StandardCommandBufferAllocator::new(vulkan.device.clone(), Default::default());
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(vulkan.device.clone());
 
-        let mut uploads = AutoCommandBufferBuilder::primary(
+        let uploads = AutoCommandBufferBuilder::primary(
             &commandbufferallocator,
             vulkan.queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
         .unwrap();
-
-        let sampler = Sampler::new(
-            vulkan.device.clone(),
-            SamplerCreateInfo {
-                mag_filter: Filter::Nearest,
-                min_filter: Filter::Linear,
-                address_mode: [
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::ClampToBorder,
-                    SamplerAddressMode::Repeat,
-                ],
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        //placeholder texture
-        let texture = {
-            let texture = vec![0, 0, 0, 255];
-            let dimensions = ImageDimensions::Dim2d {
-                width: 1,
-                height: 1,
-                array_layers: 1,
-            };
-
-            let image = ImmutableImage::from_iter(
-                &memoryallocator,
-                texture,
-                dimensions,
-                MipmapsCount::One,
-                Format::R8G8B8A8_SRGB,
-                &mut uploads,
-            )
-            .unwrap();
-            ImageView::new(
-                image.clone(),
-                ImageViewCreateInfo {
-                    view_type: ImageViewType::Dim2dArray,
-                    ..ImageViewCreateInfo::from_image(&image)
-                },
-            )
-            .unwrap()
-        };
-
-        let object_sub_buffer = object_buffer_allocator.allocate_sized().unwrap();
-        let camera_sub_buffer = object_buffer_allocator.allocate_sized().unwrap();
-
-        *object_sub_buffer.write().unwrap() = DrawObject::default();
-        *camera_sub_buffer.write().unwrap() = Camera::new();
-
-        let descriptors = [
-            PersistentDescriptorSet::new(
-                &descriptor_set_allocator,
-                vulkan
-                    .pipeline
-                    .layout()
-                    .set_layouts()
-                    .get(0)
-                    .unwrap()
-                    .clone(),
-                [WriteDescriptorSet::image_view_sampler(
-                    0,
-                    texture.clone(),
-                    sampler.clone(),
-                )],
-            )
-            .unwrap(),
-            PersistentDescriptorSet::new(
-                &descriptor_set_allocator,
-                vulkan
-                    .pipeline
-                    .layout()
-                    .set_layouts()
-                    .get(1)
-                    .unwrap()
-                    .clone(),
-                [WriteDescriptorSet::buffer(0, object_sub_buffer.clone())],
-            )
-            .unwrap(),
-            PersistentDescriptorSet::new(
-                &descriptor_set_allocator,
-                vulkan
-                    .pipeline
-                    .layout()
-                    .set_layouts()
-                    .get(2)
-                    .unwrap()
-                    .clone(),
-                [WriteDescriptorSet::buffer(0, camera_sub_buffer.clone())],
-            )
-            .unwrap(),
-        ];
 
         let previous_frame_end = Some(
             uploads
@@ -190,7 +100,6 @@ impl Draw {
         );
         Self {
             recreate_swapchain,
-            descriptors,
             vertex_buffer_allocator,
             index_buffer_allocator,
             object_buffer_allocator,
@@ -205,9 +114,16 @@ impl Draw {
         &mut self,
         vulkan: &Vulkan,
         settings: materials::MaterialSettings,
+        descriptor_bindings: Vec<WriteDescriptorSet>,
     ) -> materials::Material {
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
-        materials::Material::new(settings, vulkan, subpass)
+        materials::Material::new(
+            settings,
+            descriptor_bindings,
+            vulkan,
+            subpass,
+            &self.descriptor_set_allocator,
+        )
     }
 
     pub fn load_texture(
@@ -253,11 +169,33 @@ impl Draw {
             &mut uploads,
         )
         .unwrap();
+        
+        let set_layout;
 
         let texture_view = ImageView::new(
             image.clone(),
             ImageViewCreateInfo {
-                view_type: ImageViewType::Dim2dArray,
+                view_type: if layers == 1 {
+                    set_layout = vulkan.
+                        textured_material
+                        .pipeline
+                        .layout()
+                        .set_layouts()
+                        .get(1)
+                        .unwrap()
+                        .clone();
+                    ImageViewType::Dim2d
+                } else {
+                    set_layout = vulkan.
+                        texture_array_material
+                        .pipeline
+                        .layout()
+                        .set_layouts()
+                        .get(1)
+                        .unwrap()
+                        .clone();
+                    ImageViewType::Dim2dArray
+                },
                 ..ImageViewCreateInfo::from_image(&image)
             },
         )
@@ -269,13 +207,7 @@ impl Draw {
 
         let set = PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
-            vulkan
-                .pipeline
-                .layout()
-                .set_layouts()
-                .get(0)
-                .unwrap()
-                .clone(),
+            set_layout,
             [WriteDescriptorSet::image_view_sampler(
                 0,
                 texture_view.clone(),
@@ -366,34 +298,13 @@ impl Draw {
                 SubpassContents::Inline,
             )
             .unwrap()
-            .set_viewport(0, [vulkan.viewport.clone()])
-            .bind_pipeline_graphics(vulkan.pipeline.clone());
+            .set_viewport(0, [vulkan.viewport.clone()]);
 
         if suboptimal {
             self.recreate_swapchain = true;
         }
 
-        //buffer updates
-
-        let push_constants = PushConstant {
-            resolution: [dimensions.width as f32, dimensions.height as f32],
-        };
-
-        //Draw Objects
-
         for layer in objects.iter() {
-            let camera = if let Some(camera) = &layer.1 {
-                let camera = camera.lock().get_object();
-                Camera {
-                    position: camera.position,
-                    rotation: camera.rotation,
-                    zoom: camera.camera.unwrap_or_default().zoom,
-                    mode: camera.camera.unwrap_or_default().mode as u32,
-                }
-            } else {
-                Camera::new()
-            };
-
             let mut order: Vec<Object> = vec![];
 
             Node::order_position(&mut order, &*layer.0.lock());
@@ -403,60 +314,104 @@ impl Draw {
                     if &appearance.data.vertices.len() == &0 {
                         continue;
                     }
-                    let mut descriptors = self.descriptors.clone();
-                    let object_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();
-                    let camera_sub_buffer = self.object_buffer_allocator.allocate_sized().unwrap();
 
-                    *object_sub_buffer.write().unwrap() = DrawObject {
+                    let pipeline = if let Some(material) = &appearance.material {
+                        material.pipeline.clone()
+                    } else {
+                        vulkan.default_material.pipeline.clone()
+                    };
+
+                    let mut descriptors = vec![];
+
+                    let objectvert_sub_buffer =
+                        self.object_buffer_allocator.allocate_sized().unwrap();
+                    let objectfrag_sub_buffer =
+                        self.object_buffer_allocator.allocate_sized().unwrap();
+
+                    let translation = Matrix3::from_translation(Vector2::new(
+                        obj.position[0] + appearance.position[0],
+                        obj.position[1] + appearance.position[1],
+                    ));
+                    let rotation =
+                        Matrix3::from_angle_z(Rad::from(Deg(obj.rotation + appearance.rotation)));
+                    let scaling = Matrix3::from_nonuniform_scale(
+                        obj.size[0] * appearance.size[0],
+                        obj.size[1] * appearance.size[1],
+                    );
+
+                    let model = Matrix4::from_nonuniform_scale(1.0, 1.0, 1.0)
+                        * Matrix4::from(rotation)
+                        * Matrix4::from(scaling)
+                        * Matrix4::from(translation);
+
+                    let ortho;
+
+                    let view = if let Some(camera) = &layer.1 {
+                        let camera = camera.lock().get_object();
+
+                        let rotation = Matrix4::from_angle_z(Rad::from(Deg(camera.rotation)));
+
+                        let zoom = 1.0 / camera.camera.unwrap().zoom;
+                        ortho = ortho_maker(
+                            camera.camera.unwrap().mode,
+                            camera.position,
+                            zoom,
+                            (dimensions.width as f32, dimensions.height as f32),
+                        );
+
+                        Matrix4::look_at_rh(
+                            Point3::from([camera.position[0], camera.position[1], 1.0]),
+                            Point3::from([camera.position[0], camera.position[1], 0.0]),
+                            Vector3::unit_y(),
+                        ) * rotation
+                    } else {
+                        ortho = Ortho {
+                            left: -1.0,
+                            right: 1.0,
+                            bottom: 1.0,
+                            top: -1.0,
+                            near: -1.0,
+                            far: 1.0,
+                        };
+                        Matrix4::look_at_rh(
+                            Point3::from([0., 0., 0.]),
+                            Point3::from([0., 0., 0.]),
+                            Vector3::unit_y(),
+                        )
+                    };
+
+                    let proj = Matrix4::from(ortho);
+
+                    *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
+                        model: model.into(),
+                        view: view.into(),
+                        proj: proj.into(),
+                    };
+                    *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
                         color: appearance.color,
-                        position: [
-                            obj.position[0] + appearance.position[0],
-                            obj.position[1] + appearance.position[1],
-                        ],
-                        size: [
-                            obj.size[0] * appearance.size[0],
-                            obj.size[1] * appearance.size[1],
-                        ],
-                        rotation: obj.rotation + appearance.rotation,
-                        texture_id: if let Some(texture) = &appearance.texture {
-                            descriptors[0] = texture.set.clone();
-                            appearance.texture_id
-                        } else {
-                            0
-                        },
-                        material: if let Some(texture) = &appearance.texture {
-                            texture.material
+                        texture_id: if let Some(material) = &appearance.material {
+                            if let Some(texture) = &material.texture {
+                                descriptors.push(texture.set.clone());
+                            }
+                            if let Some(descriptor) = &material.descriptor {
+                                descriptors.push(descriptor.clone());
+                            }
+                            material.layer
                         } else {
                             0
                         },
                     };
 
-                    descriptors[1] = PersistentDescriptorSet::new(
+                    descriptors.insert(0, PersistentDescriptorSet::new(
                         &self.descriptor_set_allocator,
-                        vulkan
-                            .pipeline
-                            .layout()
-                            .set_layouts()
-                            .get(1)
-                            .unwrap()
-                            .clone(),
-                        [WriteDescriptorSet::buffer(0, object_sub_buffer.clone())],
+                        pipeline.layout().set_layouts().get(0).unwrap().clone(),
+                        [
+                            WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
+                            WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
+                        ],
                     )
-                    .unwrap();
-                    *camera_sub_buffer.write().unwrap() = camera;
-                    descriptors[2] = PersistentDescriptorSet::new(
-                        &self.descriptor_set_allocator,
-                        vulkan
-                            .pipeline
-                            .layout()
-                            .set_layouts()
-                            .get(2)
-                            .unwrap()
-                            .clone(),
-                        [WriteDescriptorSet::buffer(0, camera_sub_buffer.clone())],
-                    )
-                    .unwrap();
-
+                    .unwrap());
+                    
                     let vertex_sub_buffer = self
                         .vertex_buffer_allocator
                         .allocate_slice(appearance.data.vertices.clone().len() as _)
@@ -476,15 +431,15 @@ impl Draw {
                         .copy_from_slice(&appearance.data.indices);
 
                     builder
+                        .bind_pipeline_graphics(pipeline.clone())
                         .bind_descriptor_sets(
                             vulkano::pipeline::PipelineBindPoint::Graphics,
-                            vulkan.pipeline.layout().clone(),
+                            pipeline.layout().clone(),
                             0,
-                            descriptors.to_vec(),
+                            descriptors,
                         )
                         .bind_vertex_buffers(0, vertex_sub_buffer.clone())
                         .bind_index_buffer(index_sub_buffer.clone())
-                        .push_constants(vulkan.pipeline.layout().clone(), 0, push_constants)
                         .draw_indexed(appearance.data.indices.len() as u32, 1, 0, 0, 0)
                         .unwrap();
                 }
@@ -518,6 +473,87 @@ impl Draw {
             Err(e) => {
                 println!("Failed to flush future: {:?}", e);
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
+            }
+        }
+    }
+    #[allow(unused)]
+    pub fn write_descriptor<T: BufferContents>(
+        &self,
+        descriptor: T,
+        set: u32,
+    ) -> WriteDescriptorSet {
+        let buf = self.object_buffer_allocator.allocate_sized().unwrap();
+        *buf.write().unwrap() = descriptor;
+        WriteDescriptorSet::buffer(set, buf)
+    }
+}
+
+fn ortho_maker(
+    mode: CameraScaling,
+    position: [f32; 2],
+    zoom: f32,
+    dimensions: (f32, f32),
+) -> Ortho<f32> {
+    match mode {
+        CameraScaling::Stretch => Ortho {
+            left: position[0] - zoom,
+            right: position[0] + zoom,
+            bottom: position[1] - zoom,
+            top: position[1] + zoom,
+            near: -1.0,
+            far: 1.0,
+        },
+        CameraScaling::Linear => {
+            let (width, height) = (
+                0.5 / (dimensions.1 / (dimensions.0 + dimensions.1)),
+                0.5 / (dimensions.0 / (dimensions.0 + dimensions.1)),
+            );
+            Ortho {
+                left: position[0] - zoom * width,
+                right: position[0] + zoom * width,
+                bottom: position[1] - zoom * height,
+                top: position[1] + zoom * height,
+                near: -1.0,
+                far: 1.0,
+            }
+        }
+        CameraScaling::Circle => {
+            let (width, height) = (
+                1.0 / (dimensions.1.atan2(dimensions.0).sin() / 0.707106781),
+                1.0 / (dimensions.1.atan2(dimensions.0).cos() / 0.707106781),
+            );
+            Ortho {
+                left: position[0] - zoom * width,
+                right: position[0] + zoom * width,
+                bottom: position[1] - zoom * height,
+                top: position[1] + zoom * height,
+                near: -1.0,
+                far: 1.0,
+            }
+        }
+        CameraScaling::Limited => {
+            let (width, height) = (
+                1.0 / (dimensions.1 / dimensions.0.clamp(0.0, dimensions.1)),
+                1.0 / (dimensions.0 / dimensions.1.clamp(0.0, dimensions.0)),
+            );
+            Ortho {
+                left: position[0] - zoom * width,
+                right: position[0] + zoom * width,
+                bottom: position[1] - zoom * height,
+                top: position[1] + zoom * height,
+                near: -1.0,
+                far: 1.0,
+            }
+        }
+        CameraScaling::Expand => {
+            let (width, height) = (dimensions.0 * 0.001, dimensions.1 * 0.001);
+            Ortho {
+                left: position[0] - zoom * width,
+                right: position[0] + zoom * width,
+                bottom: position[1] - zoom * height,
+                top: position[1] + zoom * height,
+                near: -1.0,
+                far: 1.0,
             }
         }
     }

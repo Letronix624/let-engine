@@ -13,12 +13,14 @@ use super::{
     objects::Object,
     resources::{GameFont, Texture},
     Appearance, Draw, Vulkan,
+    materials::*,
+    vulkan::shaders::*
 };
 
 type AObject = Arc<Mutex<Object>>;
 
 pub struct Labelifier {
-    texture: Arc<Texture>,
+    material: Material,
     cache: Cache<'static>,
     cache_pixel_buffer: Vec<u8>,
     queued: Vec<DrawTask<'static>>,
@@ -29,11 +31,11 @@ impl Labelifier {
     pub fn new(vulkan: &Vulkan, draw: &mut Draw) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
-        let texture = Texture::new(
-            cache_pixel_buffer.clone(),
-            cache.dimensions(),
-            1,
-            draw.load_texture(
+        let texture = Arc::new(Texture {
+            data: cache_pixel_buffer.clone(),
+            dimensions: cache.dimensions(),
+            layers: 1,
+            set: draw.load_texture(
                 vulkan,
                 cache_pixel_buffer.clone(),
                 cache.dimensions(),
@@ -44,11 +46,27 @@ impl Labelifier {
                     sampler: Sampler::default(),
                 },
             ),
-            2,
+        });
+
+        let text_shaders = Shaders {
+            vertex: vertexshader::load(vulkan.device.clone()).unwrap(),
+            fragment: text_fragmentshader::load(vulkan.device.clone()).unwrap(),
+        };
+        
+        let material_settings = MaterialSettingsBuilder::default()
+            .shaders(text_shaders)
+            .texture(texture)
+            .build()
+            .unwrap();
+
+        let material = draw.load_material (
+            &vulkan,
+            material_settings,
+            vec![]
         );
 
         Self {
-            texture,
+            material,
             cache,
             cache_pixel_buffer,
             queued: vec![],
@@ -76,11 +94,11 @@ impl Labelifier {
                 src_index += width;
             }
         })?;
-        self.texture = Texture::new(
-            self.cache_pixel_buffer.clone(),
-            self.cache.dimensions(),
-            1,
-            draw.load_texture(
+        self.material.texture = Some(Arc::new(Texture {
+            data: self.cache_pixel_buffer.clone(),
+            dimensions: self.cache.dimensions(),
+            layers: 1,
+            set: draw.load_texture(
                 vulkan,
                 self.cache_pixel_buffer.clone(),
                 self.cache.dimensions(),
@@ -91,8 +109,7 @@ impl Labelifier {
                     sampler: Sampler::default(),
                 },
             ),
-            2,
-        );
+        }));
         Ok(())
     }
     pub fn update(&mut self, vulkan: &Vulkan, draw: &mut Draw) {
@@ -186,7 +203,7 @@ impl Labelifier {
                 .collect();
             let appearance = object.graphics.as_mut().unwrap();
             appearance.data = Data { vertices, indices };
-            appearance.texture = Some(self.texture.clone());
+            appearance.material = Some(self.material.clone());
         }
         self.queued = vec![];
         self.ready = false;
