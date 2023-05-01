@@ -8,7 +8,7 @@ use vulkano::instance::{Instance, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 
-pub fn create_instance(appname: String) -> Arc<Instance> {
+pub fn create_instance() -> Arc<Instance> {
     let library = match VulkanLibrary::new() {
         Err(e) => {
             println!(
@@ -31,18 +31,18 @@ pub fn create_instance(appname: String) -> Arc<Instance> {
 
     let gameinfo = InstanceCreateInfo {
         enabled_layers: layers,
-        application_name: Some(appname),
-        application_version: Version {
-            major: (0),
-            minor: (0),
-            patch: (0),
-        },
         enabled_extensions: extensions,
         engine_name: Some("Let Engine".into()),
         engine_version: Version {
-            major: (0),
-            minor: (1),
-            patch: (0),
+            major: env!("CARGO_PKG_VERSION_MAJOR")
+                .parse()
+                .unwrap(),
+            minor: env!("CARGO_PKG_VERSION_MINOR")
+                .parse()
+                .unwrap(),
+            patch: env!("CARGO_PKG_VERSION_PATCH")
+                .parse()
+                .unwrap(),
         },
         ..Default::default()
     };

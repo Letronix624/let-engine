@@ -24,6 +24,7 @@ pub struct Labelifier {
     cache: Cache<'static>,
     cache_pixel_buffer: Vec<u8>,
     queued: Vec<DrawTask<'static>>,
+    font_id: usize,
     ready: bool,
 }
 
@@ -70,6 +71,7 @@ impl Labelifier {
             cache,
             cache_pixel_buffer,
             queued: vec![],
+            font_id: 0,
             ready: false,
         }
     }
@@ -238,6 +240,15 @@ impl Labelifier {
             font: font.clone(),
             glyphs,
         });
+    }
+    /// Loads a font ready to get layed out and rendered.
+    pub fn load_font(&mut self, font: &[u8]) -> Arc<GameFont> {
+        let font = Arc::new(GameFont {
+            font: Font::try_from_vec(font.to_vec()).unwrap(),
+            fontid: self.font_id,
+        });
+        self.font_id += 1;
+        font
     }
 }
 

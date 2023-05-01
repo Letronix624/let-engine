@@ -12,17 +12,18 @@ use vulkano::{
     format::Format,
     image::{
         view::{ImageView, ImageViewCreateInfo},
-        ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
+        ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount, SwapchainImage
     },
     memory::allocator::StandardMemoryAllocator,
     pipeline::{
         Pipeline, 
+        graphics::viewport::Viewport
     },
-    render_pass::Subpass,
+    render_pass::{Framebuffer, Subpass},
     sampler::Sampler,
     swapchain::{
         acquire_next_image, AcquireError, SwapchainCreateInfo, SwapchainCreationError,
-        SwapchainPresentInfo,
+        SwapchainPresentInfo, Swapchain,
     },
     sync::{self, FlushError, GpuFuture},
 };
@@ -40,6 +41,10 @@ use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector2, Vector3};
 
 pub struct Draw {
     pub recreate_swapchain: bool,
+    pub swapchain: Arc<Swapchain>,
+    pub images: Vec<Arc<SwapchainImage>>,
+    pub viewport: Viewport,
+    pub framebuffers: Vec<Arc<Framebuffer>>,
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,
     pub object_buffer_allocator: SubbufferAllocator,
@@ -52,6 +57,16 @@ pub struct Draw {
 impl Draw {
     pub fn setup(vulkan: &Vulkan) -> Self {
         let recreate_swapchain = false;
+
+        let (swapchain, images) = super::vulkan::swapchain::create_swapchain_and_images(&vulkan.device, &vulkan.surface);
+        
+        let mut viewport = Viewport {
+            origin: [0.0, 0.0],
+            dimensions: [0.0, 0.0],
+            depth_range: 0.0..1.0,
+        };
+
+        let framebuffers = window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport);
 
         let memoryallocator = Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
 
@@ -100,6 +115,10 @@ impl Draw {
         );
         Self {
             recreate_swapchain,
+            swapchain,
+            images,
+            viewport,
+            framebuffers,
             vertex_buffer_allocator,
             index_buffer_allocator,
             object_buffer_allocator,
@@ -229,8 +248,8 @@ impl Draw {
 
     pub fn redrawevent(
         &mut self,
-        vulkan: &mut Vulkan,
-        objects: Vec<(
+        vulkan: &Vulkan,
+        objects: &Vec<(
             Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
             Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
         )>,
@@ -252,26 +271,26 @@ impl Draw {
         }
 
         if self.recreate_swapchain {
-            let (new_swapchain, new_images) = match vulkan.swapchain.recreate(SwapchainCreateInfo {
+            let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: dimensions.into(),
-                ..vulkan.swapchain.create_info()
+                ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
                 Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
                 Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
             };
 
-            vulkan.swapchain = new_swapchain;
-            vulkan.framebuffers = window_size_dependent_setup(
+            self.swapchain = new_swapchain;
+            self.framebuffers = window_size_dependent_setup(
                 &new_images,
                 vulkan.render_pass.clone(),
-                &mut vulkan.viewport,
+                &mut self.viewport,
             );
             self.recreate_swapchain = false;
         }
 
         let (image_num, suboptimal, acquire_future) =
-            match acquire_next_image(vulkan.swapchain.clone(), None) {
+            match acquire_next_image(self.swapchain.clone(), None) {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
                     self.recreate_swapchain = true;
@@ -292,13 +311,13 @@ impl Draw {
                 RenderPassBeginInfo {
                     clear_values: vec![Some(clear_color.into())],
                     ..RenderPassBeginInfo::framebuffer(
-                        vulkan.framebuffers[image_num as usize].clone(),
+                        self.framebuffers[image_num as usize].clone(),
                     )
                 },
                 SubpassContents::Inline,
             )
             .unwrap()
-            .set_viewport(0, [vulkan.viewport.clone()]);
+            .set_viewport(0, [self.viewport.clone()]);
 
         if suboptimal {
             self.recreate_swapchain = true;
@@ -458,7 +477,7 @@ impl Draw {
             .unwrap()
             .then_swapchain_present(
                 vulkan.queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(vulkan.swapchain.clone(), image_num),
+                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_num),
             )
             .then_signal_fence_and_flush();
 
