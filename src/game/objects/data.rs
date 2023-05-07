@@ -11,10 +11,11 @@ pub struct Vertex {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
-pub struct ModelViewProj { //sepparate to vertex and fragment
+pub struct ModelViewProj {
+    //sepparate to vertex and fragment
     pub model: [[f32; 4]; 4],
     pub view: [[f32; 4]; 4],
-    pub proj: [[f32; 4]; 4]
+    pub proj: [[f32; 4]; 4],
 }
 
 #[repr(C)]
@@ -29,7 +30,7 @@ impl Default for ModelViewProj {
         Self {
             model: [[0.0; 4]; 4],
             view: [[0.0; 4]; 4],
-            proj: [[0.0; 4]; 4]
+            proj: [[0.0; 4]; 4],
         }
     }
 }

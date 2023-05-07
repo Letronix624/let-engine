@@ -10,11 +10,11 @@ use rusttype::{point, Font, PositionedGlyph, Scale};
 use crate::{texture::*, Data, Vertex};
 
 use super::{
+    materials::*,
     objects::Object,
     resources::{GameFont, Texture},
-    Appearance, Draw, Vulkan,
-    materials::*,
-    vulkan::shaders::*
+    vulkan::shaders::*,
+    Appearance, Loader, Vulkan,
 };
 
 type AObject = Arc<Mutex<Object>>;
@@ -29,14 +29,14 @@ pub struct Labelifier {
 }
 
 impl Labelifier {
-    pub fn new(vulkan: &Vulkan, draw: &mut Draw) -> Self {
+    pub fn new(vulkan: &Vulkan, loader: &mut Loader) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
         let texture = Arc::new(Texture {
             data: cache_pixel_buffer.clone(),
             dimensions: cache.dimensions(),
             layers: 1,
-            set: draw.load_texture(
+            set: loader.load_texture(
                 vulkan,
                 cache_pixel_buffer.clone(),
                 cache.dimensions(),
@@ -53,18 +53,14 @@ impl Labelifier {
             vertex: vertexshader::load(vulkan.device.clone()).unwrap(),
             fragment: text_fragmentshader::load(vulkan.device.clone()).unwrap(),
         };
-        
+
         let material_settings = MaterialSettingsBuilder::default()
             .shaders(text_shaders)
             .texture(texture)
             .build()
             .unwrap();
 
-        let material = draw.load_material (
-            &vulkan,
-            material_settings,
-            vec![]
-        );
+        let material = loader.load_material(&vulkan, material_settings, vec![]);
 
         Self {
             material,
@@ -78,7 +74,7 @@ impl Labelifier {
     fn update_cache(
         &mut self,
         vulkan: &Vulkan,
-        draw: &mut Draw,
+        loader: &mut Loader,
     ) -> Result<(), rusttype::gpu_cache::CacheWriteErr> {
         let dimensions = self.cache.dimensions().0 as usize;
 
@@ -100,7 +96,7 @@ impl Labelifier {
             data: self.cache_pixel_buffer.clone(),
             dimensions: self.cache.dimensions(),
             layers: 1,
-            set: draw.load_texture(
+            set: loader.load_texture(
                 vulkan,
                 self.cache_pixel_buffer.clone(),
                 self.cache.dimensions(),
@@ -114,7 +110,7 @@ impl Labelifier {
         }));
         Ok(())
     }
-    pub fn update(&mut self, vulkan: &Vulkan, draw: &mut Draw) {
+    pub fn update(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
         if !self.ready {
             return ();
         }
@@ -126,7 +122,7 @@ impl Labelifier {
                 }
             }
 
-            match self.update_cache(vulkan, draw) {
+            match self.update_cache(vulkan, loader) {
                 Ok(_) => (),
                 _ => {
                     let dimensions = self.cache.dimensions().0 * 2;

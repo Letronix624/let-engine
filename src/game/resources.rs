@@ -1,46 +1,42 @@
-use super::{Draw, Labelifier, Node, Vulkan, AObject, NObject, Font, materials};
+use super::{materials, AObject, Font, Labelifier, Vulkan};
+use crate::{error::textures::*, texture::*};
+use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
 use std::sync::Arc;
-use vulkano::descriptor_set::WriteDescriptorSet;
 use vulkano::buffer::BufferContents;
 use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
-use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
-use crate::{error::textures::*, texture::*};
+use vulkano::descriptor_set::WriteDescriptorSet;
 use winit::window::Window;
+
+mod loader;
+pub use loader::Loader;
 
 #[derive(Clone)]
 pub struct Resources {
-    vulkan: Vulkan,
-    draw: Arc<Mutex<Draw>>,
+    pub vulkan: Vulkan,
+    pub loader: Arc<Mutex<Loader>>,
     labelifier: Arc<Mutex<Labelifier>>,
 }
 
 impl Resources {
     //initialisation
-    pub fn new(vulkan: Vulkan, draw: Arc<Mutex<Draw>>, labelifier: Arc<Mutex<Labelifier>>) -> Self {
+    pub fn new(
+        vulkan: Vulkan,
+        loader: Arc<Mutex<Loader>>,
+        labelifier: Arc<Mutex<Labelifier>>,
+    ) -> Self {
         Self {
             vulkan,
-            draw,
+            loader,
             labelifier,
         }
     }
     //redraw
-    pub fn recreate_swapchain(&self) {
-        self.draw.lock().recreate_swapchain = true;
-    }
-    pub fn redraw(
-        &self,
-        objects: &Vec<(
-            NObject,
-            Option<Arc<Mutex<Node<AObject>>>>,
-        )>,
-        clear_color: [f32; 4],
-    ) {
+    pub fn update(&self) {
         // swap with layers
-        let mut draw = self.draw.lock();
+        let mut loader = self.loader.lock();
         let mut labelifier = self.labelifier.lock();
-        labelifier.update(&self.vulkan, &mut draw);
-        draw.redrawevent(&self.vulkan, objects, clear_color);
+        labelifier.update(&self.vulkan, &mut loader);
     }
 
     //loading
@@ -57,19 +53,12 @@ impl Resources {
         layers: u32,
         settings: TextureSettings,
     ) -> Arc<Texture> {
-        let mut draw = self.draw.lock();
+        let mut loader = self.loader.lock();
         Arc::new(Texture {
             data: texture.clone(),
             dimensions,
             layers,
-            set: draw.load_texture(
-                &self.vulkan,
-                texture,
-                dimensions,
-                layers,
-                format,
-                settings,
-            ),
+            set: loader.load_texture(&self.vulkan, texture, dimensions, layers, format, settings),
         })
     }
 
@@ -175,8 +164,7 @@ impl Resources {
         align: [f32; 2],
     ) {
         let mut labelifier = self.labelifier.lock();
-        labelifier
-            .queue(object.clone(), font, text.to_string(), scale, align);
+        labelifier.queue(object.clone(), font, text.to_string(), scale, align);
     }
     //shaders
     pub unsafe fn new_shader_from_raw(
@@ -189,21 +177,31 @@ impl Resources {
     }
     // fn new_shader ..requires the vulkano_shaders library function load() device
     pub fn new_descriptor_write<T: BufferContents>(&self, buf: T, set: u32) -> WriteDescriptorSet {
-        let draw = self.draw.lock();
-        draw.write_descriptor(buf, set)
+        let loader = self.loader.lock();
+        loader.write_descriptor(buf, set)
     }
-    pub fn new_material(&self, settings: materials::MaterialSettings, descriptor_bindings: Vec<WriteDescriptorSet>) -> materials::Material {
-        let mut draw = self.draw.lock();
-        draw.load_material(&self.vulkan, settings, descriptor_bindings)
+    pub fn new_material(
+        &self,
+        settings: materials::MaterialSettings,
+        descriptor_bindings: Vec<WriteDescriptorSet>,
+    ) -> materials::Material {
+        let mut loader = self.loader.lock();
+        loader.load_material(&self.vulkan, settings, descriptor_bindings)
     }
     /// Simplification of making a texture and putting it into a material.
-    pub fn new_material_from_texture(&self, texture: &[u8], format: ImageFormat, layers: u32, settings: TextureSettings) -> Result<materials::Material, InvalidFormatError> {
+    pub fn new_material_from_texture(
+        &self,
+        texture: &[u8],
+        format: ImageFormat,
+        layers: u32,
+        settings: TextureSettings,
+    ) -> Result<materials::Material, InvalidFormatError> {
         let texture = Self::load_texture(self, texture, format, layers, settings);
-        
+
         if let Err(error) = texture {
             return Err(error);
         }
-        
+
         Ok(Self::default_textured_material(self, &texture.unwrap()))
     }
     /// Simplification of making a texture and putting it into a material.
@@ -215,14 +213,8 @@ impl Resources {
         layers: u32,
         settings: TextureSettings,
     ) -> materials::Material {
-        let texture = Self::load_texture_from_raw(
-            self,
-            texture,
-            format,
-            dimensions,
-            layers,
-            settings,
-        );
+        let texture =
+            Self::load_texture_from_raw(self, texture, format, dimensions, layers, settings);
         Self::default_textured_material(self, &texture)
     }
     pub fn default_textured_material(&self, texture: &Arc<Texture>) -> materials::Material {

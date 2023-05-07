@@ -30,6 +30,8 @@ anyhow = "1.0.70"
 thiserror = "1.0.40"
 derive_builder = "0.12.0"
 cgmath = "0.18.0"
+indexmap = "1.9.3"
+atomic_float = "0.1.0"
 
 [profile.release]
 strip = "symbols"

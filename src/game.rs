@@ -1,9 +1,10 @@
 pub mod resources;
-use anyhow::Result;
-use hashbrown::HashMap;
-use resources::{GameFont, Resources, Texture};
+pub use resources::Resources;
+use resources::{GameFont, Loader, Texture};
 pub mod objects;
-pub use objects::{data::Data, Appearance, CameraOption, CameraScaling, Node, Object};
+pub use objects::{
+    data::Data, Appearance, CameraOption, CameraScaling, Layer, Node, Object, Scene,
+};
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
@@ -16,10 +17,13 @@ use draw::Draw;
 mod font_layout;
 use font_layout::Labelifier;
 pub mod materials;
-use parking_lot::Mutex;
-use std::{sync::Arc, time::Instant};
+pub mod input;
+pub use input::Input;
 
-use crate::error::objects::*;
+use parking_lot::Mutex;
+use atomic_float::AtomicF64;
+
+use std::{sync::{Arc, atomic::Ordering}, time::Instant};
 
 pub use self::objects::data::Vertex;
 
@@ -58,24 +62,24 @@ impl GameBuilder {
         let clear_background_color = self.clear_background_color;
 
         let (vulkan, event_loop) = Vulkan::init(window_builder);
-        let mut draw = Draw::setup(&vulkan);
-        let labelifier = Labelifier::new(&vulkan, &mut draw);
+        let mut loader = Loader::init(&vulkan);
+        let draw = Draw::setup(&vulkan, &mut loader);
+        let labelifier = Labelifier::new(&vulkan, &mut loader);
 
         let resources = Resources::new(
             vulkan,
-            Arc::new(Mutex::new(draw)),
+            Arc::new(Mutex::new(loader)),
             Arc::new(Mutex::new(labelifier)),
         );
 
         (
             Game {
-                objects: vec![],
-                objects_map: HashMap::new(),
+                scene: Scene::new(),
                 resources,
+                draw,
+                input: Input::new(),
 
-                time: Instant::now(),
-                delta_instant: Instant::now(),
-                delta_time: 0.0,
+                time: Time::default(),
                 clear_background_color,
             },
             event_loop,
@@ -84,15 +88,14 @@ impl GameBuilder {
 }
 
 /// The struct that holds and executes all of the game data.
-#[allow(dead_code)]
 pub struct Game {
-    objects: Vec<(NObject, Option<Arc<Mutex<Node<AObject>>>>)>,
-    objects_map: HashMap<*const Mutex<Object>, NObject>,
+    pub scene: Scene,
     pub resources: Resources,
+    pub time: Time,
+    pub input: Input,
+                        
 
-    time: Instant,
-    delta_instant: Instant,
-    delta_time: f64,
+    draw: Draw,
     clear_background_color: [f32; 4],
 }
 
@@ -103,134 +106,58 @@ impl Game {
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                self.resources.recreate_swapchain();
+                self.draw.recreate_swapchain = true;
             }
             Event::RedrawEventsCleared => {
-                self.resources.redraw(&self.objects, self.clear_background_color);
-                self.delta_time = self.delta_instant.elapsed().as_secs_f64();
-                self.delta_instant = Instant::now();
+                self.resources.update();
+                self.draw.redrawevent(
+                    &self.resources.vulkan,
+                    &mut self.resources.loader.lock(),
+                    &self.scene,
+                    self.clear_background_color,
+                );
+
+                self.time.update();
             }
             _ => (),
         }
     }
-    pub fn new_layer(&mut self) -> AObject {
-        let object = Arc::new(Mutex::new(Object::new()));
 
-        let node = Arc::new(Mutex::new(Node {
-            object: object.clone(),
-            parent: None,
-            children: vec![],
-        }));
-        self.objects.push((node.clone(), None));
-
-        self.objects_map.insert(Arc::as_ptr(&object), node.clone());
-        object
-    }
-
-
-
-
-
-    
-    
-    pub fn load_font(&mut self, data: &[u8]) -> Arc<Font> {
-        self.resources.load_font(data)
-    }
-    pub fn set_camera(
-        &mut self,
-        layer: &AObject,
-        camera: &AObject,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        {
-            let mut camera = camera.lock();
-
-            if let None = camera.camera {
-                camera.camera = Some(CameraOption::new())
-            }
-        }
-
-        if let Some(layer) = self.objects_map.get(&Arc::as_ptr(layer)) {
-            if let Some(index) = self.objects.iter().position(|x| Arc::ptr_eq(&x.0, layer)) {
-                if let Some(camera) = self.objects_map.get(&Arc::as_ptr(camera)) {
-                    self.objects[index].1 = Some(camera.clone())
-                } else {
-                    return Err(Box::new(NoObjectError));
-                }
-            }
-        } else {
-            return Err(Box::new(NoLayerError));
-        }
-
-        Ok(())
-    }
-    pub fn add_object(
-        &mut self,
-        parent: &AObject,
-        initial_object: Object,
-    ) -> Result<AObject, NoParentError> {
-        let object = Arc::new(Mutex::new(initial_object));
-
-        let parent = if let Some(parent) = self.objects_map.get(&Arc::as_ptr(parent)) {
-            parent.clone()
-        } else {
-            return Err(NoParentError);
-        };
-
-        let node = Arc::new(Mutex::new(Node {
-            object: object.clone(),
-            parent: Some(Arc::downgrade(&parent)),
-            children: vec![],
-        }));
-
-        parent.lock().children.push(node.clone());
-
-        self.objects_map.insert(Arc::as_ptr(&object), node);
-        Ok(object)
-    }
-    pub fn contains_object(&self, object: &AObject) -> bool {
-        self.objects_map.contains_key(&Arc::as_ptr(object))
-    }
-    pub fn remove_object(&mut self, object: &AObject) -> Result<(), NoObjectError> {
-        let node: NObject;
-        if let Some(obj) = self.objects_map.remove(&Arc::as_ptr(object)) {
-            node = obj.clone();
-        } else {
-            return Err(NoObjectError);
-        }
-        let mut objectguard = node.lock();
-
-        objectguard.remove_children(&mut self.objects_map);
-
-        if let Some(parent) = &objectguard.parent {
-            let parent = parent.clone().upgrade().unwrap();
-            let mut parent = parent.lock();
-            parent.remove_child(&node);
-        } else {
-            if let Some(index) = self
-                .objects
-                .clone()
-                .into_iter()
-                .position(|x| Arc::ptr_eq(&x.0, &node))
-            {
-                self.objects.remove(index);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn time(&self) -> f64 {
-        self.time.elapsed().as_secs_f64()
-    }
-
-    pub fn delta_time(&self) -> f64 {
-        self.delta_time
-    }
-
-    pub fn fps(&self) -> f64 {
-        1.0 / self.delta_time
-    }
     pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
         self.clear_background_color = color;
     }
 }
 
+#[derive(Clone)]
+pub struct Time {
+    pub time: Instant,
+    delta_instant: Instant,
+    pub delta_time: Arc<AtomicF64>,
+}
+
+impl Default for Time {
+    fn default() -> Self {
+        Self {
+            time: Instant::now(),
+            delta_instant: Instant::now(),
+            delta_time: Arc::new(AtomicF64::new(0.0f64)),
+        }
+    }
+}
+
+impl Time {
+    /// Don't call this function. This is for the game struct to handle.
+    pub fn update(&mut self) {
+        self.delta_time.store(self.delta_instant.elapsed().as_secs_f64(), Ordering::Release);
+        self.delta_instant = Instant::now();
+    }
+    pub fn delta_time(&self) -> f64 {
+        self.delta_time.load(Ordering::Acquire)
+    }
+    pub fn fps(&self) -> f64 {
+        1.0 / self.delta_time.load(Ordering::Acquire)
+    }
+    pub fn time(&self) -> f64 {
+        self.time.elapsed().as_secs_f64()
+    }
+}

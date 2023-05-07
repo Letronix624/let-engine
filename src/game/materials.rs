@@ -110,12 +110,7 @@ impl Material {
         self.descriptor = Some(
             PersistentDescriptorSet::new(
                 allocator,
-                self.pipeline
-                    .layout()
-                    .set_layouts()
-                    .get(1)
-                    .unwrap()
-                    .clone(),
+                self.pipeline.layout().set_layouts().get(1).unwrap().clone(),
                 descriptor,
             )
             .unwrap(),

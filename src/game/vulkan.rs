@@ -17,7 +17,7 @@ use winit::{event_loop::EventLoop, window::WindowBuilder};
 
 use std::sync::Arc;
 
-use super::{materials};
+use super::materials;
 
 #[derive(Clone)]
 pub struct Vulkan {

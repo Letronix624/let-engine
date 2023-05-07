@@ -1,41 +1,29 @@
-use parking_lot::Mutex;
 use std::sync::Arc;
+use std::f32::consts::FRAC_1_SQRT_2;
 use vulkano::{
-    buffer::{allocator::*, BufferContents, BufferUsage},
     command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
+        RenderPassBeginInfo, SubpassContents,
     },
-    descriptor_set::{
-        allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
-    },
-    format::Format,
-    image::{
-        view::{ImageView, ImageViewCreateInfo},
-        ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount, SwapchainImage
-    },
-    memory::allocator::StandardMemoryAllocator,
-    pipeline::{
-        Pipeline, 
-        graphics::viewport::Viewport
-    },
-    render_pass::{Framebuffer, Subpass},
-    sampler::Sampler,
+    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    image::SwapchainImage,
+    pipeline::{graphics::viewport::Viewport, Pipeline},
+    render_pass::Framebuffer,
     swapchain::{
-        acquire_next_image, AcquireError, SwapchainCreateInfo, SwapchainCreationError,
-        SwapchainPresentInfo, Swapchain,
+        acquire_next_image, AcquireError, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
+        SwapchainPresentInfo,
     },
     sync::{self, FlushError, GpuFuture},
 };
 use winit::window::Window;
 
 use super::{
-    materials,
     objects::{data::*, Object},
     vulkan::{window_size_dependent_setup, Vulkan},
+    Loader,
 };
 
-use crate::{game::Node, texture::Format as tFormat, texture::*};
+use crate::game::Node;
 
 use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector2, Vector3};
 
@@ -45,61 +33,27 @@ pub struct Draw {
     pub images: Vec<Arc<SwapchainImage>>,
     pub viewport: Viewport,
     pub framebuffers: Vec<Arc<Framebuffer>>,
-    pub vertex_buffer_allocator: SubbufferAllocator,
-    pub index_buffer_allocator: SubbufferAllocator,
-    pub object_buffer_allocator: SubbufferAllocator,
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
-    pub memoryallocator: Arc<StandardMemoryAllocator>,
-    pub commandbufferallocator: StandardCommandBufferAllocator,
-    descriptor_set_allocator: StandardDescriptorSetAllocator,
 }
 
 impl Draw {
-    pub fn setup(vulkan: &Vulkan) -> Self {
+    pub fn setup(vulkan: &Vulkan, loader: &Loader) -> Self {
         let recreate_swapchain = false;
 
-        let (swapchain, images) = super::vulkan::swapchain::create_swapchain_and_images(&vulkan.device, &vulkan.surface);
-        
+        let (swapchain, images) =
+            super::vulkan::swapchain::create_swapchain_and_images(&vulkan.device, &vulkan.surface);
+
         let mut viewport = Viewport {
             origin: [0.0, 0.0],
             dimensions: [0.0, 0.0],
             depth_range: 0.0..1.0,
         };
 
-        let framebuffers = window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport);
-
-        let memoryallocator = Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
-
-        let vertex_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
-            memoryallocator.clone(),
-            SubbufferAllocatorCreateInfo {
-                buffer_usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-        );
-
-        let index_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
-            memoryallocator.clone(),
-            SubbufferAllocatorCreateInfo {
-                buffer_usage: BufferUsage::INDEX_BUFFER,
-                ..Default::default()
-            },
-        );
-
-        let object_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
-            memoryallocator.clone(),
-            SubbufferAllocatorCreateInfo {
-                buffer_usage: BufferUsage::UNIFORM_BUFFER,
-                ..Default::default()
-            },
-        );
-
-        let commandbufferallocator =
-            StandardCommandBufferAllocator::new(vulkan.device.clone(), Default::default());
-        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(vulkan.device.clone());
+        let framebuffers =
+            window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport);
 
         let uploads = AutoCommandBufferBuilder::primary(
-            &commandbufferallocator,
+            &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
@@ -119,140 +73,15 @@ impl Draw {
             images,
             viewport,
             framebuffers,
-            vertex_buffer_allocator,
-            index_buffer_allocator,
-            object_buffer_allocator,
             previous_frame_end,
-            memoryallocator,
-            commandbufferallocator,
-            descriptor_set_allocator,
         }
-    }
-
-    pub fn load_material(
-        &mut self,
-        vulkan: &Vulkan,
-        settings: materials::MaterialSettings,
-        descriptor_bindings: Vec<WriteDescriptorSet>,
-    ) -> materials::Material {
-        let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
-        materials::Material::new(
-            settings,
-            descriptor_bindings,
-            vulkan,
-            subpass,
-            &self.descriptor_set_allocator,
-        )
-    }
-
-    pub fn load_texture(
-        &mut self,
-        vulkan: &Vulkan,
-        data: Vec<u8>,
-        dimensions: (u32, u32),
-        layers: u32,
-        format: tFormat,
-        settings: TextureSettings,
-    ) -> Arc<PersistentDescriptorSet> {
-        let mut uploads = AutoCommandBufferBuilder::primary(
-            &self.commandbufferallocator,
-            vulkan.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
-
-        let format = if settings.srgb {
-            match format {
-                tFormat::R8 => Format::R8_SRGB,
-                tFormat::RGBA8 => Format::R8G8B8A8_SRGB,
-                tFormat::RGBA16 => Format::R16G16B16A16_UNORM,
-            }
-        } else {
-            match format {
-                tFormat::R8 => Format::R8_UNORM,
-                tFormat::RGBA8 => Format::R8G8B8A8_UNORM,
-                tFormat::RGBA16 => Format::R16G16B16A16_UNORM,
-            }
-        };
-
-        let image = ImmutableImage::from_iter(
-            &self.memoryallocator,
-            data,
-            ImageDimensions::Dim2d {
-                width: dimensions.0,
-                height: dimensions.1,
-                array_layers: layers,
-            },
-            MipmapsCount::One,
-            format,
-            &mut uploads,
-        )
-        .unwrap();
-        
-        let set_layout;
-
-        let texture_view = ImageView::new(
-            image.clone(),
-            ImageViewCreateInfo {
-                view_type: if layers == 1 {
-                    set_layout = vulkan.
-                        textured_material
-                        .pipeline
-                        .layout()
-                        .set_layouts()
-                        .get(1)
-                        .unwrap()
-                        .clone();
-                    ImageViewType::Dim2d
-                } else {
-                    set_layout = vulkan.
-                        texture_array_material
-                        .pipeline
-                        .layout()
-                        .set_layouts()
-                        .get(1)
-                        .unwrap()
-                        .clone();
-                    ImageViewType::Dim2dArray
-                },
-                ..ImageViewCreateInfo::from_image(&image)
-            },
-        )
-        .unwrap();
-
-        let samplercreateinfo = settings.sampler.to_vulkano();
-
-        let sampler = Sampler::new(vulkan.device.clone(), samplercreateinfo).unwrap();
-
-        let set = PersistentDescriptorSet::new(
-            &self.descriptor_set_allocator,
-            set_layout,
-            [WriteDescriptorSet::image_view_sampler(
-                0,
-                texture_view.clone(),
-                sampler.clone(),
-            )],
-        )
-        .unwrap();
-
-        self.previous_frame_end = Some(
-            uploads
-                .build()
-                .unwrap()
-                .execute(vulkan.queue.clone())
-                .unwrap()
-                .boxed(),
-        );
-        set
     }
 
     pub fn redrawevent(
         &mut self,
         vulkan: &Vulkan,
-        objects: &Vec<(
-            Arc<Mutex<Node<Arc<Mutex<Object>>>>>,
-            Option<Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
-        )>,
+        loader: &mut Loader,
+        scene: &super::Scene,
         clear_color: [f32; 4],
     ) {
         //windowevents
@@ -300,7 +129,7 @@ impl Draw {
             };
 
         let mut builder = AutoCommandBufferBuilder::primary(
-            &self.commandbufferallocator,
+            &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
@@ -323,10 +152,10 @@ impl Draw {
             self.recreate_swapchain = true;
         }
 
-        for layer in objects.iter() {
+        for layer in scene.get_layers().iter() {
             let mut order: Vec<Object> = vec![];
 
-            Node::order_position(&mut order, &*layer.0.lock());
+            Node::order_position(&mut order, &*layer.root.lock());
 
             for obj in order {
                 if let Some(appearance) = obj.graphics.clone() {
@@ -343,9 +172,9 @@ impl Draw {
                     let mut descriptors = vec![];
 
                     let objectvert_sub_buffer =
-                        self.object_buffer_allocator.allocate_sized().unwrap();
+                        loader.object_buffer_allocator.allocate_sized().unwrap();
                     let objectfrag_sub_buffer =
-                        self.object_buffer_allocator.allocate_sized().unwrap();
+                        loader.object_buffer_allocator.allocate_sized().unwrap();
 
                     let translation = Matrix3::from_translation(Vector2::new(
                         obj.position[0] + appearance.position[0],
@@ -365,7 +194,7 @@ impl Draw {
 
                     let ortho;
 
-                    let view = if let Some(camera) = &layer.1 {
+                    let view = if let Some(camera) = &layer.camera.lock().clone() {
                         let camera = camera.lock().get_object();
 
                         let rotation = Matrix4::from_angle_z(Rad::from(Deg(camera.rotation)));
@@ -421,21 +250,24 @@ impl Draw {
                         },
                     };
 
-                    descriptors.insert(0, PersistentDescriptorSet::new(
-                        &self.descriptor_set_allocator,
-                        pipeline.layout().set_layouts().get(0).unwrap().clone(),
-                        [
-                            WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
-                            WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
-                        ],
-                    )
-                    .unwrap());
-                    
-                    let vertex_sub_buffer = self
+                    descriptors.insert(
+                        0,
+                        PersistentDescriptorSet::new(
+                            &loader.descriptor_set_allocator,
+                            pipeline.layout().set_layouts().get(0).unwrap().clone(),
+                            [
+                                WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
+                                WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
+                            ],
+                        )
+                        .unwrap(),
+                    );
+
+                    let vertex_sub_buffer = loader
                         .vertex_buffer_allocator
                         .allocate_slice(appearance.data.vertices.clone().len() as _)
                         .unwrap();
-                    let index_sub_buffer = self
+                    let index_sub_buffer = loader
                         .index_buffer_allocator
                         .allocate_slice(appearance.data.indices.clone().len() as _)
                         .unwrap();
@@ -495,16 +327,6 @@ impl Draw {
             }
         }
     }
-    #[allow(unused)]
-    pub fn write_descriptor<T: BufferContents>(
-        &self,
-        descriptor: T,
-        set: u32,
-    ) -> WriteDescriptorSet {
-        let buf = self.object_buffer_allocator.allocate_sized().unwrap();
-        *buf.write().unwrap() = descriptor;
-        WriteDescriptorSet::buffer(set, buf)
-    }
 }
 
 fn ortho_maker(
@@ -538,8 +360,8 @@ fn ortho_maker(
         }
         CameraScaling::Circle => {
             let (width, height) = (
-                1.0 / (dimensions.1.atan2(dimensions.0).sin() / 0.707106781),
-                1.0 / (dimensions.1.atan2(dimensions.0).cos() / 0.707106781),
+                1.0 / (dimensions.1.atan2(dimensions.0).sin() / FRAC_1_SQRT_2),
+                1.0 / (dimensions.1.atan2(dimensions.0).cos() / FRAC_1_SQRT_2),
             );
             Ortho {
                 left: position[0] - zoom * width,

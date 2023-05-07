@@ -1,9 +1,11 @@
 pub mod data;
-use super::{materials};
+use super::{materials, AObject, NObject};
+use crate::error::objects::*;
 use crate::error::textures::*;
 use anyhow::Result;
 pub use data::*;
 use hashbrown::HashMap;
+use indexmap::{indexset, IndexSet};
 use parking_lot::Mutex;
 use std::{
     default,
@@ -132,7 +134,7 @@ impl Node<Arc<Mutex<Object>>> {
             .children
             .clone()
             .into_iter()
-            .position(|x| Arc::as_ptr(&x) == Arc::as_ptr(&object))
+            .position(|x| Arc::ptr_eq(&x, &object))
             .unwrap();
         self.children.remove(index.clone());
     }
@@ -247,4 +249,269 @@ impl default::Default for Appearance {
             color: [1.0, 1.0, 1.0, 1.0],
         }
     }
+}
+
+#[derive(Clone)]
+pub struct Layer {
+    pub root: NObject,
+    pub camera: Arc<Mutex<Option<NObject>>>,
+    objects_map: Arc<Mutex<HashMap<*const Mutex<Object>, NObject>>>,
+}
+
+impl Layer {
+    pub fn new(root: NObject) -> Self {
+        Self {
+            root,
+            camera: Arc::new(Mutex::new(None)),
+            objects_map: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+    pub fn set_camera(&self, camera: &AObject) -> Result<(), NoObjectError> {
+        {
+            let mut camera = camera.lock();
+
+            if let None = camera.camera {
+                camera.camera = Some(CameraOption::new())
+            }
+        }
+        let map = self.objects_map.lock();
+        if let Some(camera) = map.get(&Arc::as_ptr(camera)) {
+            *self.camera.lock() = Some(camera.clone());
+        } else {
+            return Err(NoObjectError);
+        }
+
+        Ok(())
+    }
+    pub fn camera_position(&self) -> [f32; 2] {
+        let camera = self.camera.lock();
+        if let Some(camera) = camera.clone() {
+            camera.lock().get_object().position
+        } else {
+            [0.0; 2]
+        }
+    }
+
+    pub fn contains_object(&self, object: &AObject) -> bool {
+        self.objects_map.lock().contains_key(&Arc::as_ptr(object))
+    }
+
+    pub fn add_object(
+        &self,
+        parent: Option<&AObject>,
+        initial_object: Object,
+    ) -> Result<AObject, NoParentError> {
+        let object = Arc::new(Mutex::new(initial_object));
+
+        let mut map = self.objects_map.lock();
+        
+        let parent: NObject = if let Some(parent) = parent {
+            if let Some(parent) = map.get(&Arc::as_ptr(parent)) {
+                parent.clone()
+            } else {
+                return Err(NoParentError);
+            }
+        } else {
+            self.root.clone()
+        };
+
+        let node = Arc::new(Mutex::new(Node {
+            object: object.clone(),
+            parent: Some(Arc::downgrade(&parent)),
+            children: vec![],
+        }));
+
+        parent.lock().children.push(node.clone());
+
+        map.insert(Arc::as_ptr(&object), node);
+        Ok(object)
+    }
+
+    pub fn remove_object(&self, object: &AObject) -> Result<(), NoObjectError> {
+        let node;
+        let mut map = self.objects_map.lock();
+        if let Some(object) = map.remove(&Arc::as_ptr(object)) {
+            node = object;
+        } else {
+            return Err(NoObjectError);
+        };
+
+        let mut object = node.lock();
+        object.remove_children(&mut map);
+
+        let parent = object.parent.clone().unwrap().upgrade().unwrap();
+        let mut parent = parent.lock();
+        parent.remove_child(&node);
+
+        Ok(())
+    }
+
+    pub fn move_to(&self, object: &AObject, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let node = Self::to_node(&self, object)?;
+        let count = Self::count_children(&node);
+
+        if count > index {
+            return Err(Box::new(MoveError));
+        } else {
+            Self::move_object_to(node, index);
+        }
+        Ok(())
+    }
+
+    pub fn move_down(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {//MoveError> {
+        let node = Self::to_node(&self, object)?;
+        let parent = Self::get_parent(&node);
+        let index = Self::find_child_index(&parent, &node);
+        if index == 0 {
+            return Err(Box::new(MoveError));
+        }
+        else {
+            Self::move_object_to(node, index - 1);
+        }
+        Ok(())
+    }
+
+    pub fn move_up(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {
+        let node = Self::to_node(&self, object)?;
+        let parent = Self::get_parent(&node);
+        let count = Self::count_children(&node);
+        let index = Self::find_child_index(&parent, &node);
+        if count == index {
+            return Err(Box::new(MoveError));
+        }
+        else {
+            Self::move_object_to(node, count + 1);
+        }
+        Ok(())
+    }
+
+    pub fn move_to_bottom(&self, object: &AObject) -> Result<(), NoObjectError> {
+        let node = Self::to_node(&self, object)?;
+        Self::move_object_to(node, 0);
+        Ok(())
+    }
+
+    pub fn move_to_top(&self, object: &AObject) -> Result<(), NoObjectError> {
+        let node = Self::to_node(&self, object)?;
+        let count = Self::count_children(&node);
+        Self::move_object_to(node, count);
+        Ok(())
+    }
+
+    fn get_parent(object: &NObject) -> NObject {
+        object.lock().parent.clone().unwrap().upgrade().unwrap()
+    }
+
+    fn find_child_index(parent: &NObject, object: &NObject) -> usize {
+        let parent = parent.lock();
+        parent
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::ptr_eq(&x, &object))
+            .unwrap()
+    }
+
+    fn count_children(object: &NObject) -> usize {
+        let parent = Self::get_parent(object);
+        let parent = parent.lock();
+        parent.children.len()
+    }
+
+    fn to_node(&self, object: &AObject) -> Result<NObject, NoObjectError> {
+        let map = self.objects_map.lock();
+        if let Some(object) = map.get(&Arc::as_ptr(object)) {
+            return Ok(object.clone())
+        } else {
+            return Err(NoObjectError)
+        }
+    }
+
+    fn move_object_to(src: NObject, dst: usize) {
+        let parent = src.lock().parent.clone().unwrap().upgrade().unwrap();
+        let mut parent = parent.lock();
+        let index = parent
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::ptr_eq(&x, &src))
+            .unwrap();
+        parent.children.swap(index, dst);
+
+    }
+
+    
+    pub fn children_count(
+        &self,
+        parent: &AObject,
+    ) -> Result<usize, NoObjectError> {
+        let node = Self::to_node(&self, parent)?;
+        Ok(Self::count_children(&node))
+    }
+}
+
+impl PartialEq for Layer {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.root, &other.root)
+            && Arc::ptr_eq(&self.camera, &other.camera)
+            && Arc::ptr_eq(&self.objects_map, &other.objects_map)
+    }
+}
+
+impl Eq for Layer {}
+
+impl std::hash::Hash for Layer {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.root).hash(state);
+        Arc::as_ptr(&self.camera).hash(state);
+        Arc::as_ptr(&self.objects_map).hash(state);
+    }
+}
+
+pub struct Scene {
+    layers: Arc<Mutex<IndexSet<Layer>>>,
+}
+
+impl Scene {
+    pub fn new() -> Self {
+        Self {
+            layers: Arc::new(Mutex::new(indexset![])),
+        }
+    }
+    pub fn new_layer(&self) -> Layer {
+        let object = Arc::new(Mutex::new(Object::new()));
+
+        let node = Layer::new(Arc::new(Mutex::new(Node {
+            object: object.clone(),
+            parent: None,
+            children: vec![],
+        })));
+        self.layers.lock().insert(node.clone());
+
+        node
+    }
+    pub fn remove_layer(&self, layer: &mut Layer) -> Result<(), NoObjectError> {
+        let node: NObject;
+        let mut layers = self.layers.lock();
+        if layers.remove(layer) {
+            node = layer.root.clone();
+        } else {
+            return Err(NoObjectError);
+        }
+        let mut objectguard = node.lock();
+
+        //delete all the children of the layer too.
+        objectguard.remove_children(&mut layer.objects_map.lock());
+        //finish him!
+        layers.remove(layer);
+
+        Ok(())
+    }
+
+    pub fn get_layers(&self) -> IndexSet<Layer> {
+        self.layers.lock().clone()
+    }
+
+    //Add support to serialize and deserialize scenes. load and undload.
+    //Add those functions to game.
 }

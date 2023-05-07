@@ -18,3 +18,7 @@ pub struct NoParentError;
 #[derive(Error, Debug)]
 #[error("No Layer found")]
 pub struct NoLayerError;
+
+#[derive(Error, Debug)]
+#[error("Can't move object any further.")]
+pub struct MoveError;
