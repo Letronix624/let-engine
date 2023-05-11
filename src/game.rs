@@ -16,14 +16,17 @@ mod draw;
 use draw::Draw;
 mod font_layout;
 use font_layout::Labelifier;
-pub mod materials;
 pub mod input;
+pub mod materials;
 pub use input::Input;
 
-use parking_lot::Mutex;
 use atomic_float::AtomicF64;
+use parking_lot::Mutex;
 
-use std::{sync::{Arc, atomic::Ordering}, time::Instant};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Instant,
+};
 
 pub use self::objects::data::Vertex;
 
@@ -63,7 +66,7 @@ impl GameBuilder {
 
         let (vulkan, event_loop) = Vulkan::init(window_builder);
         let mut loader = Loader::init(&vulkan);
-        let draw = Draw::setup(&vulkan, &mut loader);
+        let draw = Draw::setup(&vulkan, &loader);
         let labelifier = Labelifier::new(&vulkan, &mut loader);
 
         let resources = Resources::new(
@@ -74,16 +77,21 @@ impl GameBuilder {
 
         (
             Game {
-                scene: Scene::new(),
+                scene: Scene::default(),
                 resources,
                 draw,
-                input: Input::new(),
+                input: Input::default(),
 
                 time: Time::default(),
                 clear_background_color,
             },
             event_loop,
         )
+    }
+}
+impl Default for GameBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -93,7 +101,6 @@ pub struct Game {
     pub resources: Resources,
     pub time: Time,
     pub input: Input,
-                        
 
     draw: Draw,
     clear_background_color: [f32; 4],
@@ -121,6 +128,8 @@ impl Game {
             }
             _ => (),
         }
+        self.input
+            .update(event, self.resources.get_window().inner_size());
     }
 
     pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
@@ -148,7 +157,10 @@ impl Default for Time {
 impl Time {
     /// Don't call this function. This is for the game struct to handle.
     pub fn update(&mut self) {
-        self.delta_time.store(self.delta_instant.elapsed().as_secs_f64(), Ordering::Release);
+        self.delta_time.store(
+            self.delta_instant.elapsed().as_secs_f64(),
+            Ordering::Release,
+        );
         self.delta_instant = Instant::now();
     }
     pub fn delta_time(&self) -> f64 {

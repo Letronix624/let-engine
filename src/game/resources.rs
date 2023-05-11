@@ -148,7 +148,7 @@ impl Resources {
             }
         };
 
-        dimensions.1 = dimensions.1 / layers;
+        dimensions.1 /= layers;
 
         Ok(Self::load_texture_from_raw(
             self, image, format, dimensions, layers, settings,
@@ -167,6 +167,9 @@ impl Resources {
         labelifier.queue(object.clone(), font, text.to_string(), scale, align);
     }
     //shaders
+    /// # Safety
+    ///
+    /// Any wrong shaders bytes can mess up the program in a way I didn't text before.
     pub unsafe fn new_shader_from_raw(
         // loading things all temporary. Will get sepparated to their own things soon.
         &self,
@@ -196,13 +199,9 @@ impl Resources {
         layers: u32,
         settings: TextureSettings,
     ) -> Result<materials::Material, InvalidFormatError> {
-        let texture = Self::load_texture(self, texture, format, layers, settings);
+        let texture = Self::load_texture(self, texture, format, layers, settings)?;
 
-        if let Err(error) = texture {
-            return Err(error);
-        }
-
-        Ok(Self::default_textured_material(self, &texture.unwrap()))
+        Ok(Self::default_textured_material(self, &texture))
     }
     /// Simplification of making a texture and putting it into a material.
     pub fn new_material_from_raw_texture(
@@ -237,6 +236,11 @@ impl Resources {
             .downcast_ref::<Window>()
             .unwrap()
     }
+
+    pub fn window_dimensions(&self) -> (u32, u32) {
+        let dim = Self::get_window(self).inner_size();
+        (dim.width, dim.height)
+    }
 }
 
 #[derive(Clone)]
@@ -261,9 +265,6 @@ impl PartialEq for Texture {
         self.data == other.data
             && self.dimensions == other.dimensions
             && Arc::ptr_eq(&self.set, &other.set)
-    }
-    fn ne(&self, other: &Self) -> bool {
-        !self.eq(other)
     }
 }
 

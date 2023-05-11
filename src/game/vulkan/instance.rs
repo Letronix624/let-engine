@@ -65,7 +65,7 @@ pub fn create_physical_and_queue(
                 .enumerate()
                 .position(|(i, q)| {
                     q.queue_flags.intersects(QueueFlags::GRAPHICS)
-                        && p.surface_support(i as u32, &surface).unwrap_or(false)
+                        && p.surface_support(i as u32, surface).unwrap_or(false)
                     //q.queue_flags.graphics && p.surface_support(i as u32, surface).unwrap_or(false)
                 })
                 .map(|i| (p, i as u32))
@@ -89,7 +89,7 @@ pub fn create_device_and_queues(
     let (device, mut queues) = Device::new(
         physical_device.clone(),
         DeviceCreateInfo {
-            enabled_extensions: device_extensions.clone(),
+            enabled_extensions: *device_extensions,
             enabled_features: features,
             queue_create_infos: vec![QueueCreateInfo {
                 queue_family_index,

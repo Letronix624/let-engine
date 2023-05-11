@@ -168,7 +168,7 @@ macro_rules! make_circle {
         let corners = $corners;
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
-        use core::f64::consts::PI;
+        use core::f64::consts::TAU;
         vertices.push(Vertex {
             position: [0.0, 0.0],
             tex_position: [0.0, 0.0],
@@ -177,12 +177,12 @@ macro_rules! make_circle {
             indices.extend([0, i + 1, i + 2]);
             vertices.push(Vertex {
                 position: [
-                    (PI * 2.0 * ((i as f64) / corners as f64)).cos() as f32,
-                    (PI * 2.0 * ((i as f64) / corners as f64)).sin() as f32,
+                    (TAU * ((i as f64) / corners as f64)).cos() as f32,
+                    (TAU * ((i as f64) / corners as f64)).sin() as f32,
                 ],
                 tex_position: [
-                    (PI * 2.0 * ((i as f64) / corners as f64)).cos() as f32,
-                    (PI * 2.0 * ((i as f64) / corners as f64)).sin() as f32,
+                    (TAU * ((i as f64) / corners as f64)).cos() as f32,
+                    (TAU * ((i as f64) / corners as f64)).sin() as f32,
                 ],
             });
         }
@@ -191,7 +191,7 @@ macro_rules! make_circle {
         Data { vertices, indices }
     }};
     ($corners:expr, $purrcent:expr) => {{
-        use core::f64::consts::PI;
+        use core::f64::consts::TAU;
         use let_engine::Vertex;
         let corners = $corners;
         let purrcent = $purrcent as f64;
@@ -199,7 +199,7 @@ macro_rules! make_circle {
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
 
-        let count = (PI * 2.0) * purrcent;
+        let count = TAU * purrcent;
 
         vertices.push(Vertex {
             position: [0.0, 0.0],

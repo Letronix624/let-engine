@@ -78,7 +78,7 @@ impl Material {
             .render_pass(subpass)
             .build(vulkan.device.clone())
             .unwrap();
-        let descriptor = if descriptor.len() != 0 {
+        let descriptor = if !descriptor.is_empty() {
             Some(
                 PersistentDescriptorSet::new(
                     allocator,
@@ -145,7 +145,7 @@ impl Material {
         Ok(())
     }
     pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(_) = &self.texture {
+        if self.texture.is_some() {
             if self.layer == 0 {
                 return Err(Box::new(TextureIDError));
             }
@@ -180,6 +180,10 @@ pub struct Shaders {
 }
 
 impl Shaders {
+    /// # Safety
+    ///
+    /// When loading those shaders the engine doesn't know if they are right.
+    /// So when they are wrong I'm not sure what will happen. Make it right!
     pub unsafe fn from_bytes(vertex_bytes: &[u8], fragment_bytes: &[u8], vulkan: &Vulkan) -> Self {
         let vertex: Arc<ShaderModule> =
             unsafe { ShaderModule::from_bytes(vulkan.device.clone(), vertex_bytes).unwrap() };

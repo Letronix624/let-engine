@@ -60,7 +60,7 @@ impl Labelifier {
             .build()
             .unwrap();
 
-        let material = loader.load_material(&vulkan, material_settings, vec![]);
+        let material = loader.load_material(vulkan, material_settings, vec![]);
 
         Self {
             material,
@@ -112,7 +112,7 @@ impl Labelifier {
     }
     pub fn update(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
         if !self.ready {
-            return ();
+            return;
         }
 
         loop {
@@ -165,15 +165,15 @@ impl Labelifier {
                     {
                         let gl_rect = rusttype::Rect {
                             min: point(
-                                (screen_rect.min.x as f32 / dimensions[0] as f32 - 0.5) * 2.0,
-                                (screen_rect.min.y as f32 / dimensions[1] as f32 - 0.5) * 2.0,
+                                (screen_rect.min.x as f32 / dimensions[0] - 0.5) * 2.0,
+                                (screen_rect.min.y as f32 / dimensions[1] - 0.5) * 2.0,
                             ),
                             max: point(
-                                (screen_rect.max.x as f32 / dimensions[0] as f32 - 0.5) * 2.0,
-                                (screen_rect.max.y as f32 / dimensions[1] as f32 - 0.5) * 2.0,
+                                (screen_rect.max.x as f32 / dimensions[0] - 0.5) * 2.0,
+                                (screen_rect.max.y as f32 / dimensions[1] - 0.5) * 2.0,
                             ),
                         };
-                        indices.extend([1 + id, 2 + id, 0 + id, 2 + id, 0 + id, 3 + id]);
+                        indices.extend([1 + id, 2 + id, id, 2 + id, id, 3 + id]);
                         id += 4;
                         vec![
                             Vertex {
@@ -261,7 +261,7 @@ fn layout_paragraph<'a>(
     dimensions: [f32; 2],
     align: [f32; 2],
 ) -> Vec<PositionedGlyph<'a>> {
-    if text == "" {
+    if text.is_empty() {
         return vec![];
     };
     let mut result: Vec<Vec<PositionedGlyph>> = vec![vec![]];

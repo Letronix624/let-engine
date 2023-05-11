@@ -80,11 +80,10 @@ impl Vulkan {
         let pipeline: Arc<GraphicsPipeline> =
             pipeline::create_pipeline(&device, &vs, &fs, subpass.clone());
         let textured_pipeline = pipeline::create_pipeline(&device, &vs, &tfs, subpass.clone());
-        let texture_array_pipeline =
-            pipeline::create_pipeline(&device, &vs, &tafs, subpass.clone());
+        let texture_array_pipeline = pipeline::create_pipeline(&device, &vs, &tafs, subpass);
 
         let default_material = materials::Material {
-            pipeline: pipeline,
+            pipeline,
             descriptor: None,
             texture: None,
             layer: 0,

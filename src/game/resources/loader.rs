@@ -175,8 +175,8 @@ impl Loader {
             set_layout,
             [WriteDescriptorSet::image_view_sampler(
                 0,
-                texture_view.clone(),
-                sampler.clone(),
+                texture_view,
+                sampler,
             )],
         )
         .unwrap();

@@ -9,8 +9,13 @@ use indexmap::{indexset, IndexSet};
 use parking_lot::Mutex;
 use std::{
     default,
-    sync::{Arc, Weak},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Weak,
+    },
 };
+
+type ObjectsMap = HashMap<u64, NObject>;
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -22,6 +27,7 @@ pub struct Object {
     pub rotation: f32,
     pub graphics: Option<Appearance>,
     pub camera: Option<CameraOption>,
+    id: u64,
 }
 
 impl Object {
@@ -38,6 +44,13 @@ impl Object {
         self.graphics = graphics;
         self
     }
+    pub fn get_id(&self) -> u64 {
+        self.id
+    }
+    pub fn initialize(mut self, id: u64) -> Self {
+        self.id = id;
+        self
+    }
 }
 
 impl std::ops::Add for Object {
@@ -48,14 +61,15 @@ impl std::ops::Add for Object {
             .position
             .clone()
             .iter()
-            .zip(rhs.position.clone())
+            .zip(rhs.position)
             .map(|(a, b)| a + b)
             .collect();
+        #[allow(clippy::suspicious_arithmetic_impl)]
         let size: Vec<f32> = self
             .size
             .clone()
             .iter()
-            .zip(rhs.size.clone())
+            .zip(rhs.size)
             .map(|(a, b)| a * b)
             .collect();
         let rotation = self.rotation + rhs.rotation;
@@ -64,7 +78,7 @@ impl std::ops::Add for Object {
             position: [position[0], position[1]],
             size: [size[0], size[1]],
             rotation,
-            ..rhs.clone()
+            ..rhs
         }
     }
 }
@@ -77,6 +91,7 @@ impl Default for Object {
             rotation: 0.0,
             graphics: None,
             camera: None,
+            id: 0,
         }
     }
 }
@@ -125,27 +140,24 @@ impl Node<Arc<Mutex<Object>>> {
             for child in child.children.iter() {
                 let child = child.lock();
                 order.push(object.clone() + child.object.lock().clone());
-                Self::order_position(order, &*child);
+                Self::order_position(order, &child);
             }
         }
     }
-    pub fn remove_child(&mut self, object: &Arc<Mutex<Node<Arc<Mutex<Object>>>>>) {
+    pub fn remove_child(&mut self, object: &NObject) {
         let index = self
             .children
             .clone()
             .into_iter()
-            .position(|x| Arc::ptr_eq(&x, &object))
+            .position(|x| Arc::ptr_eq(&x, object))
             .unwrap();
-        self.children.remove(index.clone());
+        self.children.remove(index);
     }
-    pub fn remove_children(
-        &mut self,
-        objects: &mut HashMap<*const Mutex<Object>, Arc<Mutex<Node<Arc<Mutex<Object>>>>>>,
-    ) {
+    pub fn remove_children(&mut self, objects: &mut ObjectsMap) {
         for child in self.children.iter() {
             child.clone().lock().remove_children(objects);
         }
-        objects.remove(&Arc::as_ptr(&self.object));
+        objects.remove(&self.object.lock().get_id());
         self.children = vec![];
     }
     pub fn get_object(&self) -> Object {
@@ -255,7 +267,8 @@ impl default::Default for Appearance {
 pub struct Layer {
     pub root: NObject,
     pub camera: Arc<Mutex<Option<NObject>>>,
-    objects_map: Arc<Mutex<HashMap<*const Mutex<Object>, NObject>>>,
+    objects_map: Arc<Mutex<ObjectsMap>>,
+    latest_object: Arc<AtomicU64>,
 }
 
 impl Layer {
@@ -264,18 +277,19 @@ impl Layer {
             root,
             camera: Arc::new(Mutex::new(None)),
             objects_map: Arc::new(Mutex::new(HashMap::new())),
+            latest_object: Arc::new(AtomicU64::new(0)),
         }
     }
     pub fn set_camera(&self, camera: &AObject) -> Result<(), NoObjectError> {
         {
             let mut camera = camera.lock();
 
-            if let None = camera.camera {
-                camera.camera = Some(CameraOption::new())
+            if camera.camera.is_none() {
+                camera.camera = Some(CameraOption::new());
             }
         }
         let map = self.objects_map.lock();
-        if let Some(camera) = map.get(&Arc::as_ptr(camera)) {
+        if let Some(camera) = map.get(&camera.lock().get_id()) {
             *self.camera.lock() = Some(camera.clone());
         } else {
             return Err(NoObjectError);
@@ -291,9 +305,30 @@ impl Layer {
             [0.0; 2]
         }
     }
+    pub fn camera_scaling(&self) -> CameraScaling {
+        let camera = self.camera.lock();
+        if let Some(camera) = camera.clone() {
+            let camera = camera.lock().get_object().camera;
+            camera.unwrap().mode
+        } else {
+            CameraScaling::Stretch
+        }
+    }
+
+    pub fn side_to_world(&self, direction: [f32; 2], dimensions: (f32, f32)) -> [f32; 2] {
+        let camera = Self::camera_position(self);
+        let direction = [direction[0] * 2.0 - 1.0, direction[1] * 2.0 - 1.0];
+        let (width, height) = scale(Self::camera_scaling(self), dimensions);
+        [
+            direction[0] * width + camera[0] * 2.0,
+            direction[1] * height + camera[1] * 2.0,
+        ]
+    }
 
     pub fn contains_object(&self, object: &AObject) -> bool {
-        self.objects_map.lock().contains_key(&Arc::as_ptr(object))
+        self.objects_map
+            .lock()
+            .contains_key(&object.lock().get_id())
     }
 
     pub fn add_object(
@@ -301,12 +336,14 @@ impl Layer {
         parent: Option<&AObject>,
         initial_object: Object,
     ) -> Result<AObject, NoParentError> {
-        let object = Arc::new(Mutex::new(initial_object));
+        let id = self.latest_object.fetch_add(1, Ordering::AcqRel);
+
+        let object = Arc::new(Mutex::new(initial_object.initialize(id)));
 
         let mut map = self.objects_map.lock();
-        
+
         let parent: NObject = if let Some(parent) = parent {
-            if let Some(parent) = map.get(&Arc::as_ptr(parent)) {
+            if let Some(parent) = map.get(&parent.lock().get_id()) {
                 parent.clone()
             } else {
                 return Err(NoParentError);
@@ -323,14 +360,14 @@ impl Layer {
 
         parent.lock().children.push(node.clone());
 
-        map.insert(Arc::as_ptr(&object), node);
+        map.insert(id, node);
         Ok(object)
     }
 
     pub fn remove_object(&self, object: &AObject) -> Result<(), NoObjectError> {
         let node;
         let mut map = self.objects_map.lock();
-        if let Some(object) = map.remove(&Arc::as_ptr(object)) {
+        if let Some(object) = map.remove(&object.lock().get_id()) {
             node = object;
         } else {
             return Err(NoObjectError);
@@ -346,8 +383,12 @@ impl Layer {
         Ok(())
     }
 
-    pub fn move_to(&self, object: &AObject, index: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let node = Self::to_node(&self, object)?;
+    pub fn move_to(
+        &self,
+        object: &AObject,
+        index: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let node = Self::to_node(self, object)?;
         let count = Self::count_children(&node);
 
         if count > index {
@@ -358,41 +399,40 @@ impl Layer {
         Ok(())
     }
 
-    pub fn move_down(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {//MoveError> {
-        let node = Self::to_node(&self, object)?;
+    pub fn move_down(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {
+        //MoveError> {
+        let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
         let index = Self::find_child_index(&parent, &node);
         if index == 0 {
             return Err(Box::new(MoveError));
-        }
-        else {
+        } else {
             Self::move_object_to(node, index - 1);
         }
         Ok(())
     }
 
     pub fn move_up(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {
-        let node = Self::to_node(&self, object)?;
+        let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
         let count = Self::count_children(&node);
         let index = Self::find_child_index(&parent, &node);
         if count == index {
             return Err(Box::new(MoveError));
-        }
-        else {
+        } else {
             Self::move_object_to(node, count + 1);
         }
         Ok(())
     }
 
     pub fn move_to_bottom(&self, object: &AObject) -> Result<(), NoObjectError> {
-        let node = Self::to_node(&self, object)?;
+        let node = Self::to_node(self, object)?;
         Self::move_object_to(node, 0);
         Ok(())
     }
 
     pub fn move_to_top(&self, object: &AObject) -> Result<(), NoObjectError> {
-        let node = Self::to_node(&self, object)?;
+        let node = Self::to_node(self, object)?;
         let count = Self::count_children(&node);
         Self::move_object_to(node, count);
         Ok(())
@@ -408,7 +448,7 @@ impl Layer {
             .children
             .clone()
             .into_iter()
-            .position(|x| Arc::ptr_eq(&x, &object))
+            .position(|x| Arc::ptr_eq(&x, object))
             .unwrap()
     }
 
@@ -420,10 +460,10 @@ impl Layer {
 
     fn to_node(&self, object: &AObject) -> Result<NObject, NoObjectError> {
         let map = self.objects_map.lock();
-        if let Some(object) = map.get(&Arc::as_ptr(object)) {
-            return Ok(object.clone())
+        if let Some(object) = map.get(&object.lock().get_id()) {
+            Ok(object.clone())
         } else {
-            return Err(NoObjectError)
+            Err(NoObjectError)
         }
     }
 
@@ -437,15 +477,10 @@ impl Layer {
             .position(|x| Arc::ptr_eq(&x, &src))
             .unwrap();
         parent.children.swap(index, dst);
-
     }
 
-    
-    pub fn children_count(
-        &self,
-        parent: &AObject,
-    ) -> Result<usize, NoObjectError> {
-        let node = Self::to_node(&self, parent)?;
+    pub fn children_count(&self, parent: &AObject) -> Result<usize, NoObjectError> {
+        let node = Self::to_node(self, parent)?;
         Ok(Self::count_children(&node))
     }
 }
@@ -473,16 +508,11 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new() -> Self {
-        Self {
-            layers: Arc::new(Mutex::new(indexset![])),
-        }
-    }
     pub fn new_layer(&self) -> Layer {
         let object = Arc::new(Mutex::new(Object::new()));
 
         let node = Layer::new(Arc::new(Mutex::new(Node {
-            object: object.clone(),
+            object,
             parent: None,
             children: vec![],
         })));
@@ -514,4 +544,31 @@ impl Scene {
 
     //Add support to serialize and deserialize scenes. load and undload.
     //Add those functions to game.
+}
+impl Default for Scene {
+    fn default() -> Self {
+        Self {
+            layers: Arc::new(Mutex::new(indexset![])),
+        }
+    }
+}
+
+use core::f32::consts::FRAC_1_SQRT_2;
+pub fn scale(mode: CameraScaling, dimensions: (f32, f32)) -> (f32, f32) {
+    match mode {
+        CameraScaling::Stretch => (1.0, 1.0),
+        CameraScaling::Linear => (
+            0.5 / (dimensions.1 / (dimensions.0 + dimensions.1)),
+            0.5 / (dimensions.0 / (dimensions.0 + dimensions.1)),
+        ),
+        CameraScaling::Circle => (
+            1.0 / (dimensions.1.atan2(dimensions.0).sin() / FRAC_1_SQRT_2),
+            1.0 / (dimensions.1.atan2(dimensions.0).cos() / FRAC_1_SQRT_2),
+        ),
+        CameraScaling::Limited => (
+            1.0 / (dimensions.1 / dimensions.0.clamp(0.0, dimensions.1)),
+            1.0 / (dimensions.0 / dimensions.1.clamp(0.0, dimensions.0)),
+        ),
+        CameraScaling::Expand => (dimensions.0 * 0.001, dimensions.1 * 0.001),
+    }
 }

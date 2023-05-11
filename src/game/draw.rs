@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::f32::consts::FRAC_1_SQRT_2;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
@@ -25,7 +24,7 @@ use super::{
 
 use crate::game::Node;
 
-use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector2, Vector3};
+use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
 
 pub struct Draw {
     pub recreate_swapchain: bool,
@@ -155,11 +154,11 @@ impl Draw {
         for layer in scene.get_layers().iter() {
             let mut order: Vec<Object> = vec![];
 
-            Node::order_position(&mut order, &*layer.root.lock());
+            Node::order_position(&mut order, &layer.root.lock());
 
             for obj in order {
                 if let Some(appearance) = obj.graphics.clone() {
-                    if &appearance.data.vertices.len() == &0 {
+                    if appearance.data.vertices.is_empty() {
                         continue;
                     }
 
@@ -176,21 +175,23 @@ impl Draw {
                     let objectfrag_sub_buffer =
                         loader.object_buffer_allocator.allocate_sized().unwrap();
 
-                    let translation = Matrix3::from_translation(Vector2::new(
+                    let translation = Vector3::new(
                         obj.position[0] + appearance.position[0],
                         obj.position[1] + appearance.position[1],
-                    ));
+                        0.0,
+                    );
+
                     let rotation =
                         Matrix3::from_angle_z(Rad::from(Deg(obj.rotation + appearance.rotation)));
+
                     let scaling = Matrix3::from_nonuniform_scale(
                         obj.size[0] * appearance.size[0],
                         obj.size[1] * appearance.size[1],
                     );
 
-                    let model = Matrix4::from_nonuniform_scale(1.0, 1.0, 1.0)
+                    let model = Matrix4::from_translation(translation)
                         * Matrix4::from(rotation)
-                        * Matrix4::from(scaling)
-                        * Matrix4::from(translation);
+                        * Matrix4::from(scaling);
 
                     let ortho;
 
@@ -335,67 +336,13 @@ fn ortho_maker(
     zoom: f32,
     dimensions: (f32, f32),
 ) -> Ortho<f32> {
-    match mode {
-        CameraScaling::Stretch => Ortho {
-            left: position[0] - zoom,
-            right: position[0] + zoom,
-            bottom: position[1] - zoom,
-            top: position[1] + zoom,
-            near: -1.0,
-            far: 1.0,
-        },
-        CameraScaling::Linear => {
-            let (width, height) = (
-                0.5 / (dimensions.1 / (dimensions.0 + dimensions.1)),
-                0.5 / (dimensions.0 / (dimensions.0 + dimensions.1)),
-            );
-            Ortho {
-                left: position[0] - zoom * width,
-                right: position[0] + zoom * width,
-                bottom: position[1] - zoom * height,
-                top: position[1] + zoom * height,
-                near: -1.0,
-                far: 1.0,
-            }
-        }
-        CameraScaling::Circle => {
-            let (width, height) = (
-                1.0 / (dimensions.1.atan2(dimensions.0).sin() / FRAC_1_SQRT_2),
-                1.0 / (dimensions.1.atan2(dimensions.0).cos() / FRAC_1_SQRT_2),
-            );
-            Ortho {
-                left: position[0] - zoom * width,
-                right: position[0] + zoom * width,
-                bottom: position[1] - zoom * height,
-                top: position[1] + zoom * height,
-                near: -1.0,
-                far: 1.0,
-            }
-        }
-        CameraScaling::Limited => {
-            let (width, height) = (
-                1.0 / (dimensions.1 / dimensions.0.clamp(0.0, dimensions.1)),
-                1.0 / (dimensions.0 / dimensions.1.clamp(0.0, dimensions.0)),
-            );
-            Ortho {
-                left: position[0] - zoom * width,
-                right: position[0] + zoom * width,
-                bottom: position[1] - zoom * height,
-                top: position[1] + zoom * height,
-                near: -1.0,
-                far: 1.0,
-            }
-        }
-        CameraScaling::Expand => {
-            let (width, height) = (dimensions.0 * 0.001, dimensions.1 * 0.001);
-            Ortho {
-                left: position[0] - zoom * width,
-                right: position[0] + zoom * width,
-                bottom: position[1] - zoom * height,
-                top: position[1] + zoom * height,
-                near: -1.0,
-                far: 1.0,
-            }
-        }
+    let (width, height) = super::objects::scale(mode, dimensions);
+    Ortho {
+        left: position[0] - zoom * width,
+        right: position[0] + zoom * width,
+        bottom: position[1] - zoom * height,
+        top: position[1] + zoom * height,
+        near: -1.0,
+        far: 1.0,
     }
 }
