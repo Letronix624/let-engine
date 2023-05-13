@@ -13,9 +13,9 @@ pub struct Vertex {
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
 pub struct ModelViewProj {
     //sepparate to vertex and fragment
-    pub model: [[f32; 4]; 4],
-    pub view: [[f32; 4]; 4],
-    pub proj: [[f32; 4]; 4],
+    pub model: [f32; 16],
+    pub view: [f32; 16],
+    pub proj: [f32; 16],
 }
 
 #[repr(C)]
@@ -28,9 +28,9 @@ pub struct ObjectFrag {
 impl Default for ModelViewProj {
     fn default() -> Self {
         Self {
-            model: [[0.0; 4]; 4],
-            view: [[0.0; 4]; 4],
-            proj: [[0.0; 4]; 4],
+            model: [0.0; 16],
+            view: [0.0; 16],
+            proj: [0.0; 16],
         }
     }
 }
@@ -174,7 +174,6 @@ macro_rules! make_circle {
             tex_position: [0.0, 0.0],
         });
         for i in 0..corners {
-            indices.extend([0, i + 1, i + 2]);
             vertices.push(Vertex {
                 position: [
                     (TAU * ((i as f64) / corners as f64)).cos() as f32,
@@ -185,6 +184,9 @@ macro_rules! make_circle {
                     (TAU * ((i as f64) / corners as f64)).sin() as f32,
                 ],
             });
+        }
+        for i in 0..corners - 1 {
+            indices.extend([0, i + 1, i + 2]);
         }
 
         indices.extend([0, corners, 1]);
@@ -207,7 +209,6 @@ macro_rules! make_circle {
         });
 
         for i in 0..corners + 1 {
-            indices.extend([0, i + 1, i + 2]);
             vertices.push(Vertex {
                 position: [
                     (count * ((i as f64) / corners as f64)).cos() as f32,
@@ -218,6 +219,9 @@ macro_rules! make_circle {
                     (count * ((i as f64) / corners as f64)).sin() as f32,
                 ],
             });
+        }
+        for i in 0..corners {
+            indices.extend([0, i + 1, i + 2]);
         }
 
         Data { vertices, indices }

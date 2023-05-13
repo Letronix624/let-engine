@@ -21,10 +21,13 @@ pub struct Input {
     //mouse position
     cursor_position: Arc<Mutex<[f32; 2]>>,
     cursor_inside: Arc<AtomicBool>,
+    //dimensions of the window
+    dimensions: Arc<Mutex<(f32, f32)>>,
 }
 
 impl Input {
     pub fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: PhysicalSize<u32>) {
+        *self.dimensions.lock() = (dimensions.width as f32, dimensions.height as f32);
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::KeyboardInput { input, .. } => {
@@ -68,14 +71,21 @@ impl Input {
         self.mouse_down.lock().contains(button)
     }
     pub fn cursor_position(&self) -> [f32; 2] {
-        let a = self.cursor_position.lock();
-        [a[0], a[1]]
+        let cp = self.cursor_position.lock();
+        [cp[0], cp[1]]
     }
-    pub fn cursor_to_world(&self, layer: &Layer, dimensions: (f32, f32)) -> [f32; 2] {
-        let (width, height) = super::objects::scale(layer.camera_scaling(), dimensions);
-        let a = self.cursor_position.lock();
-        let b = layer.camera_position();
-        [a[0] * width + b[0] * 2.0, a[1] * height + b[1] * 2.0]
+    pub fn scaled_cursor(&self, layer: &Layer) -> [f32; 2] {
+        let (width, height) = super::objects::scale(layer.camera_scaling(), *self.dimensions.lock());
+        let cp = self.cursor_position.lock();
+        [cp[0] * width, cp[1] * height]
+    }
+    pub fn cursor_to_world(&self, layer: &Layer) -> [f32; 2] {
+        let dims = self.dimensions.lock().clone();
+        let (width, height) = super::objects::scale(layer.camera_scaling(), dims);
+        let cp = self.cursor_position.lock();
+        let cam = layer.camera_position();
+        let zoom = 1.0 / layer.zoom();
+        [cp[0] * (width * zoom) + cam[0] * 2.0, cp[1] * (height * zoom) + cam[1] * 2.0]
     }
 
     pub fn shift(&self) -> bool {
@@ -103,6 +113,7 @@ impl Default for Input {
             mouse_down: Arc::new(Mutex::new(HashSet::new())),
             cursor_position: Arc::new(Mutex::new([0.0; 2])),
             cursor_inside: Arc::new(AtomicBool::new(false)),
+            dimensions: Arc::new(Mutex::new((0.0, 0.0))),
         }
     }
 }

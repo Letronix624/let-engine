@@ -24,7 +24,8 @@ use super::{
 
 use crate::game::Node;
 
-use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
+//use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
+use glam::f32::{Mat4, Vec3, Quat};
 
 pub struct Draw {
     pub recreate_swapchain: bool,
@@ -175,66 +176,67 @@ impl Draw {
                     let objectfrag_sub_buffer =
                         loader.object_buffer_allocator.allocate_sized().unwrap();
 
-                    let translation = Vector3::new(
+                    let scaling = Vec3::new(
+                        obj.size[0] * appearance.size[0],
+                        obj.size[1] * appearance.size[1],
+                        0.0,
+                    );
+                    let rotation = Quat::from_rotation_z(obj.rotation + appearance.rotation);
+                    let translation = Vec3::new(
                         obj.position[0] + appearance.position[0],
                         obj.position[1] + appearance.position[1],
                         0.0,
                     );
+                    
 
-                    let rotation =
-                        Matrix3::from_angle_z(Rad::from(Deg(obj.rotation + appearance.rotation)));
-
-                    let scaling = Matrix3::from_nonuniform_scale(
-                        obj.size[0] * appearance.size[0],
-                        obj.size[1] * appearance.size[1],
+                    let model = Mat4::from_scale_rotation_translation(
+                        scaling,
+                        rotation,
+                        translation,
+                        
                     );
 
-                    let model = Matrix4::from_translation(translation)
-                        * Matrix4::from(rotation)
-                        * Matrix4::from(scaling);
-
-                    let ortho;
+                    let proj;
 
                     let view = if let Some(camera) = &layer.camera.lock().clone() {
                         let camera = camera.lock().get_object();
 
-                        let rotation = Matrix4::from_angle_z(Rad::from(Deg(camera.rotation)));
+                        let rotation = Mat4::from_rotation_z(camera.rotation);
 
                         let zoom = 1.0 / camera.camera.unwrap().zoom;
-                        ortho = ortho_maker(
+                        proj = ortho_maker(
                             camera.camera.unwrap().mode,
                             camera.position,
                             zoom,
                             (dimensions.width as f32, dimensions.height as f32),
                         );
 
-                        Matrix4::look_at_rh(
-                            Point3::from([camera.position[0], camera.position[1], 1.0]),
-                            Point3::from([camera.position[0], camera.position[1], 0.0]),
-                            Vector3::unit_y(),
+                        Mat4::look_at_rh(
+                            Vec3::from([camera.position[0], camera.position[1], 1.0]),
+                            Vec3::from([camera.position[0], camera.position[1], 0.0]),
+                            Vec3::Y,
                         ) * rotation
                     } else {
-                        ortho = Ortho {
-                            left: -1.0,
-                            right: 1.0,
-                            bottom: 1.0,
-                            top: -1.0,
-                            near: -1.0,
-                            far: 1.0,
-                        };
-                        Matrix4::look_at_rh(
-                            Point3::from([0., 0., 0.]),
-                            Point3::from([0., 0., 0.]),
-                            Vector3::unit_y(),
+                        proj = Mat4::orthographic_rh(
+                            -1.0,
+                            1.0,
+                            1.0,
+                            -1.0,
+                            -1.0,
+                            1.0,
+                        );
+                        Mat4::look_at_rh(
+                            Vec3::from([0., 0., 0.]),
+                            Vec3::from([0., 0., 0.]),
+                            Vec3::Y,
                         )
                     };
 
-                    let proj = Matrix4::from(ortho);
 
                     *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
-                        model: model.into(),
-                        view: view.into(),
-                        proj: proj.into(),
+                        model: model.to_cols_array(),
+                        view: view.to_cols_array(),
+                        proj: proj.to_cols_array(),
                     };
                     *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
                         color: appearance.color,
@@ -335,14 +337,14 @@ fn ortho_maker(
     position: [f32; 2],
     zoom: f32,
     dimensions: (f32, f32),
-) -> Ortho<f32> {
+) -> Mat4 {
     let (width, height) = super::objects::scale(mode, dimensions);
-    Ortho {
-        left: position[0] - zoom * width,
-        right: position[0] + zoom * width,
-        bottom: position[1] - zoom * height,
-        top: position[1] + zoom * height,
-        near: -1.0,
-        far: 1.0,
-    }
+    Mat4::orthographic_rh(
+        position[0] - zoom * width,
+        position[0] + zoom * width,
+        position[1] - zoom * height,
+        position[1] + zoom * height,
+        -1.0,
+        1.0,
+    )
 }

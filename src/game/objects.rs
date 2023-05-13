@@ -297,6 +297,8 @@ impl Layer {
 
         Ok(())
     }
+    /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
+    /// instead.
     pub fn camera_position(&self) -> [f32; 2] {
         let camera = self.camera.lock();
         if let Some(camera) = camera.clone() {
@@ -305,6 +307,8 @@ impl Layer {
             [0.0; 2]
         }
     }
+    /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
+    /// instead.
     pub fn camera_scaling(&self) -> CameraScaling {
         let camera = self.camera.lock();
         if let Some(camera) = camera.clone() {
@@ -314,14 +318,26 @@ impl Layer {
             CameraScaling::Stretch
         }
     }
+    /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
+    /// instead.
+    pub fn zoom(&self) -> f32 {
+        let camera = self.camera.lock();
+        if let Some(camera) = camera.clone() {
+            camera.lock().get_object().camera.unwrap().zoom
+        } else {
+            1.0
+        }
+    }
 
+    /// Be careful! Don't use this when the camera is locked.
     pub fn side_to_world(&self, direction: [f32; 2], dimensions: (f32, f32)) -> [f32; 2] {
         let camera = Self::camera_position(self);
         let direction = [direction[0] * 2.0 - 1.0, direction[1] * 2.0 - 1.0];
         let (width, height) = scale(Self::camera_scaling(self), dimensions);
+        let zoom = 1.0 / Self::zoom(self);
         [
-            direction[0] * width + camera[0] * 2.0,
-            direction[1] * height + camera[1] * 2.0,
+            direction[0] * (width * zoom) + camera[0] * 2.0,
+            direction[1] * (height * zoom) + camera[1] * 2.0,
         ]
     }
 
