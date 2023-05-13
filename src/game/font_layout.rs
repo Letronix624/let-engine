@@ -16,6 +16,7 @@ use super::{
     vulkan::shaders::*,
     Appearance, Loader, Vulkan,
 };
+use glam::f32::vec2;
 
 type AObject = Arc<Mutex<Object>>;
 
@@ -146,7 +147,7 @@ impl Labelifier {
                     color: [1.0; 4],
                     ..Default::default()
                 });
-                [1.0, 1.0]
+                vec2(1.0, 1.0)
             };
 
             let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
@@ -221,7 +222,7 @@ impl Labelifier {
         let size = if let Some(appearance) = obj.graphics.clone() {
             appearance.size
         } else {
-            [1.0, 1.0]
+            vec2(1.0, 1.0)
         };
 
         let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];

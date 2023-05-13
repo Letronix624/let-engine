@@ -14,6 +14,7 @@ use std::{
         Arc, Weak,
     },
 };
+use glam::f32::{Vec2, vec2};
 
 type ObjectsMap = HashMap<u64, NObject>;
 
@@ -22,8 +23,8 @@ type ObjectsMap = HashMap<u64, NObject>;
 /// of it to the main game object.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Object {
-    pub position: [f32; 2],
-    pub size: [f32; 2],
+    pub position: Vec2,//[f32; 2],
+    pub size: Vec2,
     pub rotation: f32,
     pub graphics: Option<Appearance>,
     pub camera: Option<CameraOption>,
@@ -51,33 +52,11 @@ impl Object {
         self.id = id;
         self
     }
-}
-
-impl std::ops::Add for Object {
-    type Output = Object;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        let position: Vec<f32> = self
-            .position
-            .clone()
-            .iter()
-            .zip(rhs.position)
-            .map(|(a, b)| a + b)
-            .collect();
-        #[allow(clippy::suspicious_arithmetic_impl)]
-        let size: Vec<f32> = self
-            .size
-            .clone()
-            .iter()
-            .zip(rhs.size)
-            .map(|(a, b)| a * b)
-            .collect();
-        let rotation = self.rotation + rhs.rotation;
-
+    pub fn combine(self, rhs: Self) -> Self {
         Self {
-            position: [position[0], position[1]],
-            size: [size[0], size[1]],
-            rotation,
+            position: self.position + rhs.position,
+            size: self.size * rhs.size,
+            rotation: self.rotation + rhs.rotation,
             ..rhs
         }
     }
@@ -86,8 +65,8 @@ impl std::ops::Add for Object {
 impl Default for Object {
     fn default() -> Self {
         Self {
-            position: [0.0, 0.0],
-            size: [1.0, 1.0],
+            position: vec2(0.0, 0.0),
+            size: vec2(1.0, 1.0),
             rotation: 0.0,
             graphics: None,
             camera: None,
@@ -135,11 +114,11 @@ impl Node<Arc<Mutex<Object>>> {
     pub fn order_position(order: &mut Vec<Object>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
-            let object = objects.object.lock().clone() + child.object.lock().clone();
+            let object = objects.object.lock().clone().combine(child.object.lock().clone());
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();
-                order.push(object.clone() + child.object.lock().clone());
+                order.push(object.clone().combine(child.object.lock().clone()));
                 Self::order_position(order, &child);
             }
         }
@@ -164,7 +143,7 @@ impl Node<Arc<Mutex<Object>>> {
         if let Some(parent) = &self.parent {
             let parent = parent.upgrade().unwrap();
             let parent = parent.lock();
-            parent.get_object() + self.object.lock().clone()
+            parent.get_object().combine(self.object.lock().clone())
         } else {
             self.object.lock().clone()
         }
@@ -185,8 +164,8 @@ impl Node<Arc<Mutex<Object>>> {
 pub struct Appearance {
     pub material: Option<materials::Material>,
     pub data: Data,
-    pub position: [f32; 2],
-    pub size: [f32; 2],
+    pub position: Vec2,
+    pub size: Vec2,
     pub rotation: f32,
     pub color: [f32; 4],
 }
@@ -220,7 +199,7 @@ impl Appearance {
             return Err(NoTextureError);
         };
 
-        self.size = [dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0];
+        self.size = vec2(dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0);
 
         Ok(())
     }
@@ -228,11 +207,11 @@ impl Appearance {
         self.data = data;
         self
     }
-    pub fn position(mut self, position: [f32; 2]) -> Self {
+    pub fn position(mut self, position: Vec2) -> Self {
         self.position = position;
         self
     }
-    pub fn size(mut self, size: [f32; 2]) -> Self {
+    pub fn size(mut self, size: Vec2) -> Self {
         self.size = size;
         self
     }
@@ -255,8 +234,8 @@ impl default::Default for Appearance {
         Self {
             material: None,
             data: Data::empty(),
-            position: [0.0; 2],
-            size: [1.0; 2],
+            position: vec2(0.0, 0.0),
+            size: vec2(1.0, 1.0),
             rotation: 0.0,
             color: [1.0, 1.0, 1.0, 1.0],
         }
@@ -299,12 +278,12 @@ impl Layer {
     }
     /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
     /// instead.
-    pub fn camera_position(&self) -> [f32; 2] {
+    pub fn camera_position(&self) -> Vec2 {
         let camera = self.camera.lock();
         if let Some(camera) = camera.clone() {
             camera.lock().get_object().position
         } else {
-            [0.0; 2]
+            vec2(0.0, 0.0)
         }
     }
     /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
@@ -330,15 +309,15 @@ impl Layer {
     }
 
     /// Be careful! Don't use this when the camera is locked.
-    pub fn side_to_world(&self, direction: [f32; 2], dimensions: (f32, f32)) -> [f32; 2] {
+    pub fn side_to_world(&self, direction: [f32; 2], dimensions: (f32, f32)) -> Vec2 {
         let camera = Self::camera_position(self);
         let direction = [direction[0] * 2.0 - 1.0, direction[1] * 2.0 - 1.0];
         let (width, height) = scale(Self::camera_scaling(self), dimensions);
         let zoom = 1.0 / Self::zoom(self);
-        [
-            direction[0] * (width * zoom) + camera[0] * 2.0,
-            direction[1] * (height * zoom) + camera[1] * 2.0,
-        ]
+        vec2(
+            direction[0] * (width * zoom) + camera.x * 2.0,
+            direction[1] * (height * zoom) + camera.y * 2.0,
+        )
     }
 
     pub fn contains_object(&self, object: &AObject) -> bool {

@@ -9,6 +9,7 @@ pub use winit::event::{MouseButton, VirtualKeyCode};
 
 use hashbrown::HashSet;
 use parking_lot::Mutex;
+use glam::f32::{Vec2, vec2};
 
 #[derive(Clone)]
 pub struct Input {
@@ -19,7 +20,7 @@ pub struct Input {
     //pressed mouse buttons
     mouse_down: Arc<Mutex<HashSet<MouseButton>>>,
     //mouse position
-    cursor_position: Arc<Mutex<[f32; 2]>>,
+    cursor_position: Arc<Mutex<Vec2>>,
     cursor_inside: Arc<AtomicBool>,
     //dimensions of the window
     dimensions: Arc<Mutex<(f32, f32)>>,
@@ -48,10 +49,10 @@ impl Input {
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    *self.cursor_position.lock() = [
+                    *self.cursor_position.lock() = vec2(
                         (position.x as f32 / dimensions.width as f32) * 2.0 - 1.0,
                         (position.y as f32 / dimensions.height as f32) * 2.0 - 1.0,
-                    ];
+                    );
                 }
                 WindowEvent::CursorEntered { .. } => {
                     self.cursor_inside.store(true, Ordering::Release)
@@ -70,22 +71,22 @@ impl Input {
     pub fn mouse_down(&self, button: &MouseButton) -> bool {
         self.mouse_down.lock().contains(button)
     }
-    pub fn cursor_position(&self) -> [f32; 2] {
+    pub fn cursor_position(&self) -> Vec2 {
         let cp = self.cursor_position.lock();
-        [cp[0], cp[1]]
+        vec2(cp[0], cp[1])
     }
-    pub fn scaled_cursor(&self, layer: &Layer) -> [f32; 2] {
+    pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
         let (width, height) = super::objects::scale(layer.camera_scaling(), *self.dimensions.lock());
         let cp = self.cursor_position.lock();
-        [cp[0] * width, cp[1] * height]
+        vec2(cp[0] * width, cp[1] * height)
     }
-    pub fn cursor_to_world(&self, layer: &Layer) -> [f32; 2] {
+    pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
         let dims = self.dimensions.lock().clone();
         let (width, height) = super::objects::scale(layer.camera_scaling(), dims);
         let cp = self.cursor_position.lock();
         let cam = layer.camera_position();
         let zoom = 1.0 / layer.zoom();
-        [cp[0] * (width * zoom) + cam[0] * 2.0, cp[1] * (height * zoom) + cam[1] * 2.0]
+        vec2(cp[0] * (width * zoom) + cam[0] * 2.0, cp[1] * (height * zoom) + cam[1] * 2.0)
     }
 
     pub fn shift(&self) -> bool {
@@ -111,7 +112,7 @@ impl Default for Input {
             keyboard_down: Arc::new(Mutex::new(HashSet::new())),
             keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
             mouse_down: Arc::new(Mutex::new(HashSet::new())),
-            cursor_position: Arc::new(Mutex::new([0.0; 2])),
+            cursor_position: Arc::new(Mutex::new(vec2(0.0, 0.0))),
             cursor_inside: Arc::new(AtomicBool::new(false)),
             dimensions: Arc::new(Mutex::new((0.0, 0.0))),
         }

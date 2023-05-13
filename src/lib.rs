@@ -8,3 +8,6 @@ pub use game::{
 };
 
 pub use game::objects::data::{CENTER, N, NO, NW, O, S, SO, SW, W};
+//RE EXPORTS
+
+pub use glam::{vec2, Vec2};
