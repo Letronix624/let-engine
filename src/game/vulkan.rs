@@ -27,6 +27,7 @@ pub struct Vulkan {
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
     pub render_pass: Arc<RenderPass>,
+    pub subpass: Subpass,
     pub default_material: materials::Material,
     pub textured_material: materials::Material,
     pub texture_array_material: materials::Material,
@@ -80,7 +81,7 @@ impl Vulkan {
         let pipeline: Arc<GraphicsPipeline> =
             pipeline::create_pipeline(&device, &vs, &fs, subpass.clone());
         let textured_pipeline = pipeline::create_pipeline(&device, &vs, &tfs, subpass.clone());
-        let texture_array_pipeline = pipeline::create_pipeline(&device, &vs, &tafs, subpass);
+        let texture_array_pipeline = pipeline::create_pipeline(&device, &vs, &tafs, subpass.clone());
 
         let default_material = materials::Material {
             pipeline,
@@ -110,6 +111,7 @@ impl Vulkan {
                 device,
                 queue,
                 render_pass,
+                subpass,
                 default_material,
                 textured_material,
                 texture_array_material,

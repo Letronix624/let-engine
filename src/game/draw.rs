@@ -2,7 +2,7 @@ use std::sync::Arc;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
-        RenderPassBeginInfo, SubpassContents,
+        RenderPassBeginInfo, SubpassContents, CommandBufferInheritanceInfo
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
     image::SwapchainImage,
@@ -83,6 +83,7 @@ impl Draw {
         loader: &mut Loader,
         scene: &super::Scene,
         clear_color: [f32; 4],
+        gui: &mut egui_winit_vulkano::Gui,
     ) {
         //windowevents
         let window = vulkan
@@ -127,6 +128,12 @@ impl Draw {
                 }
                 Err(e) => panic!("Failed to acquire next image: {:?}", e),
             };
+        
+        let dimensions = self.framebuffers[image_num as usize].extent();
+        
+        if suboptimal {
+            self.recreate_swapchain = true;
+        }
 
         let mut builder = AutoCommandBufferBuilder::primary(
             &loader.command_buffer_allocator,
@@ -143,14 +150,21 @@ impl Draw {
                         self.framebuffers[image_num as usize].clone(),
                     )
                 },
-                SubpassContents::Inline,
+                SubpassContents::SecondaryCommandBuffers,
             )
-            .unwrap()
-            .set_viewport(0, [self.viewport.clone()]);
+            .unwrap();
 
-        if suboptimal {
-            self.recreate_swapchain = true;
-        }
+        let mut secondary_builder = AutoCommandBufferBuilder::secondary(
+            &loader.command_buffer_allocator,
+            vulkan.queue.queue_family_index(),
+            CommandBufferUsage::MultipleSubmit,
+            CommandBufferInheritanceInfo {
+                render_pass: Some(vulkan.subpass.clone().into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        secondary_builder.set_viewport(0, [self.viewport.clone()]);
 
         for layer in scene.get_layers().iter() {
             let mut order: Vec<Object> = vec![];
@@ -208,7 +222,7 @@ impl Draw {
                             camera.camera.unwrap().mode,
                             camera.position,
                             zoom,
-                            (dimensions.width as f32, dimensions.height as f32),
+                            (dimensions[0] as f32, dimensions[1] as f32),
                         );
 
                         Mat4::look_at_rh(
@@ -284,7 +298,7 @@ impl Draw {
                         .unwrap()
                         .copy_from_slice(&appearance.data.indices);
 
-                    builder
+                    secondary_builder
                         .bind_pipeline_graphics(pipeline.clone())
                         .bind_descriptor_sets(
                             vulkano::pipeline::PipelineBindPoint::Graphics,
@@ -299,6 +313,9 @@ impl Draw {
                 }
             }
         }
+        builder.execute_commands(secondary_builder.build().unwrap()).unwrap();
+        let cb = gui.draw_on_subpass_image(dimensions);
+        builder.execute_commands(cb).unwrap();
 
         builder.end_render_pass().unwrap();
         let command_buffer = builder.build().unwrap();

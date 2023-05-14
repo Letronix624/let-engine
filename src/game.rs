@@ -19,6 +19,7 @@ use font_layout::Labelifier;
 pub mod input;
 pub mod materials;
 pub use input::Input;
+pub mod egui;
 
 use atomic_float::AtomicF64;
 use parking_lot::Mutex;
@@ -66,6 +67,7 @@ impl GameBuilder {
 
         let (vulkan, event_loop) = Vulkan::init(window_builder);
         let mut loader = Loader::init(&vulkan);
+        let gui = egui::init(&event_loop, &vulkan);
         let draw = Draw::setup(&vulkan, &loader);
         let labelifier = Labelifier::new(&vulkan, &mut loader);
 
@@ -81,6 +83,8 @@ impl GameBuilder {
                 resources,
                 draw,
                 input: Input::default(),
+                gui,
+                gui_updated: false,
 
                 time: Time::default(),
                 clear_background_color,
@@ -101,6 +105,8 @@ pub struct Game {
     pub resources: Resources,
     pub time: Time,
     pub input: Input,
+    gui: egui_winit_vulkano::Gui,
+    gui_updated: bool,
 
     draw: Draw,
     clear_background_color: [f32; 4],
@@ -110,18 +116,27 @@ impl Game {
     pub fn update<T: 'static>(&mut self, event: &Event<T>) {
         match event {
             Event::WindowEvent {
-                event: WindowEvent::Resized(_),
+                event,
                 ..
             } => {
-                self.draw.recreate_swapchain = true;
+                if let WindowEvent::Resized(_) = event {
+                    self.draw.recreate_swapchain = true;
+                }
+                self.gui.update(event);
             }
             Event::RedrawEventsCleared => {
+                if !self.gui_updated {
+                    self.gui.immediate_ui(|_gui| {});
+                }
+                self.gui_updated = false;
+
                 self.resources.update();
                 self.draw.redrawevent(
                     &self.resources.vulkan,
                     &mut self.resources.loader.lock(),
                     &self.scene,
                     self.clear_background_color,
+                    &mut self.gui,
                 );
 
                 self.time.update();
@@ -130,6 +145,14 @@ impl Game {
         }
         self.input
             .update(event, self.resources.get_window().inner_size());
+    }
+
+    pub fn update_gui(&mut self, func: impl FnOnce(egui_winit_vulkano::egui::Context))
+    {
+        self.gui.immediate_ui(|gui| {
+            func(gui.context());
+        });
+        self.gui_updated = true;
     }
 
     pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
