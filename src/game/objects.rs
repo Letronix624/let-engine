@@ -4,6 +4,7 @@ use crate::error::objects::*;
 use crate::error::textures::*;
 use anyhow::Result;
 pub use data::*;
+use glam::f32::{vec2, Vec2};
 use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
 use parking_lot::Mutex;
@@ -14,7 +15,6 @@ use std::{
         Arc, Weak,
     },
 };
-use glam::f32::{Vec2, vec2};
 
 type ObjectsMap = HashMap<u64, NObject>;
 
@@ -23,7 +23,7 @@ type ObjectsMap = HashMap<u64, NObject>;
 /// of it to the main game object.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Object {
-    pub position: Vec2,//[f32; 2],
+    pub position: Vec2, //[f32; 2],
     pub size: Vec2,
     pub rotation: f32,
     pub graphics: Option<Appearance>,
@@ -114,7 +114,11 @@ impl Node<Arc<Mutex<Object>>> {
     pub fn order_position(order: &mut Vec<Object>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
-            let object = objects.object.lock().clone().combine(child.object.lock().clone());
+            let object = objects
+                .object
+                .lock()
+                .clone()
+                .combine(child.object.lock().clone());
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();

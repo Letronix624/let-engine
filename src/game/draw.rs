@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract,
-        RenderPassBeginInfo, SubpassContents, CommandBufferInheritanceInfo
+        AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
+        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
     image::SwapchainImage,
@@ -25,7 +25,7 @@ use super::{
 use crate::game::Node;
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
-use glam::f32::{Mat4, Vec3, Vec2, Quat};
+use glam::f32::{Mat4, Quat, Vec2, Vec3};
 
 pub struct Draw {
     pub recreate_swapchain: bool,
@@ -128,9 +128,9 @@ impl Draw {
                 }
                 Err(e) => panic!("Failed to acquire next image: {:?}", e),
             };
-        
+
         let dimensions = self.framebuffers[image_num as usize].extent();
-        
+
         if suboptimal {
             self.recreate_swapchain = true;
         }
@@ -201,14 +201,9 @@ impl Draw {
                         obj.position[1] + appearance.position[1],
                         0.0,
                     );
-                    
 
-                    let model = Mat4::from_scale_rotation_translation(
-                        scaling,
-                        rotation,
-                        translation,
-                        
-                    );
+                    let model =
+                        Mat4::from_scale_rotation_translation(scaling, rotation, translation);
 
                     let proj;
 
@@ -231,21 +226,13 @@ impl Draw {
                             Vec3::Y,
                         ) * rotation
                     } else {
-                        proj = Mat4::orthographic_rh(
-                            -1.0,
-                            1.0,
-                            1.0,
-                            -1.0,
-                            -1.0,
-                            1.0,
-                        );
+                        proj = Mat4::orthographic_rh(-1.0, 1.0, 1.0, -1.0, -1.0, 1.0);
                         Mat4::look_at_rh(
                             Vec3::from([0., 0., 0.]),
                             Vec3::from([0., 0., 0.]),
                             Vec3::Y,
                         )
                     };
-
 
                     *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
                         model: model.to_cols_array(),
@@ -313,7 +300,9 @@ impl Draw {
                 }
             }
         }
-        builder.execute_commands(secondary_builder.build().unwrap()).unwrap();
+        builder
+            .execute_commands(secondary_builder.build().unwrap())
+            .unwrap();
         let cb = gui.draw_on_subpass_image(dimensions);
         builder.execute_commands(cb).unwrap();
 
@@ -349,12 +338,7 @@ impl Draw {
     }
 }
 
-fn ortho_maker(
-    mode: CameraScaling,
-    position: Vec2,
-    zoom: f32,
-    dimensions: (f32, f32),
-) -> Mat4 {
+fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: (f32, f32)) -> Mat4 {
     let (width, height) = super::objects::scale(mode, dimensions);
     Mat4::orthographic_rh(
         position.x - zoom * width,

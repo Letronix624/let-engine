@@ -7,9 +7,9 @@ use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, ModifiersState, WindowEvent};
 pub use winit::event::{MouseButton, VirtualKeyCode};
 
+use glam::f32::{vec2, Vec2};
 use hashbrown::HashSet;
 use parking_lot::Mutex;
-use glam::f32::{Vec2, vec2};
 
 #[derive(Clone)]
 pub struct Input {
@@ -76,17 +76,21 @@ impl Input {
         vec2(cp[0], cp[1])
     }
     pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
-        let (width, height) = super::objects::scale(layer.camera_scaling(), *self.dimensions.lock());
+        let (width, height) =
+            super::objects::scale(layer.camera_scaling(), *self.dimensions.lock());
         let cp = self.cursor_position.lock();
         vec2(cp[0] * width, cp[1] * height)
     }
     pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
-        let dims = self.dimensions.lock().clone();
+        let dims = *self.dimensions.lock();
         let (width, height) = super::objects::scale(layer.camera_scaling(), dims);
         let cp = self.cursor_position.lock();
         let cam = layer.camera_position();
         let zoom = 1.0 / layer.zoom();
-        vec2(cp[0] * (width * zoom) + cam[0] * 2.0, cp[1] * (height * zoom) + cam[1] * 2.0)
+        vec2(
+            cp[0] * (width * zoom) + cam[0] * 2.0,
+            cp[1] * (height * zoom) + cam[1] * 2.0,
+        )
     }
 
     pub fn shift(&self) -> bool {

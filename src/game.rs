@@ -115,10 +115,7 @@ pub struct Game {
 impl Game {
     pub fn update<T: 'static>(&mut self, event: &Event<T>) {
         match event {
-            Event::WindowEvent {
-                event,
-                ..
-            } => {
+            Event::WindowEvent { event, .. } => {
                 if let WindowEvent::Resized(_) = event {
                     self.draw.recreate_swapchain = true;
                 }
@@ -147,8 +144,7 @@ impl Game {
             .update(event, self.resources.get_window().inner_size());
     }
 
-    pub fn update_gui(&mut self, func: impl FnOnce(egui_winit_vulkano::egui::Context))
-    {
+    pub fn update_gui(&mut self, func: impl FnOnce(egui_winit_vulkano::egui::Context)) {
         self.gui.immediate_ui(|gui| {
             func(gui.context());
         });
