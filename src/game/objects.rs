@@ -2,12 +2,14 @@ pub mod data;
 use super::{materials, AObject, NObject};
 use crate::error::objects::*;
 use crate::error::textures::*;
-use anyhow::Result;
 pub use data::*;
+
+use anyhow::Result;
 use glam::f32::{vec2, Vec2};
 use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
 use parking_lot::Mutex;
+
 use std::{
     default,
     sync::{
@@ -16,7 +18,24 @@ use std::{
     },
 };
 
-type ObjectsMap = HashMap<u64, NObject>;
+type ObjectsMap = HashMap<usize, NObject>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transform {
+    pub position: Vec2,
+    pub size: Vec2,
+    pub rotation: f32,
+}
+
+pub trait GameObject {
+    fn transform(&self) -> Transform;
+    fn appearance(&self) -> Appearance;
+    fn id(&self) -> usize;
+}
+
+pub trait Camera {
+    fn camera_mode(&self) -> CameraOption;
+}
 
 /// Main game object that holds position, size, rotation, color, texture and data.
 /// To make your objects appear take an empty object, add your traits and send an receiver
@@ -28,7 +47,7 @@ pub struct Object {
     pub rotation: f32,
     pub graphics: Option<Appearance>,
     pub camera: Option<CameraOption>,
-    id: u64,
+    id: usize,
 }
 
 impl Object {
@@ -45,10 +64,10 @@ impl Object {
         self.graphics = graphics;
         self
     }
-    pub fn get_id(&self) -> u64 {
+    pub fn get_id(&self) -> usize {
         self.id
     }
-    pub fn initialize(mut self, id: u64) -> Self {
+    pub fn initialize(mut self, id: usize) -> Self {
         self.id = id;
         self
     }
@@ -166,6 +185,7 @@ impl Node<Arc<Mutex<Object>>> {
 /// textures, vetex/index data, color and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
+    pub visible: bool,
     pub material: Option<materials::Material>,
     pub data: Data,
     pub position: Vec2,
@@ -236,6 +256,7 @@ impl Appearance {
 impl default::Default for Appearance {
     fn default() -> Self {
         Self {
+            visible: true,
             material: None,
             data: Data::empty(),
             position: vec2(0.0, 0.0),
@@ -335,7 +356,7 @@ impl Layer {
         parent: Option<&AObject>,
         initial_object: Object,
     ) -> Result<AObject, NoParentError> {
-        let id = self.latest_object.fetch_add(1, Ordering::AcqRel);
+        let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
 
         let object = Arc::new(Mutex::new(initial_object.initialize(id)));
 

@@ -19,7 +19,9 @@ use font_layout::Labelifier;
 pub mod input;
 pub mod materials;
 pub use input::Input;
+#[cfg(feature = "egui")]
 pub mod egui;
+pub mod rapier;
 
 use atomic_float::AtomicF64;
 use parking_lot::Mutex;
@@ -67,6 +69,7 @@ impl GameBuilder {
 
         let (vulkan, event_loop) = Vulkan::init(window_builder);
         let mut loader = Loader::init(&vulkan);
+        #[cfg(feature = "egui")]
         let gui = egui::init(&event_loop, &vulkan);
         let draw = Draw::setup(&vulkan, &loader);
         let labelifier = Labelifier::new(&vulkan, &mut loader);
@@ -83,7 +86,9 @@ impl GameBuilder {
                 resources,
                 draw,
                 input: Input::default(),
+                #[cfg(feature = "egui")]
                 gui,
+                #[cfg(feature = "egui")]
                 gui_updated: false,
 
                 time: Time::default(),
@@ -105,7 +110,9 @@ pub struct Game {
     pub resources: Resources,
     pub time: Time,
     pub input: Input,
+    #[cfg(feature = "egui")]
     gui: egui_winit_vulkano::Gui,
+    #[cfg(feature = "egui")]
     gui_updated: bool,
 
     draw: Draw,
@@ -116,16 +123,21 @@ impl Game {
     pub fn update<T: 'static>(&mut self, event: &Event<T>) {
         match event {
             Event::WindowEvent { event, .. } => {
+                #[allow(clippy::collapsible_match)]
                 if let WindowEvent::Resized(_) = event {
                     self.draw.recreate_swapchain = true;
                 }
+                #[cfg(feature = "egui")]
                 self.gui.update(event);
             }
             Event::RedrawEventsCleared => {
-                if !self.gui_updated {
-                    self.gui.immediate_ui(|_gui| {});
+                #[cfg(feature = "egui")]
+                {
+                    if !self.gui_updated {
+                        self.gui.immediate_ui(|_gui| {});
+                    }
+                    self.gui_updated = false;
                 }
-                self.gui_updated = false;
 
                 self.resources.update();
                 self.draw.redrawevent(
@@ -133,6 +145,7 @@ impl Game {
                     &mut self.resources.loader.lock(),
                     &self.scene,
                     self.clear_background_color,
+                    #[cfg(feature = "egui")]
                     &mut self.gui,
                 );
 
@@ -144,6 +157,7 @@ impl Game {
             .update(event, self.resources.get_window().inner_size());
     }
 
+    #[cfg(feature = "egui")]
     pub fn update_gui(&mut self, func: impl FnOnce(egui_winit_vulkano::egui::Context)) {
         self.gui.immediate_ui(|gui| {
             func(gui.context());

@@ -7,6 +7,7 @@ use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, ModifiersState, WindowEvent};
 pub use winit::event::{MouseButton, VirtualKeyCode};
 
+use crossbeam::atomic::AtomicCell;
 use glam::f32::{vec2, Vec2};
 use hashbrown::HashSet;
 use parking_lot::Mutex;
@@ -20,15 +21,16 @@ pub struct Input {
     //pressed mouse buttons
     mouse_down: Arc<Mutex<HashSet<MouseButton>>>,
     //mouse position
-    cursor_position: Arc<Mutex<Vec2>>,
+    cursor_position: Arc<AtomicCell<Vec2>>,
     cursor_inside: Arc<AtomicBool>,
     //dimensions of the window
-    dimensions: Arc<Mutex<(f32, f32)>>,
+    dimensions: Arc<AtomicCell<(f32, f32)>>,
 }
 
 impl Input {
     pub fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: PhysicalSize<u32>) {
-        *self.dimensions.lock() = (dimensions.width as f32, dimensions.height as f32);
+        self.dimensions
+            .store((dimensions.width as f32, dimensions.height as f32));
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::KeyboardInput { input, .. } => {
@@ -49,10 +51,10 @@ impl Input {
                     }
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    *self.cursor_position.lock() = vec2(
+                    self.cursor_position.store(vec2(
                         (position.x as f32 / dimensions.width as f32) * 2.0 - 1.0,
                         (position.y as f32 / dimensions.height as f32) * 2.0 - 1.0,
-                    );
+                    ));
                 }
                 WindowEvent::CursorEntered { .. } => {
                     self.cursor_inside.store(true, Ordering::Release)
@@ -72,19 +74,18 @@ impl Input {
         self.mouse_down.lock().contains(button)
     }
     pub fn cursor_position(&self) -> Vec2 {
-        let cp = self.cursor_position.lock();
+        let cp = self.cursor_position.load();
         vec2(cp[0], cp[1])
     }
     pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
-        let (width, height) =
-            super::objects::scale(layer.camera_scaling(), *self.dimensions.lock());
-        let cp = self.cursor_position.lock();
+        let (width, height) = super::objects::scale(layer.camera_scaling(), self.dimensions.load());
+        let cp = self.cursor_position.load();
         vec2(cp[0] * width, cp[1] * height)
     }
     pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
-        let dims = *self.dimensions.lock();
+        let dims = self.dimensions.load();
         let (width, height) = super::objects::scale(layer.camera_scaling(), dims);
-        let cp = self.cursor_position.lock();
+        let cp = self.cursor_position.load();
         let cam = layer.camera_position();
         let zoom = 1.0 / layer.zoom();
         vec2(
@@ -116,9 +117,9 @@ impl Default for Input {
             keyboard_down: Arc::new(Mutex::new(HashSet::new())),
             keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
             mouse_down: Arc::new(Mutex::new(HashSet::new())),
-            cursor_position: Arc::new(Mutex::new(vec2(0.0, 0.0))),
+            cursor_position: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
             cursor_inside: Arc::new(AtomicBool::new(false)),
-            dimensions: Arc::new(Mutex::new((0.0, 0.0))),
+            dimensions: Arc::new(AtomicCell::new((0.0, 0.0))),
         }
     }
 }

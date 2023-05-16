@@ -83,7 +83,7 @@ impl Draw {
         loader: &mut Loader,
         scene: &super::Scene,
         clear_color: [f32; 4],
-        gui: &mut egui_winit_vulkano::Gui,
+        #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
     ) {
         //windowevents
         let window = vulkan
@@ -173,7 +173,7 @@ impl Draw {
 
             for obj in order {
                 if let Some(appearance) = obj.graphics.clone() {
-                    if appearance.data.vertices.is_empty() {
+                    if !appearance.visible || appearance.data.vertices.is_empty(){
                         continue;
                     }
 
@@ -303,9 +303,12 @@ impl Draw {
         builder
             .execute_commands(secondary_builder.build().unwrap())
             .unwrap();
-        let cb = gui.draw_on_subpass_image(dimensions);
-        builder.execute_commands(cb).unwrap();
 
+        #[cfg(feature = "egui")]
+        {
+            let cb = gui.draw_on_subpass_image(dimensions);
+            builder.execute_commands(cb).unwrap();
+        }
         builder.end_render_pass().unwrap();
         let command_buffer = builder.build().unwrap();
 
