@@ -1,11 +1,9 @@
-
 [package]
 name = "engine-macros"
 version = "0.1.0"
 authors = ["Let"]
 edition = "2021"
-description = "macros to the Let engine"
-readme = "README.md"
+description = "Macros to the Let engine"
 repository = "https://github.com/Letronix624/Let-Engine"
 keywords = [
     "gamedev",
