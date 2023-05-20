@@ -72,6 +72,12 @@ pub enum CameraScaling {
     Expand = 5,
 }
 
+impl Default for CameraScaling {
+    fn default() -> Self {
+        Self::Stretch
+    }
+}
+
 pub const CENTER: [f32; 2] = [0.5; 2];
 pub const N: [f32; 2] = [0.5, 0.0];
 pub const NO: [f32; 2] = [1.0, 0.0];

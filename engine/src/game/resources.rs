@@ -1,4 +1,4 @@
-use super::{materials, AObject, Font, Labelifier, Vulkan};
+use super::{materials, Labelifier, Vulkan};
 use crate::{error::textures::*, texture::*};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
@@ -15,7 +15,7 @@ pub use loader::Loader;
 pub struct Resources {
     pub vulkan: Vulkan,
     pub loader: Arc<Mutex<Loader>>,
-    labelifier: Arc<Mutex<Labelifier>>,
+    pub labelifier: Arc<Mutex<Labelifier>>,
 }
 
 impl Resources {
@@ -153,18 +153,6 @@ impl Resources {
         Ok(Self::load_texture_from_raw(
             self, image, format, dimensions, layers, settings,
         ))
-    }
-    //
-    pub fn queue_to_label(
-        &self,
-        object: &AObject,
-        font: &Arc<Font>,
-        text: &str,
-        scale: f32,
-        align: [f32; 2],
-    ) {
-        let mut labelifier = self.labelifier.lock();
-        labelifier.queue(object.clone(), font, text.to_string(), scale, align);
     }
     //shaders
     /// # Safety

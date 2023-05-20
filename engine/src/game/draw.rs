@@ -172,132 +172,125 @@ impl Draw {
             Node::order_position(&mut order, &layer.root.lock());
 
             for obj in order {
-                if let Some(appearance) = obj.graphics.clone() {
-                    if !appearance.visible || appearance.data.vertices.is_empty(){
-                        continue;
-                    }
-
-                    let pipeline = if let Some(material) = &appearance.material {
-                        material.pipeline.clone()
-                    } else {
-                        vulkan.default_material.pipeline.clone()
-                    };
-
-                    let mut descriptors = vec![];
-
-                    let objectvert_sub_buffer =
-                        loader.object_buffer_allocator.allocate_sized().unwrap();
-                    let objectfrag_sub_buffer =
-                        loader.object_buffer_allocator.allocate_sized().unwrap();
-
-                    let scaling = Vec3::new(
-                        obj.size[0] * appearance.size[0],
-                        obj.size[1] * appearance.size[1],
-                        0.0,
-                    );
-                    let rotation = Quat::from_rotation_z(obj.rotation + appearance.rotation);
-                    let translation = Vec3::new(
-                        obj.position[0] + appearance.position[0],
-                        obj.position[1] + appearance.position[1],
-                        0.0,
-                    );
-
-                    let model =
-                        Mat4::from_scale_rotation_translation(scaling, rotation, translation);
-
-                    let proj;
-
-                    let view = if let Some(camera) = &layer.camera.lock().clone() {
-                        let camera = camera.lock().get_object();
-
-                        let rotation = Mat4::from_rotation_z(camera.rotation);
-
-                        let zoom = 1.0 / camera.camera.unwrap().zoom;
-                        proj = ortho_maker(
-                            camera.camera.unwrap().mode,
-                            camera.position,
-                            zoom,
-                            (dimensions[0] as f32, dimensions[1] as f32),
-                        );
-
-                        Mat4::look_at_rh(
-                            Vec3::from([camera.position[0], camera.position[1], 1.0]),
-                            Vec3::from([camera.position[0], camera.position[1], 0.0]),
-                            Vec3::Y,
-                        ) * rotation
-                    } else {
-                        proj = Mat4::orthographic_rh(-1.0, 1.0, 1.0, -1.0, -1.0, 1.0);
-                        Mat4::look_at_rh(
-                            Vec3::from([0., 0., 0.]),
-                            Vec3::from([0., 0., 0.]),
-                            Vec3::Y,
-                        )
-                    };
-
-                    *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
-                        model: model.to_cols_array(),
-                        view: view.to_cols_array(),
-                        proj: proj.to_cols_array(),
-                    };
-                    *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
-                        color: appearance.color,
-                        texture_id: if let Some(material) = &appearance.material {
-                            if let Some(texture) = &material.texture {
-                                descriptors.push(texture.set.clone());
-                            }
-                            if let Some(descriptor) = &material.descriptor {
-                                descriptors.push(descriptor.clone());
-                            }
-                            material.layer
-                        } else {
-                            0
-                        },
-                    };
-
-                    descriptors.insert(
-                        0,
-                        PersistentDescriptorSet::new(
-                            &loader.descriptor_set_allocator,
-                            pipeline.layout().set_layouts().get(0).unwrap().clone(),
-                            [
-                                WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
-                                WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
-                            ],
-                        )
-                        .unwrap(),
-                    );
-
-                    let vertex_sub_buffer = loader
-                        .vertex_buffer_allocator
-                        .allocate_slice(appearance.data.vertices.clone().len() as _)
-                        .unwrap();
-                    let index_sub_buffer = loader
-                        .index_buffer_allocator
-                        .allocate_slice(appearance.data.indices.clone().len() as _)
-                        .unwrap();
-
-                    vertex_sub_buffer
-                        .write()
-                        .unwrap()
-                        .copy_from_slice(&appearance.data.vertices);
-                    index_sub_buffer
-                        .write()
-                        .unwrap()
-                        .copy_from_slice(&appearance.data.indices);
-
-                    secondary_builder
-                        .bind_pipeline_graphics(pipeline.clone())
-                        .bind_descriptor_sets(
-                            vulkano::pipeline::PipelineBindPoint::Graphics,
-                            pipeline.layout().clone(),
-                            0,
-                            descriptors,
-                        )
-                        .bind_vertex_buffers(0, vertex_sub_buffer.clone())
-                        .bind_index_buffer(index_sub_buffer.clone())
-                        .draw_indexed(appearance.data.indices.len() as u32, 1, 0, 0, 0)
-                        .unwrap();
+                let transform = obj.transform.combine(obj.appearance.transform);
+                let appearance = &obj.appearance;
+                if !appearance.visible || appearance.data.vertices.is_empty() {
+                    continue;
                 }
+
+                let pipeline = if let Some(material) = &appearance.material {
+                    material.pipeline.clone()
+                } else {
+                    vulkan.default_material.pipeline.clone()
+                };
+
+                let mut descriptors = vec![];
+
+                let objectvert_sub_buffer =
+                    loader.object_buffer_allocator.allocate_sized().unwrap();
+                let objectfrag_sub_buffer =
+                    loader.object_buffer_allocator.allocate_sized().unwrap();
+
+                let scaling = Vec3::new(transform.size[0], transform.size[1], 0.0);
+                let rotation = Quat::from_rotation_z(transform.rotation);
+                let translation = Vec3::new(transform.position[0], transform.position[1], 0.0);
+
+                let model = Mat4::from_scale_rotation_translation(scaling, rotation, translation);
+
+                let proj;
+
+                let view = if let Some(camera) = layer.camera.lock().as_ref() {
+                    let rotation = Mat4::from_rotation_z(camera.transform().rotation);
+
+                    let zoom = 1.0 / camera.settings().zoom;
+                    proj = ortho_maker(
+                        camera.settings().mode,
+                        camera.transform().position,
+                        zoom,
+                        (dimensions[0] as f32, dimensions[1] as f32),
+                    );
+
+                    Mat4::look_at_rh(
+                        Vec3::from([
+                            camera.transform().position[0],
+                            camera.transform().position[1],
+                            1.0,
+                        ]),
+                        Vec3::from([
+                            camera.transform().position[0],
+                            camera.transform().position[1],
+                            0.0,
+                        ]),
+                        Vec3::Y,
+                    ) * rotation
+                } else {
+                    proj = Mat4::orthographic_rh(-1.0, 1.0, 1.0, -1.0, -1.0, 1.0);
+                    Mat4::look_at_rh(Vec3::from([0., 0., 0.]), Vec3::from([0., 0., 0.]), Vec3::Y)
+                };
+
+                *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
+                    model: model.to_cols_array(),
+                    view: view.to_cols_array(),
+                    proj: proj.to_cols_array(),
+                };
+                *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
+                    color: appearance.color,
+                    texture_id: if let Some(material) = &appearance.material {
+                        if let Some(texture) = &material.texture {
+                            descriptors.push(texture.set.clone());
+                        }
+                        if let Some(descriptor) = &material.descriptor {
+                            descriptors.push(descriptor.clone());
+                        }
+                        material.layer
+                    } else {
+                        0
+                    },
+                };
+
+                descriptors.insert(
+                    0,
+                    PersistentDescriptorSet::new(
+                        &loader.descriptor_set_allocator,
+                        pipeline.layout().set_layouts().get(0).unwrap().clone(),
+                        [
+                            WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
+                            WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
+                        ],
+                    )
+                    .unwrap(),
+                );
+
+                let vertex_sub_buffer = loader
+                    .vertex_buffer_allocator
+                    .allocate_slice(appearance.data.vertices.clone().len() as _)
+                    .unwrap();
+                let index_sub_buffer = loader
+                    .index_buffer_allocator
+                    .allocate_slice(appearance.data.indices.clone().len() as _)
+                    .unwrap();
+
+                vertex_sub_buffer
+                    .write()
+                    .unwrap()
+                    .copy_from_slice(&appearance.data.vertices);
+                index_sub_buffer
+                    .write()
+                    .unwrap()
+                    .copy_from_slice(&appearance.data.indices);
+
+                secondary_builder
+                    .bind_pipeline_graphics(pipeline.clone())
+                    .bind_descriptor_sets(
+                        vulkano::pipeline::PipelineBindPoint::Graphics,
+                        pipeline.layout().clone(),
+                        0,
+                        descriptors,
+                    )
+                    .bind_vertex_buffers(0, vertex_sub_buffer.clone())
+                    .bind_index_buffer(index_sub_buffer.clone())
+                    .draw_indexed(appearance.data.indices.len() as u32, 1, 0, 0, 0)
+                    .unwrap();
             }
         }
         builder

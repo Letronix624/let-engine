@@ -11,14 +11,87 @@ use crate::{texture::*, Data, Vertex};
 
 use super::{
     materials::*,
-    objects::Object,
-    resources::{GameFont, Texture},
+    objects::GameObject,
+    resources::{GameFont, Resources, Texture},
     vulkan::shaders::*,
-    Appearance, Loader, Vulkan,
+    Appearance, Layer, Loader, Transform, Vulkan,
 };
-use glam::f32::vec2;
+use glam::f32::{vec2, Vec2};
 
-type AObject = Arc<Mutex<Object>>;
+#[derive(Clone)]
+pub struct LabelCreateInfo {
+    pub transform: Transform,
+    pub appearance: Appearance,
+    pub text: String,
+    pub scale: Vec2,
+    pub align: [f32; 2],
+}
+impl Default for LabelCreateInfo {
+    fn default() -> Self {
+        Self {
+            transform: Transform::default(),
+            appearance: Appearance::default(),
+            text: String::new(),
+            scale: vec2(25.0, 25.0),
+            align: [0.0; 2],
+        }
+    }
+}
+#[derive(Clone)]
+pub struct Label {
+    pub transform: Transform,
+    pub appearance: Appearance,
+    id: usize,
+    layer: Option<Layer>,
+    pub font: Arc<GameFont>,
+    pub text: String,
+    pub scale: Vec2,
+    pub align: [f32; 2],
+    labelifier: Arc<Mutex<Labelifier>>,
+}
+impl GameObject for Label {
+    fn transform(&self) -> Transform {
+        self.transform
+    }
+    fn appearance(&self) -> &Appearance {
+        &self.appearance
+    }
+    fn id(&self) -> usize {
+        self.id
+    }
+    fn init(&mut self, id: usize, layer: &Layer) {
+        self.id = id;
+        self.layer = Some(layer.clone());
+    }
+}
+impl Label {
+    pub fn new(resources: &Resources, font: &Arc<GameFont>, create_info: LabelCreateInfo) -> Self {
+        let labelifier = resources.labelifier.clone();
+        Self {
+            transform: create_info.transform,
+            appearance: create_info.appearance,
+            id: 0,
+            layer: None,
+            font: font.clone(),
+            text: create_info.text,
+            scale: create_info.scale,
+            align: create_info.align,
+            labelifier,
+        }
+    }
+    pub fn update(&mut self) {
+        let object = self.layer.as_ref().unwrap().fetch(self.id());
+        self.transform = object.transform;
+        self.appearance = object.appearance;
+    }
+    pub fn update_text(&mut self, text: String) {
+        self.text = text;
+        Self::sync(self);
+    }
+    pub fn sync(&self) {
+        self.labelifier.lock().queue(self.clone());
+    }
+}
 
 pub struct Labelifier {
     material: Material,
@@ -119,7 +192,7 @@ impl Labelifier {
         loop {
             for task in self.queued.iter() {
                 for glyph in task.glyphs.clone() {
-                    self.cache.queue_glyph(task.font.fontid, glyph);
+                    self.cache.queue_glyph(task.label.font.fontid, glyph);
                 }
             }
 
@@ -138,17 +211,9 @@ impl Labelifier {
             break;
         }
         for task in self.queued.iter() {
-            let mut object = task.object.lock();
+            let mut label = task.label.clone();
 
-            let size = if let Some(appearance) = object.graphics.clone() {
-                appearance.size
-            } else {
-                object.graphics = Some(Appearance {
-                    color: [1.0; 4],
-                    ..Default::default()
-                });
-                vec2(1.0, 1.0)
-            };
+            let size = label.appearance.transform.size;
 
             let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
@@ -162,7 +227,7 @@ impl Labelifier {
                 .iter()
                 .flat_map(|g| {
                     if let Ok(Some((uv_rect, screen_rect))) =
-                        self.cache.rect_for(task.font.fontid, g)
+                        self.cache.rect_for(label.font.fontid, g)
                     {
                         let gl_rect = rusttype::Rect {
                             min: point(
@@ -200,43 +265,23 @@ impl Labelifier {
                     }
                 })
                 .collect();
-            let appearance = object.graphics.as_mut().unwrap();
-            appearance.data = Data { vertices, indices };
-            appearance.material = Some(self.material.clone());
+            label.appearance.data = Data { vertices, indices };
+            label.appearance.material = Some(self.material.clone());
+            label.layer.as_ref().unwrap().update(&label);
         }
         self.queued = vec![];
         self.ready = false;
     }
-    pub fn queue(
-        &mut self,
-        object: AObject,
-        font: &Arc<GameFont>,
-        text: String,
-        scale: f32,
-        align: [f32; 2],
-    ) {
+    pub fn queue(&mut self, label: Label) {
         self.ready = true;
 
-        let obj = object.lock();
-
-        let size = if let Some(appearance) = obj.graphics.clone() {
-            appearance.size
-        } else {
-            vec2(1.0, 1.0)
-        };
+        let size = label.appearance().transform.size;
 
         let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
-        let glyphs: Vec<PositionedGlyph> =
-            layout_paragraph(&font.font, &text, scale, dimensions, align);
+        let glyphs: Vec<PositionedGlyph> = layout_paragraph(&label, dimensions);
 
-        drop(obj);
-
-        self.queued.push(DrawTask {
-            object,
-            font: font.clone(),
-            glyphs,
-        });
+        self.queued.push(DrawTask { label, glyphs });
     }
     /// Loads a font ready to get layed out and rendered.
     pub fn load_font(&mut self, font: &[u8]) -> Arc<GameFont> {
@@ -250,28 +295,24 @@ impl Labelifier {
 }
 
 struct DrawTask<'a> {
-    pub object: AObject,
-    pub font: Arc<GameFont>,
+    pub label: Label,
     pub glyphs: Vec<PositionedGlyph<'a>>,
 }
 
-fn layout_paragraph<'a>(
-    font: &Font<'static>,
-    text: &str,
-    scale: f32,
-    dimensions: [f32; 2],
-    align: [f32; 2],
-) -> Vec<PositionedGlyph<'a>> {
-    if text.is_empty() {
+fn layout_paragraph<'a>(label: &Label, dimensions: [f32; 2]) -> Vec<PositionedGlyph<'a>> {
+    if label.text.is_empty() {
         return vec![];
     };
     let mut result: Vec<Vec<PositionedGlyph>> = vec![vec![]];
-    let scale = Scale::uniform(scale);
-    let v_metrics = font.v_metrics(scale);
+    let scale = Scale {
+        x: label.scale[0],
+        y: label.scale[1],
+    };
+    let v_metrics = label.font.font.v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
     let mut caret = point(0.0, v_metrics.ascent);
     let mut last_glyph_id = None;
-    for c in text.chars() {
+    for c in label.text.chars() {
         if c.is_control() {
             match c {
                 '\r' => {
@@ -283,9 +324,9 @@ fn layout_paragraph<'a>(
             }
             continue;
         }
-        let base_glyph = font.glyph(c);
+        let base_glyph = label.font.font.glyph(c);
         if let Some(id) = last_glyph_id.take() {
-            caret.x += font.pair_kerning(scale, id, base_glyph.id());
+            caret.x += label.font.font.pair_kerning(scale, id, base_glyph.id());
         }
         last_glyph_id = Some(base_glyph.id());
         let mut glyph = base_glyph.scaled(scale).positioned(caret);
@@ -308,8 +349,8 @@ fn layout_paragraph<'a>(
                 dimensions[0] - last.position().x - last.unpositioned().h_metrics().advance_width;
             for glyph in result[line.0].clone().iter().enumerate() {
                 result[line.0][glyph.0].set_position(point(
-                    glyph.1.position().x + xshift * align[0],
-                    glyph.1.position().y + yshift * align[1],
+                    glyph.1.position().x + xshift * label.align[0],
+                    glyph.1.position().y + yshift * label.align[1],
                 ))
             }
         };

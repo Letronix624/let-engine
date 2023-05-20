@@ -3,7 +3,8 @@ pub use resources::Resources;
 use resources::{GameFont, Loader, Texture};
 pub mod objects;
 pub use objects::{
-    data::Data, Appearance, CameraOption, CameraScaling, Layer, Node, Object, Scene,
+    data::Data, Appearance, Camera, CameraObject, CameraScaling, CameraSettings, GameObject, Layer,
+    Node, Scene, Transform,
 };
 pub mod vulkan;
 use vulkan::Vulkan;
@@ -16,6 +17,7 @@ mod draw;
 use draw::Draw;
 mod font_layout;
 use font_layout::Labelifier;
+pub use font_layout::{Label, LabelCreateInfo};
 pub mod input;
 pub mod materials;
 pub use input::Input;
@@ -33,7 +35,7 @@ use std::{
 
 pub use self::objects::data::Vertex;
 
-pub type AObject = Arc<Mutex<Object>>;
+pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;
 pub type Font = GameFont;
 
@@ -122,12 +124,14 @@ pub struct Game {
 impl Game {
     pub fn update<T: 'static>(&mut self, event: &Event<T>) {
         match event {
+            Event::WindowEvent {
+                event: WindowEvent::Resized(_),
+                ..
+            } => {
+                self.draw.recreate_swapchain = true;
+            }
+            #[cfg(feature = "egui")]
             Event::WindowEvent { event, .. } => {
-                #[allow(clippy::collapsible_match)]
-                if let WindowEvent::Resized(_) = event {
-                    self.draw.recreate_swapchain = true;
-                }
-                #[cfg(feature = "egui")]
                 self.gui.update(event);
             }
             Event::RedrawEventsCleared => {

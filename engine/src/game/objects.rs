@@ -27,99 +27,88 @@ pub struct Transform {
     pub rotation: f32,
 }
 
-pub trait GameObject {
-    fn transform(&self) -> Transform;
-    fn appearance(&self) -> Appearance;
-    fn id(&self) -> usize;
-}
-
-pub trait Camera {
-    fn camera_mode(&self) -> CameraOption;
-}
-
-/// Main game object that holds position, size, rotation, color, texture and data.
-/// To make your objects appear take an empty object, add your traits and send an receiver
-/// of it to the main game object.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Object {
-    pub position: Vec2, //[f32; 2],
-    pub size: Vec2,
-    pub rotation: f32,
-    pub graphics: Option<Appearance>,
-    pub camera: Option<CameraOption>,
-    id: usize,
-}
-
-impl Object {
-    pub fn new() -> Self {
-        Self::default()
-    }
-    pub fn new_square() -> Self {
-        Self {
-            graphics: Some(Appearance::new_square()),
-            ..Default::default()
-        }
-    }
-    pub fn graphics(mut self, graphics: Option<Appearance>) -> Self {
-        self.graphics = graphics;
-        self
-    }
-    pub fn get_id(&self) -> usize {
-        self.id
-    }
-    pub fn initialize(mut self, id: usize) -> Self {
-        self.id = id;
-        self
-    }
+impl Transform {
     pub fn combine(self, rhs: Self) -> Self {
         Self {
             position: self.position + rhs.position,
             size: self.size * rhs.size,
             rotation: self.rotation + rhs.rotation,
-            ..rhs
         }
+    }
+    pub fn position(mut self, position: Vec2) -> Self {
+        self.position = position;
+        self
+    }
+    pub fn size(mut self, size: Vec2) -> Self {
+        self.size = size;
+        self
+    }
+    pub fn rotation(mut self, rotation: f32) -> Self {
+        self.rotation = rotation;
+        self
     }
 }
 
-impl Default for Object {
+impl Default for Transform {
     fn default() -> Self {
         Self {
             position: vec2(0.0, 0.0),
             size: vec2(1.0, 1.0),
             rotation: 0.0,
-            graphics: None,
-            camera: None,
-            id: 0,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct CameraOption {
+pub trait GameObject: Send {
+    fn transform(&self) -> Transform;
+    fn appearance(&self) -> &Appearance;
+    fn id(&self) -> usize;
+    fn init(&mut self, id: usize, layer: &Layer);
+}
+
+pub trait Camera {
+    fn settings(&self) -> CameraSettings;
+}
+
+#[derive(Clone, Copy)]
+pub struct CameraSettings {
     pub zoom: f32,
     pub mode: CameraScaling,
 }
-
-impl CameraOption {
-    pub fn new() -> Self {
-        // Best for in-game scenes
+impl Default for CameraSettings {
+    fn default() -> Self {
         Self {
             zoom: 1.0,
-            mode: CameraScaling::Circle,
-        }
-    }
-    pub fn new_hud() -> Self {
-        // Best for huds menus screen savers and consistant things.
-        Self {
-            zoom: 1.0,
-            mode: CameraScaling::Expand,
+            mode: CameraScaling::Stretch,
         }
     }
 }
+impl CameraSettings {
+    pub fn zoom(mut self, zoom: f32) -> Self {
+        self.zoom = zoom;
+        self
+    }
+    pub fn mode(mut self, mode: CameraScaling) -> Self {
+        self.mode = mode;
+        self
+    }
+}
 
-impl std::default::Default for CameraOption {
-    fn default() -> Self {
-        Self::new()
+pub trait CameraObject: GameObject + Camera {}
+
+#[derive(Clone)]
+pub struct Object {
+    pub transform: Transform,
+    pub appearance: Appearance,
+}
+impl Object {
+    pub fn combined(object: &AObject, other: &AObject) -> Self {
+        let transform = object.transform().combine(other.transform());
+        let appearance = other.appearance().clone();
+        Self {
+            transform,
+            appearance,
+        }
     }
 }
 
@@ -129,19 +118,18 @@ pub struct Node<T> {
     pub children: Vec<Arc<Mutex<Node<T>>>>,
 }
 
-impl Node<Arc<Mutex<Object>>> {
+impl Node<AObject> {
     pub fn order_position(order: &mut Vec<Object>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
-            let object = objects
-                .object
-                .lock()
-                .clone()
-                .combine(child.object.lock().clone());
+            let object = Object::combined(&objects.object, &child.object);
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();
-                order.push(object.clone().combine(child.object.lock().clone()));
+                order.push(Object {
+                    transform: object.transform.combine(child.object.transform()),
+                    appearance: child.object.appearance().clone(),
+                });
                 Self::order_position(order, &child);
             }
         }
@@ -159,24 +147,16 @@ impl Node<Arc<Mutex<Object>>> {
         for child in self.children.iter() {
             child.clone().lock().remove_children(objects);
         }
-        objects.remove(&self.object.lock().get_id());
+        objects.remove(&self.object.id());
         self.children = vec![];
     }
-    pub fn get_object(&self) -> Object {
+    pub fn end_transform(&self) -> Transform {
         if let Some(parent) = &self.parent {
             let parent = parent.upgrade().unwrap();
             let parent = parent.lock();
-            parent.get_object().combine(self.object.lock().clone())
+            parent.end_transform().combine(self.object.transform())
         } else {
-            self.object.lock().clone()
-        }
-    }
-    #[allow(dead_code)]
-    pub fn print_tree(&self, indent_level: usize) {
-        let indent = "  ".repeat(indent_level);
-        println!("{}{:?}", indent, Arc::as_ptr(&self.object));
-        for child in &self.children {
-            child.lock().print_tree(indent_level + 1);
+            self.object.transform()
         }
     }
 }
@@ -188,9 +168,7 @@ pub struct Appearance {
     pub visible: bool,
     pub material: Option<materials::Material>,
     pub data: Data,
-    pub position: Vec2,
-    pub size: Vec2,
-    pub rotation: f32,
+    pub transform: Transform,
     pub color: [f32; 4],
 }
 impl Appearance {
@@ -223,24 +201,20 @@ impl Appearance {
             return Err(NoTextureError);
         };
 
-        self.size = vec2(dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0);
+        self.transform.size = vec2(dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0);
 
         Ok(())
+    }
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.visible = visible;
+        self
     }
     pub fn data(mut self, data: Data) -> Self {
         self.data = data;
         self
     }
-    pub fn position(mut self, position: Vec2) -> Self {
-        self.position = position;
-        self
-    }
-    pub fn size(mut self, size: Vec2) -> Self {
-        self.size = size;
-        self
-    }
-    pub fn rotation(mut self, angle: f32) -> Self {
-        self.rotation = angle;
+    pub fn transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
         self
     }
     pub fn color(mut self, color: [f32; 4]) -> Self {
@@ -259,9 +233,7 @@ impl default::Default for Appearance {
             visible: true,
             material: None,
             data: Data::empty(),
-            position: vec2(0.0, 0.0),
-            size: vec2(1.0, 1.0),
-            rotation: 0.0,
+            transform: Transform::default(),
             color: [1.0, 1.0, 1.0, 1.0],
         }
     }
@@ -270,43 +242,30 @@ impl default::Default for Appearance {
 #[derive(Clone)]
 pub struct Layer {
     pub root: NObject,
-    pub camera: Arc<Mutex<Option<NObject>>>,
+    pub camera: Arc<Mutex<Option<Box<dyn CameraObject>>>>, //NObject>>>,
     objects_map: Arc<Mutex<ObjectsMap>>,
     latest_object: Arc<AtomicU64>,
 }
 
 impl Layer {
     pub fn new(root: NObject) -> Self {
+        let mut objects_map = HashMap::new();
+        objects_map.insert(0, root.clone());
         Self {
             root,
             camera: Arc::new(Mutex::new(None)),
-            objects_map: Arc::new(Mutex::new(HashMap::new())),
-            latest_object: Arc::new(AtomicU64::new(0)),
+            objects_map: Arc::new(Mutex::new(objects_map)),
+            latest_object: Arc::new(AtomicU64::new(1)),
         }
     }
-    pub fn set_camera(&self, camera: &AObject) -> Result<(), NoObjectError> {
-        {
-            let mut camera = camera.lock();
-
-            if camera.camera.is_none() {
-                camera.camera = Some(CameraOption::new());
-            }
-        }
-        let map = self.objects_map.lock();
-        if let Some(camera) = map.get(&camera.lock().get_id()) {
-            *self.camera.lock() = Some(camera.clone());
-        } else {
-            return Err(NoObjectError);
-        }
-
-        Ok(())
+    pub fn set_camera<T: CameraObject + 'static>(&self, camera: T) {
+        *self.camera.lock() = Some(Box::new(camera));
     }
     /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
     /// instead.
     pub fn camera_position(&self) -> Vec2 {
-        let camera = self.camera.lock();
-        if let Some(camera) = camera.clone() {
-            camera.lock().get_object().position
+        if let Some(camera) = self.camera.lock().as_ref() {
+            camera.transform().position
         } else {
             vec2(0.0, 0.0)
         }
@@ -314,10 +273,8 @@ impl Layer {
     /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
     /// instead.
     pub fn camera_scaling(&self) -> CameraScaling {
-        let camera = self.camera.lock();
-        if let Some(camera) = camera.clone() {
-            let camera = camera.lock().get_object().camera;
-            camera.unwrap().mode
+        if let Some(camera) = self.camera.lock().as_ref() {
+            camera.settings().mode
         } else {
             CameraScaling::Stretch
         }
@@ -325,9 +282,8 @@ impl Layer {
     /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
     /// instead.
     pub fn zoom(&self) -> f32 {
-        let camera = self.camera.lock();
-        if let Some(camera) = camera.clone() {
-            camera.lock().get_object().camera.unwrap().zoom
+        if let Some(camera) = self.camera.lock().as_ref() {
+            camera.settings().zoom
         } else {
             1.0
         }
@@ -346,24 +302,39 @@ impl Layer {
     }
 
     pub fn contains_object(&self, object: &AObject) -> bool {
-        self.objects_map
-            .lock()
-            .contains_key(&object.lock().get_id())
+        self.objects_map.lock().contains_key(&object.id())
     }
 
-    pub fn add_object(
+    pub fn update<T: GameObject + Clone + 'static>(&self, object: &T) {
+        let map = self.objects_map.lock();
+        let node = map.get(&object.id()).unwrap();
+        node.lock().object = Box::new(object.clone());
+    }
+
+    pub fn fetch(&self, id: usize) -> Object {
+        let map = self.objects_map.lock();
+        let object = &map.get(&id).unwrap().lock().object;
+        Object {
+            transform: object.transform(),
+            appearance: object.appearance().clone(),
+        }
+    }
+
+    pub fn add_object<T: GameObject + Clone + 'static>(
         &self,
         parent: Option<&AObject>,
-        initial_object: Object,
-    ) -> Result<AObject, NoParentError> {
+        object: &mut T,
+    ) -> Result<(), NoParentError> {
         let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
 
-        let object = Arc::new(Mutex::new(initial_object.initialize(id)));
+        object.init(id, self);
+
+        let object: Box<dyn GameObject> = Box::new(object.clone());
 
         let mut map = self.objects_map.lock();
 
         let parent: NObject = if let Some(parent) = parent {
-            if let Some(parent) = map.get(&parent.lock().get_id()) {
+            if let Some(parent) = map.get(&parent.id()) {
                 parent.clone()
             } else {
                 return Err(NoParentError);
@@ -372,8 +343,8 @@ impl Layer {
             self.root.clone()
         };
 
-        let node = Arc::new(Mutex::new(Node {
-            object: object.clone(),
+        let node: NObject = Arc::new(Mutex::new(Node {
+            object,
             parent: Some(Arc::downgrade(&parent)),
             children: vec![],
         }));
@@ -381,13 +352,20 @@ impl Layer {
         parent.lock().children.push(node.clone());
 
         map.insert(id, node);
-        Ok(object)
+        Ok(())
     }
+    //pub fn add_object(
+    //    &self,
+    //    parent: Option<&AObject>,
+    //    object: Box<dyn CameraObject>
+    //) -> Result<(), NoParentError> {
+    //    Ok(())
+    //}
 
     pub fn remove_object(&self, object: &AObject) -> Result<(), NoObjectError> {
         let node;
         let mut map = self.objects_map.lock();
-        if let Some(object) = map.remove(&object.lock().get_id()) {
+        if let Some(object) = map.remove(&object.id()) {
             node = object;
         } else {
             return Err(NoObjectError);
@@ -480,7 +458,7 @@ impl Layer {
 
     fn to_node(&self, object: &AObject) -> Result<NObject, NoObjectError> {
         let map = self.objects_map.lock();
-        if let Some(object) = map.get(&object.lock().get_id()) {
+        if let Some(object) = map.get(&object.id()) {
             Ok(object.clone())
         } else {
             Err(NoObjectError)
@@ -527,9 +505,36 @@ pub struct Scene {
     layers: Arc<Mutex<IndexSet<Layer>>>,
 }
 
+struct Root {
+    pub transform: Transform,
+    pub appearance: Appearance,
+    id: usize,
+}
+impl GameObject for Root {
+    fn transform(&self) -> Transform {
+        self.transform
+    }
+    fn appearance(&self) -> &Appearance {
+        &self.appearance
+    }
+    fn id(&self) -> usize {
+        self.id
+    }
+    fn init(&mut self, _id: usize, _layer: &Layer) {}
+}
+impl Default for Root {
+    fn default() -> Self {
+        Self {
+            transform: Transform::default(),
+            appearance: Appearance::default().visible(false),
+            id: 0,
+        }
+    }
+}
+
 impl Scene {
     pub fn new_layer(&self) -> Layer {
-        let object = Arc::new(Mutex::new(Object::new()));
+        let object = Box::<Root>::default();
 
         let node = Layer::new(Arc::new(Mutex::new(Node {
             object,
