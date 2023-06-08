@@ -29,6 +29,12 @@
 
 - Post processing
 
+3 stages of Rust repository building.
+
+1. [ ] Make it work first
+2. [ ] Make it right
+3. [ ] Make it fast
+
 ## Installation
 
 Command line:
