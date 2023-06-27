@@ -1,16 +1,21 @@
 pub mod data;
+pub mod physics;
+
 use super::{materials, AObject, NObject};
 use crate::error::objects::*;
 use crate::error::textures::*;
 pub use data::*;
+pub use physics::*;
 
 use anyhow::Result;
 use glam::f32::{vec2, Vec2};
 use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
 use parking_lot::Mutex;
+use rapier2d::pipeline::*;
 
 use std::{
+    any::Any,
     default,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -59,15 +64,23 @@ impl Default for Transform {
     }
 }
 
-pub trait GameObject: Send {
+pub trait GameObject: Send + Any {
     fn transform(&self) -> Transform;
     fn appearance(&self) -> &Appearance;
     fn id(&self) -> usize;
-    fn init(&mut self, id: usize, layer: &Layer);
+    fn init_to_layer(&mut self, id: usize, layer: &Layer);
 }
 
-pub trait Camera {
+pub trait Camera: GameObject {
     fn settings(&self) -> CameraSettings;
+}
+
+pub trait Collider: GameObject {
+    fn collider(&self) -> Option<rapier2d::geometry::ColliderHandle>;
+}
+
+pub trait Rigidbody: Collider + GameObject {
+    fn rigidbody(&self) -> rapier2d::dynamics::RigidBodyHandle;
 }
 
 #[derive(Clone, Copy)]
@@ -93,8 +106,6 @@ impl CameraSettings {
         self
     }
 }
-
-pub trait CameraObject: GameObject + Camera {}
 
 #[derive(Clone)]
 pub struct Object {
@@ -242,9 +253,11 @@ impl default::Default for Appearance {
 #[derive(Clone)]
 pub struct Layer {
     pub root: NObject,
-    pub camera: Arc<Mutex<Option<Box<dyn CameraObject>>>>, //NObject>>>,
+    pub camera: Arc<Mutex<Option<Box<dyn Camera>>>>,
     objects_map: Arc<Mutex<ObjectsMap>>,
     latest_object: Arc<AtomicU64>,
+    pub(crate) physics: Arc<Mutex<Physics>>,
+    pub physics_enabled: bool,
 }
 
 impl Layer {
@@ -256,9 +269,11 @@ impl Layer {
             camera: Arc::new(Mutex::new(None)),
             objects_map: Arc::new(Mutex::new(objects_map)),
             latest_object: Arc::new(AtomicU64::new(1)),
+            physics: Arc::new(Mutex::new(Physics::new())),
+            physics_enabled: false,
         }
     }
-    pub fn set_camera<T: CameraObject + 'static>(&self, camera: T) {
+    pub fn set_camera<T: Camera + 'static>(&self, camera: T) {
         *self.camera.lock() = Some(Box::new(camera));
     }
     /// Be careful! Don't use this when the camera is already locked. Read from the locked camera
@@ -305,6 +320,17 @@ impl Layer {
         self.objects_map.lock().contains_key(&object.id())
     }
 
+    pub fn step_physics(&self, physics: &mut PhysicsPipeline, query: &mut QueryPipeline) {
+        self.physics.lock().step(physics, query);
+    }
+
+    pub fn gravity(&self) -> Vec2 {
+        self.physics.lock().gravity.into()
+    }
+    pub fn set_gravity(&self, gravity: Vec2) {
+        self.physics.lock().gravity = gravity.into();
+    }
+
     pub fn update<T: GameObject + Clone + 'static>(&self, object: &T) {
         let map = self.objects_map.lock();
         let node = map.get(&object.id()).unwrap();
@@ -327,7 +353,7 @@ impl Layer {
     ) -> Result<(), NoParentError> {
         let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
 
-        object.init(id, self);
+        object.init_to_layer(id, self);
 
         let object: Box<dyn GameObject> = Box::new(object.clone());
 
@@ -352,15 +378,9 @@ impl Layer {
         parent.lock().children.push(node.clone());
 
         map.insert(id, node);
+
         Ok(())
     }
-    //pub fn add_object(
-    //    &self,
-    //    parent: Option<&AObject>,
-    //    object: Box<dyn CameraObject>
-    //) -> Result<(), NoParentError> {
-    //    Ok(())
-    //}
 
     pub fn remove_object(&self, object: &AObject) -> Result<(), NoObjectError> {
         let node;
@@ -398,7 +418,6 @@ impl Layer {
     }
 
     pub fn move_down(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {
-        //MoveError> {
         let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
         let index = Self::find_child_index(&parent, &node);
@@ -503,6 +522,8 @@ impl std::hash::Hash for Layer {
 
 pub struct Scene {
     layers: Arc<Mutex<IndexSet<Layer>>>,
+    physics_pipeline: Arc<Mutex<PhysicsPipeline>>,
+    query_pipeline: Arc<Mutex<QueryPipeline>>,
 }
 
 struct Root {
@@ -520,7 +541,7 @@ impl GameObject for Root {
     fn id(&self) -> usize {
         self.id
     }
-    fn init(&mut self, _id: usize, _layer: &Layer) {}
+    fn init_to_layer(&mut self, _id: usize, _layer: &Layer) {}
 }
 impl Default for Root {
     fn default() -> Self {
@@ -545,6 +566,17 @@ impl Scene {
 
         node
     }
+
+    pub fn iterate_all_physics(&self) {
+        let mut physics = self.physics_pipeline.lock();
+        let mut query = self.query_pipeline.lock();
+        let layers = self.layers.lock();
+
+        for layer in layers.iter() {
+            layer.step_physics(&mut physics, &mut query);
+        }
+    }
+
     pub fn remove_layer(&self, layer: &mut Layer) -> Result<(), NoObjectError> {
         let node: NObject;
         let mut layers = self.layers.lock();
@@ -574,11 +606,13 @@ impl Default for Scene {
     fn default() -> Self {
         Self {
             layers: Arc::new(Mutex::new(indexset![])),
+            physics_pipeline: Arc::new(Mutex::new(PhysicsPipeline::new())),
+            query_pipeline: Arc::new(Mutex::new(QueryPipeline::new())),
         }
     }
 }
 
-use core::f32::consts::FRAC_1_SQRT_2;
+use core::f32::consts::FRAC_1_SQRT_2; // Update. Not true.
 pub fn scale(mode: CameraScaling, dimensions: (f32, f32)) -> (f32, f32) {
     match mode {
         CameraScaling::Stretch => (1.0, 1.0),

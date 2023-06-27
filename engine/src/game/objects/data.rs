@@ -1,21 +1,22 @@
+use glam::f32::{vec2, Mat4, Vec2};
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
 #[repr(C)]
 #[derive(BufferContents, VTX, Debug, Clone, Copy, PartialEq)]
 pub struct Vertex {
     #[format(R32G32_SFLOAT)]
-    pub position: [f32; 2],
+    pub position: Vec2,
     #[format(R32G32_SFLOAT)]
-    pub tex_position: [f32; 2],
+    pub tex_position: Vec2,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
 pub struct ModelViewProj {
     //sepparate to vertex and fragment
-    pub model: [f32; 16],
-    pub view: [f32; 16],
-    pub proj: [f32; 16],
+    pub model: Mat4,
+    pub view: Mat4,
+    pub proj: Mat4,
 }
 
 #[repr(C)]
@@ -25,15 +26,6 @@ pub struct ObjectFrag {
     pub texture_id: u32,
 }
 
-impl Default for ModelViewProj {
-    fn default() -> Self {
-        Self {
-            model: [0.0; 16],
-            view: [0.0; 16],
-            proj: [0.0; 16],
-        }
-    }
-}
 impl Default for ObjectFrag {
     fn default() -> Self {
         Self {
@@ -124,16 +116,16 @@ impl Data {
 #[allow(dead_code)]
 pub const TRIANGLE: [Vertex; 3] = [
     Vertex {
-        position: [0.0, -1.0],
-        tex_position: [0.0, -1.0],
+        position: vec2(0.0, -1.0),
+        tex_position: vec2(0.0, -1.0),
     },
     Vertex {
-        position: [-1.0, 1.0],
-        tex_position: [-1.0, 1.0],
+        position: vec2(-1.0, 1.0),
+        tex_position: vec2(-1.0, 1.0),
     },
     Vertex {
-        position: [1.0, 1.0],
-        tex_position: [1.0, 1.0],
+        position: vec2(1.0, 1.0),
+        tex_position: vec2(1.0, 1.0),
     },
 ];
 #[allow(dead_code)]
@@ -143,23 +135,23 @@ pub const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
 pub const SQUARE: [Vertex; 4] = [
     Vertex {
         // 0
-        position: [-1.0, -1.0],
-        tex_position: [-1.0, -1.0],
+        position: vec2(-1.0, -1.0),
+        tex_position: vec2(-1.0, -1.0),
     },
     Vertex {
         // 1
-        position: [1.0, -1.0],
-        tex_position: [1.0, -1.0],
+        position: vec2(1.0, -1.0),
+        tex_position: vec2(1.0, -1.0),
     },
     Vertex {
         // 2
-        position: [-1.0, 1.0],
-        tex_position: [-1.0, 1.0],
+        position: vec2(-1.0, 1.0),
+        tex_position: vec2(-1.0, 1.0),
     },
     Vertex {
         // 3
-        position: [1.0, 1.0],
-        tex_position: [1.0, 1.0],
+        position: vec2(1.0, 1.0),
+        tex_position: vec2(1.0, 1.0),
     },
 ];
 #[allow(dead_code)]
@@ -170,25 +162,25 @@ pub const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 #[macro_export]
 macro_rules! make_circle {
     ($corners:expr) => {{
-        use let_engine::Vertex;
+        use let_engine::{vec2, Vertex};
         let corners = $corners;
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
         use core::f64::consts::TAU;
         vertices.push(Vertex {
-            position: [0.0, 0.0],
-            tex_position: [0.0, 0.0],
+            position: vec2(0.0, 0.0),
+            tex_position: vec2(0.0, 0.0),
         });
         for i in 0..corners {
             vertices.push(Vertex {
-                position: [
+                position: vec2(
                     (TAU * ((i as f64) / corners as f64)).cos() as f32,
                     (TAU * ((i as f64) / corners as f64)).sin() as f32,
-                ],
-                tex_position: [
+                ),
+                tex_position: vec2(
                     (TAU * ((i as f64) / corners as f64)).cos() as f32,
                     (TAU * ((i as f64) / corners as f64)).sin() as f32,
-                ],
+                ),
             });
         }
         for i in 0..corners - 1 {
@@ -200,7 +192,7 @@ macro_rules! make_circle {
     }};
     ($corners:expr, $purrcent:expr) => {{
         use core::f64::consts::TAU;
-        use let_engine::Vertex;
+        use let_engine::{vec2, Vertex};
         let corners = $corners;
         let purrcent = $purrcent as f64;
         let purrcent: f64 = purrcent.clamp(0.0, 1.0);
@@ -210,20 +202,20 @@ macro_rules! make_circle {
         let count = TAU * purrcent;
 
         vertices.push(Vertex {
-            position: [0.0, 0.0],
-            tex_position: [0.0, 0.0],
+            position: vec2(0.0, 0.0),
+            tex_position: vec2(0.0, 0.0),
         });
 
         for i in 0..corners + 1 {
             vertices.push(Vertex {
-                position: [
+                position: vec2(
                     (count * ((i as f64) / corners as f64)).cos() as f32,
                     (count * ((i as f64) / corners as f64)).sin() as f32,
-                ],
-                tex_position: [
+                ),
+                tex_position: vec2(
                     (count * ((i as f64) / corners as f64)).cos() as f32,
                     (count * ((i as f64) / corners as f64)).sin() as f32,
-                ],
+                ),
             });
         }
         for i in 0..corners {

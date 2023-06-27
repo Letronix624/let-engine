@@ -229,9 +229,9 @@ impl Draw {
                 };
 
                 *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
-                    model: model.to_cols_array(),
-                    view: view.to_cols_array(),
-                    proj: proj.to_cols_array(),
+                    model: model,
+                    view: view,
+                    proj: proj,
                 };
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
                     color: appearance.color,

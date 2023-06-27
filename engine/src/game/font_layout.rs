@@ -59,7 +59,7 @@ impl GameObject for Label {
     fn id(&self) -> usize {
         self.id
     }
-    fn init(&mut self, id: usize, layer: &Layer) {
+    fn init_to_layer(&mut self, id: usize, layer: &Layer) {
         self.id = id;
         self.layer = Some(layer.clone());
     }
@@ -243,20 +243,20 @@ impl Labelifier {
                         id += 4;
                         vec![
                             Vertex {
-                                position: [gl_rect.min.x, gl_rect.max.y],
-                                tex_position: [uv_rect.min.x, uv_rect.max.y],
+                                position: vec2(gl_rect.min.x, gl_rect.max.y),
+                                tex_position: vec2(uv_rect.min.x, uv_rect.max.y),
                             },
                             Vertex {
-                                position: [gl_rect.min.x, gl_rect.min.y],
-                                tex_position: [uv_rect.min.x, uv_rect.min.y],
+                                position: vec2(gl_rect.min.x, gl_rect.min.y),
+                                tex_position: vec2(uv_rect.min.x, uv_rect.min.y),
                             },
                             Vertex {
-                                position: [gl_rect.max.x, gl_rect.min.y],
-                                tex_position: [uv_rect.max.x, uv_rect.min.y],
+                                position: vec2(gl_rect.max.x, gl_rect.min.y),
+                                tex_position: vec2(uv_rect.max.x, uv_rect.min.y),
                             },
                             Vertex {
-                                position: [gl_rect.max.x, gl_rect.max.y],
-                                tex_position: [uv_rect.max.x, uv_rect.max.y],
+                                position: vec2(gl_rect.max.x, gl_rect.max.y),
+                                tex_position: vec2(uv_rect.max.x, uv_rect.max.y),
                             },
                         ]
                         .into_iter()

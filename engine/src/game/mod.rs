@@ -3,8 +3,8 @@ pub use resources::Resources;
 use resources::{GameFont, Loader, Texture};
 pub mod objects;
 pub use objects::{
-    data::Data, Appearance, Camera, CameraObject, CameraScaling, CameraSettings, GameObject, Layer,
-    Node, Scene, Transform,
+    data::Data, Appearance, Camera, CameraScaling, CameraSettings, Collider, ColliderBuilder,
+    GameObject, Layer, Node, Scene, Shape, Transform,
 };
 pub mod vulkan;
 use vulkan::Vulkan;
@@ -23,7 +23,6 @@ pub mod materials;
 pub use input::Input;
 #[cfg(feature = "egui")]
 pub mod egui;
-pub mod rapier;
 
 use atomic_float::AtomicF64;
 use parking_lot::Mutex;
@@ -56,7 +55,7 @@ impl GameBuilder {
         self.window_builder = Some(window_builder);
         self
     }
-    pub fn with_clear_background_clear_color(mut self, color: [f32; 4]) -> Self {
+    pub fn with_clear_color(mut self, color: [f32; 4]) -> Self {
         self.clear_background_color = color;
         self
     }

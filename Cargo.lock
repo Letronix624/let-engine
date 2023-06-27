@@ -747,9 +747,12 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.24.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad83ab008a4fa3b31dfa713dd41b5a9bdea1e94e4cf1e2fc274ffbd49b0271d3"
+checksum = "8e4afd9ad95555081e109fe1d21f2a30c691b5f0919c67dfa690a2e1eb6bd51c"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "half"
@@ -929,6 +932,7 @@ dependencies = [
  "hashbrown 0.13.2",
  "image",
  "indexmap",
+ "nalgebra",
  "parking_lot",
  "rapier2d",
  "rusttype",
@@ -1082,6 +1086,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d68d47bba83f9e2006d117a9a33af1524e655516b8919caac694427a6fb1e511"
 dependencies = [
  "approx",
+ "glam",
  "matrixmultiply",
  "nalgebra-macros",
  "num-complex",
