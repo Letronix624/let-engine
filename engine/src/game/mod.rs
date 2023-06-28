@@ -3,8 +3,8 @@ pub use resources::Resources;
 use resources::{GameFont, Loader, Texture};
 pub mod objects;
 pub use objects::{
-    data::Data, Appearance, Camera, CameraScaling, CameraSettings, Collider, ColliderBuilder,
-    GameObject, Layer, Node, Scene, Shape, Transform,
+    data::Data, Appearance, Camera, CameraScaling, CameraSettings, Collider, physics,
+    GameObject, Layer, Node, Scene, Transform,
 };
 pub mod vulkan;
 use vulkan::Vulkan;
@@ -28,7 +28,7 @@ use atomic_float::AtomicF64;
 use parking_lot::Mutex;
 
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{atomic::Ordering, Arc, Weak},
     time::Instant,
 };
 
@@ -36,6 +36,7 @@ pub use self::objects::data::Vertex;
 
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;
+pub type WeakObject = Weak<Mutex<Node<AObject>>>;
 pub type Font = GameFont;
 
 /// This is what you create your whole game session with.

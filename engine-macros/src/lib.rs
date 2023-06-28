@@ -25,14 +25,14 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, layer: &let_engine::Layer) {
+            fn init_to_layer(&mut self, id: usize, weak: let_engine::WeakObject) {
                 self.id = id;
-                self.layer = Some(layer.clone());
+                self.reference = Some(weak);
             }
         }
-    }.into()
+    }
+    .into()
 }
-
 
 #[proc_macro_attribute]
 pub fn objectinit(_args: TokenStream, input: TokenStream) -> TokenStream {
@@ -65,20 +65,23 @@ pub fn objectinit(_args: TokenStream, input: TokenStream) -> TokenStream {
                 fields.named.push(
                     syn::Field::parse_named
                         .parse2(quote! {
-                            layer: Option<let_engine::Layer>
+                            reference: Option<let_engine::WeakObject>
                         })
-                        .expect("id failed"),
+                        .expect("weak object failed"),
                 );
             }
             quote! {
                 impl #name {
                     pub fn update(&mut self) {
-                        let object = self.layer.as_ref().unwrap().fetch(self.id());
-                        self.transform = object.transform;
-                        self.appearance = object.appearance;
+                        let arc = self.reference.clone().unwrap().upgrade().unwrap();
+                        let object = &arc.lock().object;
+                        self.transform = object.transform();
+                        self.appearance = object.appearance().clone();
                     }
                     pub fn sync(&self) {
-                        self.layer.as_ref().unwrap().update(self)
+                        let arc = self.reference.clone().unwrap().upgrade().unwrap();
+                        let mut object = arc.lock();
+                        object.object = Box::new(self.clone());
                     }
                 }
             }
@@ -90,6 +93,52 @@ pub fn objectinit(_args: TokenStream, input: TokenStream) -> TokenStream {
         #[derive(Clone)]
         #ast
         #implements
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
+pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let mut ast = parse_macro_input!(input as DeriveInput);
+    match &mut ast.data {
+        syn::Data::Struct(ref mut struct_data) => {
+            if let syn::Fields::Named(fields) = &mut struct_data.fields {
+                fields.named.push(
+                    syn::Field::parse_named
+                        .parse2(quote! {
+                            pub transform: let_engine::Transform
+                        })
+                        .expect("transform failed"),
+                );
+                fields.named.push(
+                    syn::Field::parse_named
+                        .parse2(quote! {
+                            pub appearance: let_engine::Appearance
+                        })
+                        .expect("appearance failed"),
+                );
+                fields.named.push(
+                    syn::Field::parse_named
+                        .parse2(quote! {
+                            id: usize
+                        })
+                        .expect("id failed"),
+                );
+                fields.named.push(
+                    syn::Field::parse_named
+                        .parse2(quote! {
+                            reference: Option<let_engine::WeakObject>
+                        })
+                        .expect("weak object failed"),
+                );
+            }
+        }
+        _ => panic!("`object` has to be used with structs."),
+    };
+
+    quote! {
+        #[derive(Clone)]
+        #ast
     }
     .into()
 }
@@ -122,10 +171,9 @@ pub fn camera(_args: TokenStream, input: TokenStream) -> TokenStream {
                 fn id(&self) -> usize {
                     self.id
                 }
-                fn init_to_layer(&mut self, id: usize, layer: &let_engine::Layer) {
-
+                fn init_to_layer(&mut self, id: usize, weak: let_engine::WeakObject) {
+                    self.reference = Some(weak);
                     self.id = id;
-                    self.layer = Some(layer.clone());
                 }
             }
             impl let_engine::Camera for #name {
@@ -158,9 +206,16 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
                 fields.named.push(
                     syn::Field::parse_named
                         .parse2(quote! {
-                            pub collider: Option<let_engine::rapier2d::geometry::ColliderHandle>
+                            pub collider: Option<let_engine::physics::Collider>
                         })
                         .expect("collider failed"),
+                );
+                fields.named.push(
+                    syn::Field::parse_named
+                        .parse2(quote! {
+                            collider_handle: Option<let_engine::rapier2d::geometry::ColliderHandle>
+                        })
+                        .expect("collider handle failed"),
                 );
             }
         }
@@ -169,12 +224,34 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
 
     quote! {
         impl let_engine::Collider for #name {
-            fn collider(&self) -> Option<let_engine::rapier2d::geometry::ColliderHandle> {
-                self.collider
-            }            
+            fn collider_handle(&self) -> Option<let_engine::rapier2d::geometry::ColliderHandle> {
+                self.collider_handle
+            }
         }
-        #[let_engine::objectinit]
+        #[let_engine::objectinit_without_implements]
         #ast
+        impl #name {
+            pub fn update(&mut self) { // receive
+                /*  When updating the local object to the object in the node system of the game
+                 *  engine library the collider set doesn't get any change at all. The only change
+                 *  happening is the transform of the object from the collider.
+                 * */
+                let arc = self.reference.clone().unwrap().upgrade().unwrap();
+                let object = &arc.lock().object;
+                self.transform = object.transform();
+                self.appearance = object.appearance().clone();
+            }
+            pub fn sync(&self) { // send
+                /*  When updating a collider it needs to do similar things as the initialisation.
+                 *  The collider gets updated with the position it has in the node structure. Sync
+                 *  reinitializes the collider and updates the collider handle. The old collider
+                 *  gets replaced.
+                 * */
+                let arc = self.reference.clone().unwrap().upgrade().unwrap();
+                let mut object = arc.lock();
+                object.object = Box::new(self.clone());
+            }
+        }
         impl let_engine::GameObject for #name {
             fn transform(&self) -> Transform {
                 self.transform
@@ -185,25 +262,31 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, layer: &let_engine::Layer) {
+            fn init_to_layer(&mut self, id: usize, weak: let_engine::WeakObject) {
                 self.id = id;
-                self.layer = Some(layer.clone());
-                // Here is the custom collider specific things.
-                if let Some(collider) = self.collider {
-                    let physics = layer.physics.lock();
-                    physics.collider_set.insert(collider);
-                }
+                self.reference = Some(weak);
+                /*  What should a collider do that a normal object doesn't do when initializing it?
+                 *  Colliders get added to a collider set when initialized. The position of the
+                 *  collider should be the position it has in the node structure.
+                 * */
+                //if let Some(collider) = self.collider.clone() {
+                //    let mut physics = layer.physics.lock();
+                //    self.collider_handle = Some(physics.collider_set.insert(collider.collider));
+                //}
             }
         }
-    }.into()  
+    }
+    .into()
 }
 
 /// Implements rigidbody and colliders onto an object for physics
 #[proc_macro_attribute]
 pub fn rigidbody(_args: TokenStream, input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-   quote! {
+    quote! {
+        
         #[let_engine::collider]
         #ast
-   }.into()
+    }
+    .into()
 }

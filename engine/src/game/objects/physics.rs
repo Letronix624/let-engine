@@ -55,6 +55,7 @@ impl Physics {
     }
 }
 
+#[derive(Clone)]
 pub struct Collider {
     pub collider: rapier2d::geometry::Collider,
 }

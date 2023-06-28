@@ -7,14 +7,14 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font, PositionedGlyph, Scale};
 
-use crate::{texture::*, Data, Vertex};
+use crate::{texture::*, Data, Vertex, WeakObject};
 
 use super::{
     materials::*,
     objects::GameObject,
     resources::{GameFont, Resources, Texture},
     vulkan::shaders::*,
-    Appearance, Layer, Loader, Transform, Vulkan,
+    Appearance, Loader, Transform, Vulkan,
 };
 use glam::f32::{vec2, Vec2};
 
@@ -42,7 +42,7 @@ pub struct Label {
     pub transform: Transform,
     pub appearance: Appearance,
     id: usize,
-    layer: Option<Layer>,
+    reference: Option<WeakObject>,
     pub font: Arc<GameFont>,
     pub text: String,
     pub scale: Vec2,
@@ -59,9 +59,9 @@ impl GameObject for Label {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, id: usize, layer: &Layer) {
+    fn init_to_layer(&mut self, id: usize, weak: WeakObject) {
         self.id = id;
-        self.layer = Some(layer.clone());
+        self.reference = Some(weak);
     }
 }
 impl Label {
@@ -71,7 +71,7 @@ impl Label {
             transform: create_info.transform,
             appearance: create_info.appearance,
             id: 0,
-            layer: None,
+            reference: None,
             font: font.clone(),
             text: create_info.text,
             scale: create_info.scale,
@@ -80,9 +80,10 @@ impl Label {
         }
     }
     pub fn update(&mut self) {
-        let object = self.layer.as_ref().unwrap().fetch(self.id());
-        self.transform = object.transform;
-        self.appearance = object.appearance;
+        let arc = self.reference.clone().unwrap().upgrade().unwrap();
+        let object = &arc.lock().object;
+        self.transform = object.transform();
+        self.appearance = object.appearance().clone();
     }
     pub fn update_text(&mut self, text: String) {
         self.text = text;
@@ -267,7 +268,11 @@ impl Labelifier {
                 .collect();
             label.appearance.data = Data { vertices, indices };
             label.appearance.material = Some(self.material.clone());
-            label.layer.as_ref().unwrap().update(&label);
+            //label.sync();
+            let arc = label.reference.clone().unwrap().upgrade().unwrap();
+            let mut object = arc.lock();
+            object.object = Box::new(label.clone());
+
         }
         self.queued = vec![];
         self.ready = false;

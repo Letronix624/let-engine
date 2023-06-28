@@ -1,11 +1,11 @@
 pub mod data;
 pub mod physics;
+use physics::*;
 
-use super::{materials, AObject, NObject};
+use super::{materials, AObject, NObject, WeakObject};
 use crate::error::objects::*;
 use crate::error::textures::*;
 pub use data::*;
-pub use physics::*;
 
 use anyhow::Result;
 use glam::f32::{vec2, Vec2};
@@ -31,7 +31,6 @@ pub struct Transform {
     pub size: Vec2,
     pub rotation: f32,
 }
-
 impl Transform {
     pub fn combine(self, rhs: Self) -> Self {
         Self {
@@ -68,7 +67,7 @@ pub trait GameObject: Send + Any {
     fn transform(&self) -> Transform;
     fn appearance(&self) -> &Appearance;
     fn id(&self) -> usize;
-    fn init_to_layer(&mut self, id: usize, layer: &Layer);
+    fn init_to_layer(&mut self, id: usize, weak: WeakObject);
 }
 
 pub trait Camera: GameObject {
@@ -76,7 +75,7 @@ pub trait Camera: GameObject {
 }
 
 pub trait Collider: GameObject {
-    fn collider(&self) -> Option<rapier2d::geometry::ColliderHandle>;
+    fn collider_handle(&self) -> Option<rapier2d::geometry::ColliderHandle>;
 }
 
 pub trait Rigidbody: Collider + GameObject {
@@ -331,21 +330,6 @@ impl Layer {
         self.physics.lock().gravity = gravity.into();
     }
 
-    pub fn update<T: GameObject + Clone + 'static>(&self, object: &T) {
-        let map = self.objects_map.lock();
-        let node = map.get(&object.id()).unwrap();
-        node.lock().object = Box::new(object.clone());
-    }
-
-    pub fn fetch(&self, id: usize) -> Object {
-        let map = self.objects_map.lock();
-        let object = &map.get(&id).unwrap().lock().object;
-        Object {
-            transform: object.transform(),
-            appearance: object.appearance().clone(),
-        }
-    }
-
     pub fn add_object<T: GameObject + Clone + 'static>(
         &self,
         parent: Option<&AObject>,
@@ -353,9 +337,7 @@ impl Layer {
     ) -> Result<(), NoParentError> {
         let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
 
-        object.init_to_layer(id, self);
-
-        let object: Box<dyn GameObject> = Box::new(object.clone());
+        let boxed_object: Box<dyn GameObject> = Box::new(object.clone());
 
         let mut map = self.objects_map.lock();
 
@@ -370,10 +352,12 @@ impl Layer {
         };
 
         let node: NObject = Arc::new(Mutex::new(Node {
-            object,
+            object: boxed_object,
             parent: Some(Arc::downgrade(&parent)),
             children: vec![],
         }));
+
+        object.init_to_layer(id, Arc::downgrade(&node));
 
         parent.lock().children.push(node.clone());
 
@@ -541,7 +525,7 @@ impl GameObject for Root {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, _id: usize, _layer: &Layer) {}
+    fn init_to_layer(&mut self, _id: usize, _weak: WeakObject) {}
 }
 impl Default for Root {
     fn default() -> Self {
