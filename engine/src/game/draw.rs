@@ -228,11 +228,7 @@ impl Draw {
                     Mat4::look_at_rh(Vec3::from([0., 0., 0.]), Vec3::from([0., 0., 0.]), Vec3::Y)
                 };
 
-                *objectvert_sub_buffer.write().unwrap() = ModelViewProj {
-                    model: model,
-                    view: view,
-                    proj: proj,
-                };
+                *objectvert_sub_buffer.write().unwrap() = ModelViewProj { model, view, proj };
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
                     color: appearance.color,
                     texture_id: if let Some(material) = &appearance.material {

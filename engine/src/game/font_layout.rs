@@ -40,6 +40,7 @@ impl Default for LabelCreateInfo {
 #[derive(Clone)]
 pub struct Label {
     pub transform: Transform,
+    parent_transform: Transform,
     pub appearance: Appearance,
     id: usize,
     reference: Option<WeakObject>,
@@ -53,22 +54,42 @@ impl GameObject for Label {
     fn transform(&self) -> Transform {
         self.transform
     }
+    fn public_transform(&self) -> Transform {
+        self.transform.combine(self.parent_transform)
+    }
+    fn set_parent_transform(&mut self, transform: Transform) {
+        self.parent_transform = transform;
+    }
     fn appearance(&self) -> &Appearance {
         &self.appearance
     }
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, id: usize, weak: WeakObject) {
+    fn init_to_layer(&mut self, id: usize, weak: WeakObject, _layer: &super::Layer) {
         self.id = id;
+        let node = weak.clone().upgrade().unwrap();
+        let parent = node
+            .lock()
+            .parent
+            .clone()
+            .unwrap()
+            .clone()
+            .upgrade()
+            .unwrap();
+        let parent = &parent.lock().object;
+        self.parent_transform = parent.public_transform();
         self.reference = Some(weak);
+        self.labelifier.lock().queue(self.clone());
     }
+    fn remove_event(&mut self) {}
 }
 impl Label {
     pub fn new(resources: &Resources, font: &Arc<GameFont>, create_info: LabelCreateInfo) -> Self {
         let labelifier = resources.labelifier.clone();
         Self {
             transform: create_info.transform,
+            parent_transform: Transform::default(),
             appearance: create_info.appearance,
             id: 0,
             reference: None,
@@ -272,7 +293,6 @@ impl Labelifier {
             let arc = label.reference.clone().unwrap().upgrade().unwrap();
             let mut object = arc.lock();
             object.object = Box::new(label.clone());
-
         }
         self.queued = vec![];
         self.ready = false;

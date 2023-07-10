@@ -3,8 +3,8 @@ pub use resources::Resources;
 use resources::{GameFont, Loader, Texture};
 pub mod objects;
 pub use objects::{
-    data::Data, Appearance, Camera, CameraScaling, CameraSettings, Collider, physics,
-    GameObject, Layer, Node, Scene, Transform,
+    data::Data, physics, Appearance, Camera, CameraScaling, CameraSettings, Collider, GameObject,
+    Layer, Node, Scene, Transform,
 };
 pub mod vulkan;
 use vulkan::Vulkan;
@@ -25,6 +25,7 @@ pub use input::Input;
 pub mod egui;
 
 use atomic_float::AtomicF64;
+pub use engine_macros;
 use parking_lot::Mutex;
 
 use std::{

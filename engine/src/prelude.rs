@@ -1,6 +1,7 @@
 pub use crate::{
-    Appearance, CameraScaling, CameraSettings, Data, Font, Game, GameBuilder, Label,
-    LabelCreateInfo, Layer, Resources, Scene, Time, Transform, Vertex,
+    make_circle, materials, Appearance, CameraScaling, CameraSettings, Data, Font, Game,
+    GameBuilder, GameObject, Label, LabelCreateInfo, Layer, Resources, Scene, Time, Transform,
+    Vertex, CENTER, N, NO, NW, O, S, SO, SW, W,
 };
 pub use engine_macros::*;
 pub use glam;
@@ -14,14 +15,14 @@ use crate as let_engine;
 /// Default object without any additional fields.
 #[object]
 #[derive(Default)]
-struct Object {}
+pub struct Object {}
 
 /// Default Camera object without any additional fields.
 #[camera]
 #[derive(Default)]
-struct Camera {}
+pub struct Camera {}
 
 /// Default Collider object without any additional fields.
 #[collider]
 #[derive(Default)]
-struct ColliderObject {}
+pub struct ColliderObject {}

@@ -1,7 +1,11 @@
 use crate::{Data, Transform};
 use glam::f32::Vec2;
+use parking_lot::Mutex;
 use rapier2d::parry::transformation::vhacd::VHACDParameters;
 use rapier2d::prelude::*;
+use std::sync::Arc;
+
+pub type APhysics = Arc<Mutex<Physics>>;
 
 pub struct Physics {
     pub(crate) rigid_body_set: RigidBodySet,
@@ -9,12 +13,18 @@ pub struct Physics {
 
     pub(crate) gravity: Vector<Real>,
     integration_parameters: IntegrationParameters,
-    island_manager: IslandManager,
+    pub(crate) island_manager: IslandManager,
     broad_phase: BroadPhase,
     narrow_phase: NarrowPhase,
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
+}
+
+impl Default for Physics {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Physics {
@@ -32,11 +42,7 @@ impl Physics {
             ccd_solver: CCDSolver::new(),
         }
     }
-    pub fn step(
-        &mut self,
-        physics_pipeline: &mut PhysicsPipeline,
-        query_pipeline: &mut QueryPipeline,
-    ) {
+    pub fn step(&mut self, physics_pipeline: &mut PhysicsPipeline) {
         physics_pipeline.step(
             &self.gravity,
             &self.integration_parameters,
@@ -48,7 +54,7 @@ impl Physics {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            Some(query_pipeline),
+            None,
             &(),
             &(),
         );
@@ -135,9 +141,9 @@ pub struct ColliderBuilder {
     pub contact_force_event_threshold: Real,
 }
 
-impl Into<Isometry<Real>> for Transform {
-    fn into(self) -> Isometry<Real> {
-        (self.position, self.rotation).into()
+impl From<Transform> for Isometry<Real> {
+    fn from(val: Transform) -> Self {
+        (val.position, val.rotation).into()
     }
 }
 
@@ -203,10 +209,10 @@ impl ColliderBuilder {
         Self::new(Shape::capsule_x(half_height, radius))
     }
     pub fn segment(a: Vec2, b: Vec2) -> Self {
-        Self::new(Shape::segment(a.into(), b.into()))
+        Self::new(Shape::segment(a, b))
     }
     pub fn triangle(a: Vec2, b: Vec2, c: Vec2) -> Self {
-        Self::new(Shape::triangle(a.into(), b.into(), c.into()))
+        Self::new(Shape::triangle(a, b, c))
     }
     pub fn round_triangle(a: Vec2, b: Vec2, c: Vec2, radius: Real) -> Self {
         Self::new(Shape::round_triangle(a, b, c, radius))
@@ -248,19 +254,11 @@ impl ColliderBuilder {
     }
     pub fn convex_hull(points: &[Vec2]) -> Option<Self> {
         let shape = Shape::convex_hull(points);
-        if let Some(shape) = shape {
-            Some(Self::new(shape))
-        } else {
-            None
-        }
+        shape.map(Self::new)
     }
     pub fn convex_polyline(points: &[Vec2]) -> Option<Self> {
         let shape = Shape::convex_polyline(points);
-        if let Some(shape) = shape {
-            Some(Self::new(shape))
-        } else {
-            None
-        }
+        shape.map(Self::new)
     }
     pub fn heightfield(heights: Vec<Real>, scale: Vec2) -> Self {
         Self::new(Shape::heightfield(heights, scale))
@@ -326,7 +324,7 @@ impl Shape {
     }
     pub fn convex_decomposition(vertices: &[Vec2], indices: &[[u32; 2]]) -> Self {
         let vertices = vertices
-            .into_iter()
+            .iter()
             .map(|x| Point::from(x.to_array()))
             .collect::<Vec<Point<Real>>>();
         Self(SharedShape::convex_decomposition(&vertices, indices))
@@ -337,7 +335,7 @@ impl Shape {
         radius: Real,
     ) -> Self {
         let vertices = vertices
-            .into_iter()
+            .iter()
             .map(|x| Point::from(x.to_array()))
             .collect::<Vec<Point<Real>>>();
         Self(SharedShape::round_convex_decomposition(
@@ -350,7 +348,7 @@ impl Shape {
         params: &VHACDParameters,
     ) -> Self {
         let vertices = vertices
-            .into_iter()
+            .iter()
             .map(|x| Point::from(x.to_array()))
             .collect::<Vec<Point<Real>>>();
         Self(SharedShape::convex_decomposition_with_params(
@@ -364,7 +362,7 @@ impl Shape {
         radius: Real,
     ) -> Self {
         let vertices = vertices
-            .into_iter()
+            .iter()
             .map(|x| Point::from(x.to_array()))
             .collect::<Vec<Point<Real>>>();
         Self(SharedShape::round_convex_decomposition_with_params(
@@ -373,27 +371,19 @@ impl Shape {
     }
     pub fn convex_hull(points: &[Vec2]) -> Option<Self> {
         let points = points
-            .into_iter()
+            .iter()
             .map(|x| Point::from(x.to_array()))
             .collect::<Vec<Point<Real>>>();
         let shape = SharedShape::convex_hull(&points);
-        if let Some(shape) = shape {
-            Some(Self(shape))
-        } else {
-            None
-        }
+        shape.map(Self)
     }
     pub fn convex_polyline(points: &[Vec2]) -> Option<Self> {
         let points = points
-            .into_iter()
+            .iter()
             .map(|x| Point::from(x.to_array()))
             .collect::<Vec<Point<Real>>>();
         let shape = SharedShape::convex_polyline(points);
-        if let Some(shape) = shape {
-            Some(Self(shape))
-        } else {
-            None
-        }
+        shape.map(Self)
     }
     pub fn heightfield(heights: Vec<Real>, scale: Vec2) -> Self {
         Self(SharedShape::heightfield(heights.into(), scale.into()))
