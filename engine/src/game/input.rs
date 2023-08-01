@@ -24,7 +24,7 @@ pub struct Input {
     cursor_position: Arc<AtomicCell<Vec2>>,
     cursor_inside: Arc<AtomicBool>,
     //dimensions of the window
-    dimensions: Arc<AtomicCell<(f32, f32)>>,
+    dimensions: Arc<AtomicCell<(f32, f32)>>, // lazylock future
 }
 
 impl Input {

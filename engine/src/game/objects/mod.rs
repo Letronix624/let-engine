@@ -1,6 +1,6 @@
 pub mod data;
 pub mod physics;
-use super::{materials, AObject, NObject, WeakObject};
+use super::{materials, AObject, NObject};
 use crate::error::objects::*;
 use crate::error::textures::*;
 pub use data::*;
@@ -16,7 +16,7 @@ use rapier2d::prelude::*;
 use std::{
     default,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Weak,
     },
 };
@@ -63,11 +63,12 @@ impl Default for Transform {
 
 pub trait GameObject: Send {
     fn transform(&self) -> Transform;
+    fn set_isometry(&mut self, position: Vec2, rotation: f32);
     fn public_transform(&self) -> Transform;
     fn set_parent_transform(&mut self, transform: Transform);
     fn appearance(&self) -> &Appearance;
     fn id(&self) -> usize;
-    fn init_to_layer(&mut self, id: usize, weak: WeakObject, layer: &Layer);
+    fn init_to_layer(&mut self, id: usize, object: &NObject, layer: &Layer);
     fn remove_event(&mut self);
 }
 
@@ -265,8 +266,7 @@ pub struct Layer {
     objects_map: Arc<Mutex<ObjectsMap>>,
     latest_object: Arc<AtomicU64>,
     pub(crate) physics: Arc<Mutex<Physics>>,
-    pub physics_enabled: bool,
-    query_pipeline: Arc<Mutex<QueryPipeline>>,
+    physics_enabled: Arc<AtomicBool>,
 }
 
 impl Layer {
@@ -279,8 +279,7 @@ impl Layer {
             objects_map: Arc::new(Mutex::new(objects_map)),
             latest_object: Arc::new(AtomicU64::new(1)),
             physics: Arc::new(Mutex::new(Physics::new())),
-            physics_enabled: false,
-            query_pipeline: Arc::new(Mutex::new(QueryPipeline::new())),
+            physics_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
     pub fn set_camera<T: Camera + 'static>(&self, camera: T) {
@@ -324,8 +323,27 @@ impl Layer {
         self.objects_map.lock().contains_key(object_id)
     }
 
-    pub fn step_physics(&self, physics: &mut PhysicsPipeline) {
-        self.physics.lock().step(physics);
+    pub(crate) fn step_physics(&self, physics_pipeline: &mut PhysicsPipeline) {
+        if self.physics_enabled.load(Ordering::Acquire) {
+
+            let rigid_bodies: Vec<(usize, Vec2, f32)> = {
+                let mut physics = self.physics.lock();
+                physics.step(physics_pipeline); // Rapier-side physics iteration run.
+                physics.rigid_body_set.iter().map(|(_, rigid_body)| {
+                    let position: Vec2 = (*rigid_body.translation()).into();
+                    let rotation: f32 =  rigid_body.rotation().angle();
+
+                    (rigid_body.user_data as usize, position, rotation)
+                }).collect()
+            };
+            let map = self.objects_map.lock().clone();
+            for (id, position, rotation) in rigid_bodies { // Temporary BAD solution to be switched. just to test.
+                if let Some(object) = map.get(&id) {
+                    let mut object = object.lock();
+                    object.object.set_isometry(position, rotation); 
+                }
+            };
+        }
     }
 
     pub fn gravity(&self) -> Vec2 {
@@ -334,14 +352,31 @@ impl Layer {
     pub fn set_gravity(&self, gravity: Vec2) {
         self.physics.lock().gravity = gravity.into();
     }
+    pub fn physics_enabled(&self) -> bool {
+        self.physics_enabled.load(Ordering::Acquire)
+    }
+    pub fn set_physics_enabled(&self, enabled: bool) {
+        self.physics_enabled.store(enabled, Ordering::Release)
+    }
+    pub fn physics_parameters(&self) -> IntegrationParameters {
+        self.physics.lock().integration_parameters
+    }
+    pub fn set_physics_parameters(&self, parameters: IntegrationParameters) {
+        self.physics.lock().integration_parameters = parameters;
+    }
 
     pub fn add_object<T: GameObject + Clone + 'static>(
         &self,
         parent: Option<&AObject>,
         object: &mut T,
     ) -> Result<(), NoParentError> {
-        let mut map = self.objects_map.lock();
+
+        let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
+
+        let placeholder = crate::prelude::Object::default();
+
         let parent: NObject = if let Some(parent) = parent {
+            let map = self.objects_map.lock();
             if let Some(parent) = map.get(&parent.id()) {
                 parent.clone()
             } else {
@@ -351,17 +386,13 @@ impl Layer {
             self.root.clone()
         };
 
-        let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
-
-        let placeholder = crate::prelude::Object::default();
-
         let node: NObject = Arc::new(Mutex::new(Node {
             object: Box::new(placeholder),
             parent: Some(Arc::downgrade(&parent)),
             children: vec![],
         }));
 
-        object.init_to_layer(id, Arc::downgrade(&node), self);
+        object.init_to_layer(id, &node, self);
 
         let boxed_object: Box<dyn GameObject> = Box::new(object.clone());
 
@@ -369,23 +400,20 @@ impl Layer {
 
         parent.lock().children.push(node.clone());
 
-        map.insert(id, node);
+        self.objects_map.lock().insert(id, node);
 
         Ok(())
     }
 
-    /// Checks if a collider is at a specific location and returns the ID of that collider.
-    pub fn query_collider_at(&self, position: Vec2) -> Option<usize> {
-        let physics = self.physics.lock();
-        let mut pipeline = self.query_pipeline.lock();
+    /// Returns the nearest collider id from a specific location.
+    pub fn query_nearest_collider_at(&self, position: Vec2) -> Option<usize> {
+        let mut physics = self.physics.lock();
+        physics.update_query_pipeline();
 
-        pipeline.update(&physics.rigid_body_set, &physics.collider_set);
-
-        let result = pipeline.cast_ray(
+        let result = physics.query_pipeline.project_point(
             &physics.rigid_body_set,
             &physics.collider_set,
-            &Ray::new(position.into(), vector![0.0, 0.0]),
-            0.0,
+            &position.into(),
             true,
             QueryFilter::default(),
         );
@@ -397,8 +425,59 @@ impl Layer {
         }
     }
 
-    pub fn remove_object(&self, object_id: usize) -> Result<(), NoObjectError> {
-        let mut map = self.objects_map.lock();
+    /// Returns id of the first collider intersecting with given ray.
+    pub fn cast_ray(
+        &self,
+        position: Vec2,
+        direction: Vec2,
+        time_of_impact: Real,
+        solid: bool,
+    ) -> Option<usize> {
+        let mut physics = self.physics.lock();
+        physics.update_query_pipeline();
+
+        let result = physics.query_pipeline.cast_ray(
+            &physics.rigid_body_set,
+            &physics.collider_set,
+            &Ray::new(position.into(), direction.into()),
+            time_of_impact,
+            solid,
+            QueryFilter::default(),
+        );
+
+        if let Some((handle, _)) = result {
+            Some(physics.collider_set.get(handle).unwrap().user_data as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Cast a shape and return the first collider intersecting with it.
+    pub fn intersection_with_shape(
+        &self,
+        shape: physics::Shape,
+        position: (Vec2, f32),
+    ) -> Option<usize> {
+        let mut physics = self.physics.lock();
+        physics.update_query_pipeline();
+
+        let result = physics.query_pipeline.intersection_with_shape(
+            &physics.rigid_body_set,
+            &physics.collider_set,
+            &position.into(),
+            shape.0.as_ref(),
+            QueryFilter::default(),
+        );
+
+        if let Some(handle) = result {
+            Some(physics.collider_set.get(handle).unwrap().user_data as usize)
+        } else {
+            None
+        }
+    }
+
+    pub fn remove_object(&self, object_id: usize) -> Result<(), NoObjectError> { // bugged. Deadlock found
+        let mut map = self.objects_map.lock().clone();
         let node = if let Some(object) = map.remove(&object_id) {
             object
         } else {
@@ -534,6 +613,7 @@ impl std::hash::Hash for Layer {
     }
 }
 
+#[derive(Clone)]
 pub struct Scene {
     layers: Arc<Mutex<IndexSet<Layer>>>,
     physics_pipeline: Arc<Mutex<PhysicsPipeline>>,
@@ -548,6 +628,7 @@ impl GameObject for Root {
     fn transform(&self) -> Transform {
         self.transform
     }
+    fn set_isometry(&mut self, _position: Vec2, _rotation: f32) {}
     fn public_transform(&self) -> Transform {
         self.transform
     }
@@ -558,7 +639,7 @@ impl GameObject for Root {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, _id: usize, _weak: WeakObject, _layer: &Layer) {}
+    fn init_to_layer(&mut self, _id: usize, _object: &NObject, _layer: &Layer) {}
     fn remove_event(&mut self) {}
 }
 impl Default for Root {
@@ -586,11 +667,11 @@ impl Scene {
     }
 
     pub fn iterate_all_physics(&self) {
-        let mut physics = self.physics_pipeline.lock();
+        let mut pipeline = self.physics_pipeline.lock();
         let layers = self.layers.lock();
 
         for layer in layers.iter() {
-            layer.step_physics(&mut physics);
+            layer.step_physics(&mut pipeline);
         }
     }
 

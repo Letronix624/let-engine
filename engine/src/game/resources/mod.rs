@@ -9,18 +9,18 @@ use vulkano::descriptor_set::WriteDescriptorSet;
 use winit::window::Window;
 
 mod loader;
-pub use loader::Loader;
+pub(crate) use loader::Loader;
 
 #[derive(Clone)]
 pub struct Resources {
-    pub vulkan: Vulkan,
-    pub loader: Arc<Mutex<Loader>>,
-    pub labelifier: Arc<Mutex<Labelifier>>,
+    pub(crate) vulkan: Vulkan,
+    pub(crate) loader: Arc<Mutex<Loader>>,
+    pub(crate) labelifier: Arc<Mutex<Labelifier>>,
 }
 
 impl Resources {
     //initialisation
-    pub fn new(
+    pub(crate) fn new(
         vulkan: Vulkan,
         loader: Arc<Mutex<Loader>>,
         labelifier: Arc<Mutex<Labelifier>>,
@@ -32,7 +32,7 @@ impl Resources {
         }
     }
     //redraw
-    pub fn update(&self) {
+    pub(crate) fn update(&self) {
         // swap with layers
         let mut loader = self.loader.lock();
         let mut labelifier = self.labelifier.lock();
@@ -47,19 +47,19 @@ impl Resources {
 
     pub fn load_texture_from_raw(
         &self,
-        texture: Vec<u8>,
+        texture: &[u8],
         format: Format,
         dimensions: (u32, u32),
         layers: u32,
         settings: TextureSettings,
-    ) -> Arc<Texture> {
+    ) -> Texture {
         let mut loader = self.loader.lock();
-        Arc::new(Texture {
-            data: texture.clone(),
+        Texture {
+            data: Arc::from(texture.to_vec().into_boxed_slice()),
             dimensions,
             layers,
             set: loader.load_texture(&self.vulkan, texture, dimensions, layers, format, settings),
-        })
+        }
     }
 
     pub fn load_texture(
@@ -68,7 +68,7 @@ impl Resources {
         format: ImageFormat,
         layers: u32,
         settings: TextureSettings,
-    ) -> Result<Arc<Texture>, InvalidFormatError> {
+    ) -> Result<Texture, InvalidFormatError> {
         let image_format = match format {
             ImageFormat::PNG => IFormat::Png,
             ImageFormat::JPG => IFormat::Jpeg,
@@ -151,7 +151,7 @@ impl Resources {
         dimensions.1 /= layers;
 
         Ok(Self::load_texture_from_raw(
-            self, image, format, dimensions, layers, settings,
+            self, &image, format, dimensions, layers, settings,
         ))
     }
     //shaders
@@ -171,13 +171,22 @@ impl Resources {
         let loader = self.loader.lock();
         loader.write_descriptor(buf, set)
     }
-    pub fn new_material(
+    pub fn new_material_with_shaders(
         &self,
+        shaders: &materials::Shaders,
         settings: materials::MaterialSettings,
         descriptor_bindings: Vec<WriteDescriptorSet>,
     ) -> materials::Material {
         let mut loader = self.loader.lock();
-        loader.load_material(&self.vulkan, settings, descriptor_bindings)
+        loader.load_material(&self.vulkan, shaders, settings, descriptor_bindings)
+    }
+    pub fn new_material(
+        &self,
+        settings: materials::MaterialSettings,
+    ) -> materials::Material {
+        let mut loader = self.loader.lock();
+        let shaders = self.vulkan.default_shaders.clone();
+        loader.load_material(&self.vulkan, &shaders, settings, vec![])
     }
     /// Simplification of making a texture and putting it into a material.
     pub fn new_material_from_texture(
@@ -194,7 +203,7 @@ impl Resources {
     /// Simplification of making a texture and putting it into a material.
     pub fn new_material_from_raw_texture(
         &self,
-        texture: Vec<u8>,
+        texture: &[u8],
         format: Format,
         dimensions: (u32, u32),
         layers: u32,
@@ -204,14 +213,14 @@ impl Resources {
             Self::load_texture_from_raw(self, texture, format, dimensions, layers, settings);
         Self::default_textured_material(self, &texture)
     }
-    pub fn default_textured_material(&self, texture: &Arc<Texture>) -> materials::Material {
+    pub fn default_textured_material(&self, texture: &Texture) -> materials::Material {
         let default = if texture.layers == 1 {
             self.vulkan.textured_material.clone()
         } else {
             self.vulkan.texture_array_material.clone()
         };
         materials::Material {
-            texture: Some(Arc::clone(texture)),
+            texture: Some(texture.clone()),
             ..default
         }
     }
@@ -233,7 +242,7 @@ impl Resources {
 
 #[derive(Clone)]
 pub struct Texture {
-    pub data: Vec<u8>,
+    pub data: Arc<[u8]>,
     pub dimensions: (u32, u32),
     pub layers: u32,
     pub set: Arc<PersistentDescriptorSet>,
@@ -245,7 +254,7 @@ pub struct GameFont {
 }
 
 pub struct Sound {
-    pub data: Vec<u8>,
+    pub data: Arc<[u8]>,
 }
 
 impl PartialEq for Texture {
@@ -268,13 +277,13 @@ impl std::fmt::Debug for Texture {
 
 /// Not done.
 #[allow(dead_code)]
-pub fn load_sound(sound: &[u8]) -> Arc<Sound> {
-    Arc::new(Sound {
-        data: sound.to_vec(),
-    })
+pub fn load_sound(sound: &[u8]) -> Sound {
+    Sound {
+        data: Arc::from(sound.to_vec().into_boxed_slice()),
+    }
 }
 
-fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
+fn u16tou8vec(data: Vec<u16>) -> Vec<u8> { // to utils.rs in the future
     data.iter()
         .flat_map(|&u16_value| {
             let high_byte = ((u16_value >> 8) & 0xff) as u8;

@@ -19,6 +19,10 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn transform(&self) -> Transform {
                 self.transform
             }
+            fn set_isometry(&mut self, position: let_engine::Vec2, rotation: f32) {
+                self.transform.position = position;
+                self.transform.rotation = rotation;
+            }
             fn public_transform(&self) -> Transform {
                 self.transform.combine(self.parent_transform)
             }
@@ -31,13 +35,12 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, weak: let_engine::WeakObject, _layer: &let_engine::Layer) {
+            fn init_to_layer(&mut self, id: usize, object: &let_engine::NObject, _layer: &let_engine::Layer) {
                 self.id = id;
-                let node = weak.clone().upgrade().unwrap();
-                let parent = node.lock().parent.clone().unwrap().clone().upgrade().unwrap();
+                let parent = object.lock().parent.clone().unwrap().clone().upgrade().unwrap();
                 let parent = &parent.lock().object;
                 self.parent_transform = parent.public_transform();
-                self.reference = Some(weak);
+                self.reference = Some(std::sync::Arc::downgrade(object));
             }
             fn remove_event(&mut self) {}
         }
@@ -164,7 +167,8 @@ pub fn camera(_args: TokenStream, input: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Implements colliders onto an object for buttons or sensor areas
+/// Implements colliders and rigidbodies onto an object.
+/// Does the same as object but also has a collider and rigidbody field to edit.
 #[proc_macro_attribute]
 pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
     let mut ast = parse_macro_input!(input as DeriveInput);
@@ -175,23 +179,9 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
             fields.named.push(
                 syn::Field::parse_named
                     .parse2(quote! {
-                        pub collider: Option<let_engine::physics::Collider>
+                        physics: let_engine::physics::ObjectPhysics
                     })
                     .expect("collider failed"),
-            );
-            fields.named.push(
-                syn::Field::parse_named
-                    .parse2(quote! {
-                        collider_handle: Option<let_engine::rapier2d::geometry::ColliderHandle>
-                    })
-                    .expect("collider handle failed"),
-            );
-            fields.named.push(
-                syn::Field::parse_named
-                    .parse2(quote! {
-                        physics: Option<let_engine::physics::APhysics>
-                    })
-                    .expect("physics failed"),
             );
         }
     } else {
@@ -201,7 +191,7 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
     quote! {
         impl let_engine::Collider for #name {
             fn collider_handle(&self) -> Option<let_engine::rapier2d::geometry::ColliderHandle> {
-                self.collider_handle
+                self.physics.collider_handle
             }
         }
         #[let_engine::objectinit_without_implements]
@@ -209,6 +199,10 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
         impl let_engine::GameObject for #name {
             fn transform(&self) -> Transform {
                 self.transform
+            }
+            fn set_isometry(&mut self, position: let_engine::Vec2, rotation: f32) {
+                self.transform.position = position;
+                self.transform.rotation = rotation;
             }
             fn public_transform(&self) -> Transform {
                 self.transform.combine(self.parent_transform)
@@ -222,38 +216,17 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, weak: let_engine::WeakObject, layer: &let_engine::Layer) {
+            fn init_to_layer(&mut self, id: usize, object: &let_engine::NObject, layer: &let_engine::Layer) {
                 self.id = id;
-                let node = weak.clone().upgrade().unwrap();
-                let parent = node.lock().parent.clone().unwrap().clone().upgrade().unwrap();
+                let parent = object.lock().parent.clone().unwrap().clone().upgrade().unwrap();
                 let parent = &parent.lock().object;
                 self.parent_transform = parent.public_transform();
-                self.reference = Some(weak);
-                self.physics = Some(layer.physics.clone());
-
-
-                if let Some(mut collider) = self.collider.clone() {
-                    let transform = Self::public_transform(self);
-                    collider.collider.set_position((transform.position, transform.rotation).into());
-                    collider.collider.user_data = id as u128;
-                    self.collider_handle = Some(layer.physics.clone().lock().collider_set.insert(collider.collider));
-                }
+                self.reference = Some(std::sync::Arc::downgrade(object));
+                self.physics.physics = Some(layer.physics.clone());
+                self.physics.update(Self::public_transform(self), id as u128);
             }
             fn remove_event(&mut self) {
-                let physics = self.physics.clone().unwrap();
-                if let Some(collider_handle) = self.collider_handle {
-                    let mut rigid_body_set = physics.lock().rigid_body_set.clone();
-                    let mut island_manager = physics.lock().island_manager.clone();
-                    physics.lock().collider_set.remove(
-                        collider_handle,
-                        &mut island_manager,
-                        &mut rigid_body_set,
-                        true
-                    );
-                    let mut physics = physics.lock();
-                    physics.rigid_body_set = rigid_body_set;
-                    physics.island_manager = island_manager;
-                }
+                self.physics.remove()
             }
         }
         impl #name {
@@ -267,50 +240,31 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
                 // update public position of all children recursively
                 let transform = Self::public_transform(self);
                 let node = self.reference.clone().unwrap().upgrade().unwrap();
-                let physics = self.physics.clone().unwrap();
                 node.lock().update_children_position(transform);
-                if let Some(mut collider) = self.collider.clone() {
-                    if let Some(collider_handle) = self.collider_handle {
-                        if let Some(mut public_collider) = self.physics.clone()
-                        .unwrap().lock().collider_set.get_mut(collider_handle) {
-                            *public_collider = collider.collider.clone();
-                            public_collider.set_position((transform.position, transform.rotation).into());
-                        }
-                    } else {
-                        collider.collider.set_position((transform.position, transform.rotation).into());
-                        collider.collider.user_data = self.id as u128;
-                        self.collider_handle = Some(physics.lock().collider_set.insert(collider.collider));
-                    }
-                } else if let Some(collider_handle) = self.collider_handle {
-                    let mut rigid_body_set = physics.lock().rigid_body_set.clone();
-                    let mut island_manager = physics.lock().island_manager.clone();
-                    physics.lock().collider_set.remove(
-                        collider_handle,
-                        &mut island_manager,
-                        &mut rigid_body_set,
-                        true
-                    );
-                    let mut physics = physics.lock();
-                    physics.rigid_body_set = rigid_body_set;
-                    physics.island_manager = island_manager;
-                }
+                self.physics.update(transform, self.id as u128);
                 let arc = self.reference.clone().unwrap().upgrade().unwrap();
                 let mut object = arc.lock();
                 object.object = Box::new(self.clone());
             }
+            pub fn collider(&self) -> Option<&let_engine::physics::Collider> {
+                self.physics.collider.as_ref()
+            }
+            pub fn set_collider(&mut self, collider: Option<let_engine::physics::Collider>) {
+                self.physics.collider = collider;
+            }
+            pub fn collider_mut(&mut self) -> &mut Option<let_engine::physics::Collider> {
+                &mut self.physics.collider
+            }
+            pub fn rigid_body(&self) -> Option<&let_engine::physics::RigidBody> {
+                self.physics.rigid_body.as_ref()
+            }
+            pub fn set_rigid_body(&mut self, rigid_body: Option<let_engine::physics::RigidBody>) {
+                self.physics.rigid_body = rigid_body;
+            }
+            pub fn rigid_body_mut(&mut self) -> &mut Option<let_engine::physics::RigidBody> {
+                &mut self.physics.rigid_body
+            }
         }
-    }
-    .into()
-}
-
-/// Implements rigidbody and colliders onto an object for physics
-#[proc_macro_attribute]
-pub fn rigidbody(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
-    quote! {
-
-        #[let_engine::collider]
-        #ast
     }
     .into()
 }

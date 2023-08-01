@@ -6,7 +6,7 @@ pub mod texture;
 pub use game::{
     materials, physics, Appearance, Camera, CameraScaling, CameraSettings, Collider, Data, Font,
     Game, GameBuilder, GameObject, Label, LabelCreateInfo, Layer, Resources, Scene, Time,
-    Transform, Vertex, WeakObject,
+    Transform, Vertex, WeakObject, NObject
 };
 
 pub use game::objects::data::{CENTER, N, NO, NW, O, S, SO, SW, W};

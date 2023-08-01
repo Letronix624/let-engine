@@ -2,7 +2,7 @@ use super::Vulkan;
 use egui_winit_vulkano::{Gui, GuiConfig};
 use winit::event_loop::EventLoop;
 
-pub fn init(event_loop: &EventLoop<()>, vulkan: &Vulkan) -> Gui {
+pub(crate) fn init(event_loop: &EventLoop<()>, vulkan: &Vulkan) -> Gui {
     Gui::new_with_subpass(
         event_loop,
         vulkan.surface.clone(),

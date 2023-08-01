@@ -22,7 +22,7 @@ use vulkano::{
 
 use crate::texture::{Format as tFormat, TextureSettings};
 
-pub struct Loader {
+pub(crate) struct Loader {
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,
@@ -78,12 +78,14 @@ impl Loader {
     pub fn load_material(
         &mut self,
         vulkan: &Vulkan,
+        shaders: &materials::Shaders,
         settings: materials::MaterialSettings,
         descriptor_bindings: Vec<WriteDescriptorSet>,
     ) -> materials::Material {
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
         materials::Material::new(
             settings,
+            shaders,
             descriptor_bindings,
             vulkan,
             subpass,
@@ -94,7 +96,7 @@ impl Loader {
     pub fn load_texture(
         &mut self,
         vulkan: &Vulkan,
-        data: Vec<u8>,
+        data: &[u8],
         dimensions: (u32, u32),
         layers: u32,
         format: tFormat,
@@ -123,7 +125,7 @@ impl Loader {
 
         let image = ImmutableImage::from_iter(
             &self.memory_allocator,
-            data,
+            data.to_vec(),
             ImageDimensions::Dim2d {
                 width: dimensions.0,
                 height: dimensions.1,

@@ -158,7 +158,6 @@ pub const SQUARE: [Vertex; 4] = [
 pub const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 
 /// A macro that makes it easy to create circles.
-#[allow(unused)]
 #[macro_export]
 macro_rules! make_circle {
     ($corners:expr) => {{
@@ -226,5 +225,3 @@ macro_rules! make_circle {
     }};
 }
 
-#[allow(unused)]
-pub(crate) use make_circle;

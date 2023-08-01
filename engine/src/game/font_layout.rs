@@ -54,6 +54,10 @@ impl GameObject for Label {
     fn transform(&self) -> Transform {
         self.transform
     }
+    fn set_isometry(&mut self, position: Vec2, rotation: f32) {
+        self.transform.position = position;
+        self.transform.rotation = rotation;
+    }
     fn public_transform(&self) -> Transform {
         self.transform.combine(self.parent_transform)
     }
@@ -66,10 +70,9 @@ impl GameObject for Label {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, id: usize, weak: WeakObject, _layer: &super::Layer) {
+    fn init_to_layer(&mut self, id: usize, object: &crate::NObject, _layer: &super::Layer) {
         self.id = id;
-        let node = weak.clone().upgrade().unwrap();
-        let parent = node
+        let parent = object
             .lock()
             .parent
             .clone()
@@ -79,7 +82,7 @@ impl GameObject for Label {
             .unwrap();
         let parent = &parent.lock().object;
         self.parent_transform = parent.public_transform();
-        self.reference = Some(weak);
+        self.reference = Some(Arc::downgrade(object));
         self.labelifier.lock().queue(self.clone());
     }
     fn remove_event(&mut self) {}
@@ -115,7 +118,7 @@ impl Label {
     }
 }
 
-pub struct Labelifier {
+pub(crate) struct Labelifier {
     material: Material,
     cache: Cache<'static>,
     cache_pixel_buffer: Vec<u8>,
@@ -128,13 +131,13 @@ impl Labelifier {
     pub fn new(vulkan: &Vulkan, loader: &mut Loader) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
-        let texture = Arc::new(Texture {
-            data: cache_pixel_buffer.clone(),
+        let texture = Texture {
+            data: Arc::from(cache_pixel_buffer.clone().into_boxed_slice()),
             dimensions: cache.dimensions(),
             layers: 1,
             set: loader.load_texture(
                 vulkan,
-                cache_pixel_buffer.clone(),
+                &cache_pixel_buffer,
                 cache.dimensions(),
                 1,
                 Format::R8,
@@ -143,7 +146,7 @@ impl Labelifier {
                     sampler: Sampler::default(),
                 },
             ),
-        });
+        };
 
         let text_shaders = Shaders {
             vertex: vertexshader::load(vulkan.device.clone()).unwrap(),
@@ -151,12 +154,11 @@ impl Labelifier {
         };
 
         let material_settings = MaterialSettingsBuilder::default()
-            .shaders(text_shaders)
             .texture(texture)
             .build()
             .unwrap();
 
-        let material = loader.load_material(vulkan, material_settings, vec![]);
+        let material = loader.load_material(vulkan, &text_shaders, material_settings, vec![]);
 
         Self {
             material,
@@ -188,13 +190,13 @@ impl Labelifier {
                 src_index += width;
             }
         })?;
-        self.material.texture = Some(Arc::new(Texture {
-            data: self.cache_pixel_buffer.clone(),
+        self.material.texture = Some(Texture {
+            data: Arc::from(self.cache_pixel_buffer.clone().into_boxed_slice()),
             dimensions: self.cache.dimensions(),
             layers: 1,
             set: loader.load_texture(
                 vulkan,
-                self.cache_pixel_buffer.clone(),
+                &self.cache_pixel_buffer,
                 self.cache.dimensions(),
                 1,
                 Format::R8,
@@ -203,7 +205,7 @@ impl Labelifier {
                     sampler: Sampler::default(),
                 },
             ),
-        }));
+        });
         Ok(())
     }
     pub fn update(&mut self, vulkan: &Vulkan, loader: &mut Loader) {

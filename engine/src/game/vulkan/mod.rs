@@ -6,9 +6,8 @@ pub mod swapchain;
 mod window;
 
 use vulkano::{
-    device::{physical::PhysicalDevice, Device, Features, Queue},
+    device::{Device, Features, Queue},
     image::{view::ImageView, ImageAccess, SwapchainImage},
-    instance::Instance,
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline},
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::Surface,
@@ -20,14 +19,13 @@ use std::sync::Arc;
 use super::materials;
 
 #[derive(Clone)]
-pub struct Vulkan {
-    pub instance: Arc<Instance>,
+pub(crate) struct Vulkan {
     pub surface: Arc<Surface>,
-    pub physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
     pub render_pass: Arc<RenderPass>,
     pub subpass: Subpass,
+    pub default_shaders: materials::Shaders,
     pub default_material: materials::Material,
     pub textured_material: materials::Material,
     pub texture_array_material: materials::Material,
@@ -75,6 +73,8 @@ impl Vulkan {
         //Materials
         let vs = vertexshader::load(device.clone()).unwrap();
         let fs = fragmentshader::load(device.clone()).unwrap();
+        let default_shaders = materials::Shaders {vertex: vs.clone(), fragment: fs.clone()};
+
         let tfs = textured_fragmentshader::load(device.clone()).unwrap();
         let tafs = texture_array_fragmentshader::load(device.clone()).unwrap();
 
@@ -106,13 +106,12 @@ impl Vulkan {
 
         (
             Self {
-                instance,
                 surface,
-                physical_device,
                 device,
                 queue,
                 render_pass,
                 subpass,
+                default_shaders,
                 default_material,
                 textured_material,
                 texture_array_material,

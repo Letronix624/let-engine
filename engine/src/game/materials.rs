@@ -32,7 +32,7 @@ pub enum Topology {
 pub struct Material {
     pub pipeline: Arc<GraphicsPipeline>,
     pub descriptor: Option<Arc<PersistentDescriptorSet>>,
-    pub texture: Option<Arc<Texture>>,
+    pub texture: Option<Texture>,
     pub layer: u32,
 }
 
@@ -46,15 +46,16 @@ impl std::fmt::Debug for Material {
 }
 
 impl Material {
-    pub fn new(
+    pub(crate) fn new(
         settings: MaterialSettings,
+        shaders: &Shaders,
         descriptor: Vec<WriteDescriptorSet>,
         vulkan: &Vulkan,
         subpass: Subpass,
         allocator: &StandardDescriptorSetAllocator,
     ) -> Self {
-        let vs = &settings.shaders.vertex;
-        let fs = &settings.shaders.fragment;
+        let vs = &shaders.vertex;
+        let fs = &shaders.fragment;
 
         let topology: PrimitiveTopology = match settings.topology {
             Topology::TriangleList => PrimitiveTopology::TriangleList,
@@ -116,9 +117,6 @@ impl Material {
             .unwrap(),
         );
     }
-    pub fn pipeline(&self) -> &Arc<GraphicsPipeline> {
-        &self.pipeline
-    }
     pub fn layer(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
             if id > texture.layers - 1 {
@@ -161,22 +159,20 @@ impl Material {
 /// as well as the topology and line width, if the topology is set to LineList or LineStrip.
 #[derive(Builder)]
 pub struct MaterialSettings {
-    #[builder(setter(into))]
-    pub shaders: Shaders,
     #[builder(setter(into), default = "Topology::TriangleList")]
     pub topology: Topology,
     #[builder(setter(into), default = "1.0")]
     pub line_width: f32,
     #[builder(setter(into), default = "None")]
-    pub texture: Option<Arc<Texture>>,
+    pub texture: Option<Texture>,
     #[builder(setter(into), default = "0")]
     pub initial_layer: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shaders {
-    pub vertex: Arc<ShaderModule>,
-    pub fragment: Arc<ShaderModule>,
+    pub(crate) vertex: Arc<ShaderModule>,
+    pub(crate) fragment: Arc<ShaderModule>,
 }
 
 impl Shaders {
@@ -184,7 +180,7 @@ impl Shaders {
     ///
     /// When loading those shaders the engine doesn't know if they are right.
     /// So when they are wrong I'm not sure what will happen. Make it right!
-    pub unsafe fn from_bytes(vertex_bytes: &[u8], fragment_bytes: &[u8], vulkan: &Vulkan) -> Self {
+    pub(crate) unsafe fn from_bytes(vertex_bytes: &[u8], fragment_bytes: &[u8], vulkan: &Vulkan) -> Self {
         let vertex: Arc<ShaderModule> =
             unsafe { ShaderModule::from_bytes(vulkan.device.clone(), vertex_bytes).unwrap() };
         let fragment: Arc<ShaderModule> =

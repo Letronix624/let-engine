@@ -5,7 +5,6 @@ use vulkano::{
         PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
-    image::SwapchainImage,
     pipeline::{graphics::viewport::Viewport, Pipeline},
     render_pass::Framebuffer,
     swapchain::{
@@ -27,10 +26,9 @@ use crate::game::Node;
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
 use glam::f32::{Mat4, Quat, Vec2, Vec3};
 
-pub struct Draw {
+pub(crate) struct Draw {
     pub recreate_swapchain: bool,
     pub swapchain: Arc<Swapchain>,
-    pub images: Vec<Arc<SwapchainImage>>,
     pub viewport: Viewport,
     pub framebuffers: Vec<Arc<Framebuffer>>,
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
@@ -70,7 +68,6 @@ impl Draw {
         Self {
             recreate_swapchain,
             swapchain,
-            images,
             viewport,
             framebuffers,
             previous_frame_end,

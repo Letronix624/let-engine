@@ -30,7 +30,7 @@ use parking_lot::Mutex;
 
 use std::{
     sync::{atomic::Ordering, Arc, Weak},
-    time::Instant,
+    time::SystemTime,
 };
 
 pub use self::objects::data::Vertex;
@@ -177,16 +177,16 @@ impl Game {
 
 #[derive(Clone)]
 pub struct Time {
-    pub time: Instant,
-    delta_instant: Instant,
+    pub time: SystemTime,
+    delta_instant: SystemTime,
     pub delta_time: Arc<AtomicF64>,
 }
 
 impl Default for Time {
     fn default() -> Self {
         Self {
-            time: Instant::now(),
-            delta_instant: Instant::now(),
+            time: SystemTime::now(),
+            delta_instant: SystemTime::now(),
             delta_time: Arc::new(AtomicF64::new(0.0f64)),
         }
     }
@@ -196,10 +196,10 @@ impl Time {
     /// Don't call this function. This is for the game struct to handle.
     pub fn update(&mut self) {
         self.delta_time.store(
-            self.delta_instant.elapsed().as_secs_f64(),
+            self.delta_instant.elapsed().unwrap().as_secs_f64(),
             Ordering::Release,
         );
-        self.delta_instant = Instant::now();
+        self.delta_instant = SystemTime::now();
     }
     pub fn delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire)
@@ -208,6 +208,6 @@ impl Time {
         1.0 / self.delta_time.load(Ordering::Acquire)
     }
     pub fn time(&self) -> f64 {
-        self.time.elapsed().as_secs_f64()
+        self.time.elapsed().unwrap().as_secs_f64()
     }
 }
