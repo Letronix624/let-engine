@@ -7,7 +7,7 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font, PositionedGlyph, Scale};
 
-use crate::{texture::*, Data, Vertex, WeakObject};
+use crate::{texture::*, Data, Vertex, WeakObject, RigidBodyParent};
 
 use super::{
     materials::*,
@@ -17,6 +17,7 @@ use super::{
     Appearance, Loader, Transform, Vulkan,
 };
 use glam::f32::{vec2, Vec2};
+use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 
 #[derive(Clone)]
 pub struct LabelCreateInfo {
@@ -25,6 +26,37 @@ pub struct LabelCreateInfo {
     pub text: String,
     pub scale: Vec2,
     pub align: [f32; 2],
+}
+impl LabelCreateInfo {
+    pub fn transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
+        self
+    }
+    pub fn appearance(mut self, appearance: Appearance) -> Self {
+        self.appearance = appearance;
+        self
+    }
+    pub fn text<T>(mut self, text: T) -> Self
+    where
+        T: Into<String>,
+    {
+        self.text = text.into();
+        self
+    }
+    pub fn scale<T>(mut self, scale: T) -> Self
+    where
+        T: Into<Vec2>,
+    {
+        self.scale = scale.into();
+        self
+    }
+    pub fn align<T>(mut self, align: T) -> Self
+    where
+        T: Into<[f32; 2]>,
+    {
+        self.align = align.into();
+        self
+    }
 }
 impl Default for LabelCreateInfo {
     fn default() -> Self {
@@ -70,22 +102,26 @@ impl GameObject for Label {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, id: usize, object: &crate::NObject, _layer: &super::Layer) {
+    fn init_to_layer(&mut self, id: usize, parent: &crate::NObject, rigid_body_parent: RigidBodyParent, _layer: &super::Layer) -> crate::NObject {
         self.id = id;
-        let parent = object
-            .lock()
-            .parent
-            .clone()
-            .unwrap()
-            .clone()
-            .upgrade()
-            .unwrap();
-        let parent = &parent.lock().object;
-        self.parent_transform = parent.public_transform();
-        self.reference = Some(Arc::downgrade(object));
+        let parent_object = &parent.lock().object;
+        self.parent_transform = parent_object.public_transform();
+        let node: crate::NObject = Arc::new(Mutex::new(crate::Node{
+            object: Box::new(self.clone()),
+            parent: Some(Arc::downgrade(parent)),
+            rigid_body_parent,
+            children: vec![],
+        }));
+        self.reference = Some(Arc::downgrade(&node));
         self.labelifier.lock().queue(self.clone());
+        node
     }
     fn remove_event(&mut self) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn collider_handle(&self) -> Option<ColliderHandle> {None}
+    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {None}
 }
 impl Label {
     pub fn new(resources: &Resources, font: &Arc<GameFont>, create_info: LabelCreateInfo) -> Self {

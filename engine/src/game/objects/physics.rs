@@ -135,7 +135,12 @@ impl std::fmt::Debug for ObjectPhysics {
     }
 }
 impl ObjectPhysics {
-    pub fn update(&mut self, public_transform: Transform, id: u128) {
+    pub fn update(&mut self, transform: &Transform, parent: &super::NObject, rigid_body_object: &mut crate::RigidBodyParent, id: u128) -> Transform {
+        let parent = parent.lock();
+        let parent_transform = parent.object.transform();
+        let public_transform = transform.combine(parent_transform);
+
+        
         let mut physics = self.physics.as_ref().unwrap().lock();
         physics.query_pipeline_out_of_date = true;
         match (
@@ -257,14 +262,35 @@ impl ObjectPhysics {
                 *public_body = rigid_body.0.clone();
             }
             _ => (),
+        };
+        if rigid_body_object.is_none() {
+            if self.rigid_body.is_some() {
+                *rigid_body_object = Some(None);
+            }
         }
+        parent_transform
     }
     pub fn remove(&mut self) {
 
-        self.collider = None;
-        self.rigid_body = None;
+        let mut physics = self.physics.as_ref().unwrap().lock();
+        physics.query_pipeline_out_of_date = true;
+        match (
+            self.collider_handle.as_ref(),
+            self.rigid_body_handle.as_ref(),
+        ) {
+            (Some(collider_handle), None) => {
+                physics.remove_collider(*collider_handle);
+            }
+            (None, Some(rigid_body_handle)) => {
+                physics.remove_rigid_body(*rigid_body_handle, false);
+            }
+            (Some(collider_handle), Some(rigid_body_handle)) => {
+                physics.remove_rigid_body(*rigid_body_handle, true);
+                physics.remove_collider(*collider_handle);
+            }
+            _ => (),
+        }
 
-        Self::update(self, Transform::default(), 0);
     }
 }
 

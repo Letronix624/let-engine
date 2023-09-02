@@ -3,51 +3,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse::Parser, parse_macro_input, DeriveInput};
 
-/// Implements GameObject on a struct and automaically adds the fields transform, appearance, id
-/// and layer to update from and to.
-/// Also adds 2 functions. Update and Sync.
-/// Update updates the object from the layer system and sync syncs the object to the layer.
-/// Those functions panic when the object isn't initialized to the layer yet.
-#[proc_macro_attribute]
-pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
-    let name = &ast.ident;
-    quote! {
-        #[let_engine::objectinit]
-        #ast
-        impl let_engine::GameObject for #name {
-            fn transform(&self) -> Transform {
-                self.transform
-            }
-            fn set_isometry(&mut self, position: let_engine::Vec2, rotation: f32) {
-                self.transform.position = position;
-                self.transform.rotation = rotation;
-            }
-            fn public_transform(&self) -> Transform {
-                self.transform.combine(self.parent_transform)
-            }
-            fn set_parent_transform(&mut self, transform: Transform) {
-                self.parent_transform = transform;
-            }
-            fn appearance(&self) -> &Appearance {
-                &self.appearance
-            }
-            fn id(&self) -> usize {
-                self.id
-            }
-            fn init_to_layer(&mut self, id: usize, object: &let_engine::NObject, _layer: &let_engine::Layer) {
-                self.id = id;
-                let parent = object.lock().parent.clone().unwrap().clone().upgrade().unwrap();
-                let parent = &parent.lock().object;
-                self.parent_transform = parent.public_transform();
-                self.reference = Some(std::sync::Arc::downgrade(object));
-            }
-            fn remove_event(&mut self) {}
-        }
-    }
-    .into()
-}
-
 #[proc_macro_attribute]
 pub fn objectinit(_args: TokenStream, input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
@@ -119,6 +74,13 @@ pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> 
                         })
                         .expect("weak object failed"),
                 );
+                fields.named.push(
+                    syn::Field::parse_named
+                        .parse2(quote! {
+                            physics: let_engine::physics::ObjectPhysics
+                        })
+                        .expect("collider failed"),
+                );
             }
         }
         _ => panic!("`object` has to be used with structs."),
@@ -167,33 +129,17 @@ pub fn camera(_args: TokenStream, input: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Implements colliders and rigidbodies onto an object.
-/// Does the same as object but also has a collider and rigidbody field to edit.
+/// Implements GameObject on a struct and automaically adds the fields transform, appearance, id
+/// and layer to update from and to.
+/// Also adds 2 functions. Update and Sync.
+/// Update updates the object from the layer system and sync syncs the object to the layer.
+/// Those functions panic when the object isn't initialized to the layer yet.
 #[proc_macro_attribute]
-pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut ast = parse_macro_input!(input as DeriveInput);
+pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
     let name = &ast.ident;
 
-    if let syn::Data::Struct(ref mut struct_data) = ast.data {
-        if let syn::Fields::Named(fields) = &mut struct_data.fields {
-            fields.named.push(
-                syn::Field::parse_named
-                    .parse2(quote! {
-                        physics: let_engine::physics::ObjectPhysics
-                    })
-                    .expect("collider failed"),
-            );
-        }
-    } else {
-        panic!("`collider` has to be used with structs.");
-    };
-
     quote! {
-        impl let_engine::Collider for #name {
-            fn collider_handle(&self) -> Option<let_engine::rapier2d::geometry::ColliderHandle> {
-                self.physics.collider_handle
-            }
-        }
         #[let_engine::objectinit_without_implements]
         #ast
         impl let_engine::GameObject for #name {
@@ -216,17 +162,36 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, object: &let_engine::NObject, layer: &let_engine::Layer) {
+            fn init_to_layer(&mut self, id: usize, parent: &let_engine::NObject, mut rigid_body_parent: let_engine::RigidBodyParent, layer: &let_engine::Layer) -> let_engine::NObject {
                 self.id = id;
-                let parent = object.lock().parent.clone().unwrap().clone().upgrade().unwrap();
-                let parent = &parent.lock().object;
-                self.parent_transform = parent.public_transform();
-                self.reference = Some(std::sync::Arc::downgrade(object));
                 self.physics.physics = Some(layer.physics.clone());
-                self.physics.update(Self::public_transform(self), id as u128);
+                self.parent_transform = self.physics.update(&self.transform, parent, &mut rigid_body_parent, id as u128);
+                let node: let_engine::NObject = std::sync::Arc::new(let_engine::Mutex::new(let_engine::Node{
+                    object: Box::new(self.clone()),
+                    parent: Some(std::sync::Arc::downgrade(parent)),
+                    rigid_body_parent: rigid_body_parent.clone(),
+                    children: vec![],
+                }));
+                if let Some(value) = &rigid_body_parent {
+                    if value.is_none() {
+                        layer.rigid_body_roots.lock().insert(id, node.clone());
+                    }
+                }
+
+                self.reference = Some(std::sync::Arc::downgrade(&node));
+                node
             }
             fn remove_event(&mut self) {
                 self.physics.remove()
+            }
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn rigidbody_handle(&self) -> Option<let_engine::rapier2d::dynamics::RigidBodyHandle> {
+                self.physics.rigid_body_handle
+            }
+            fn collider_handle(&self) -> Option<let_engine::rapier2d::geometry::ColliderHandle> {
+                self.physics.collider_handle
             }
         }
         impl #name {
@@ -238,10 +203,16 @@ pub fn collider(_args: TokenStream, input: TokenStream) -> TokenStream {
             }
             pub fn sync(&mut self) { // send
                 // update public position of all children recursively
-                let transform = Self::public_transform(self);
                 let node = self.reference.clone().unwrap().upgrade().unwrap();
-                node.lock().update_children_position(transform);
-                self.physics.update(transform, self.id as u128);
+                {
+                    let mut node = node.lock();
+                    self.parent_transform = self.physics.update(
+                        &self.transform,
+                        &node.parent.clone().unwrap().upgrade().unwrap(),
+                        &mut node.rigid_body_parent, self.id as u128
+                    );
+                }
+                node.lock().update_children_position(Self::public_transform(self));
                 let arc = self.reference.clone().unwrap().upgrade().unwrap();
                 let mut object = arc.lock();
                 object.object = Box::new(self.clone());

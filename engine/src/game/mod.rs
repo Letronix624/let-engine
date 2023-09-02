@@ -3,8 +3,8 @@ pub use resources::Resources;
 use resources::{GameFont, Loader, Texture};
 pub mod objects;
 pub use objects::{
-    data::Data, physics, Appearance, Camera, CameraScaling, CameraSettings, Collider, GameObject,
-    Layer, Node, Scene, Transform,
+    data::Data, physics, Appearance, Camera, CameraScaling, CameraSettings, GameObject,
+    Layer, Scene, Transform, Node, RigidBodyParent
 };
 pub mod vulkan;
 use vulkan::Vulkan;

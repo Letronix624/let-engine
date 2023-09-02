@@ -21,8 +21,3 @@ pub struct Object {}
 #[camera]
 #[derive(Default)]
 pub struct Camera {}
-
-/// Default Collider object without any additional fields.
-#[collider]
-#[derive(Default)]
-pub struct ColliderObject {}

@@ -14,13 +14,14 @@ use parking_lot::Mutex;
 use rapier2d::prelude::*;
 
 use std::{
+    any::Any,
     default,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Weak,
     },
 };
-
+pub type RigidBodyParent = Option<Option<Weak<Mutex<Node<AObject>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -61,27 +62,28 @@ impl Default for Transform {
     }
 }
 
-pub trait GameObject: Send {
+pub trait GameObject: Send + Any {
     fn transform(&self) -> Transform;
     fn set_isometry(&mut self, position: Vec2, rotation: f32);
     fn public_transform(&self) -> Transform;
     fn set_parent_transform(&mut self, transform: Transform);
     fn appearance(&self) -> &Appearance;
     fn id(&self) -> usize;
-    fn init_to_layer(&mut self, id: usize, object: &NObject, layer: &Layer);
+    fn init_to_layer(
+        &mut self,
+        id: usize,
+        parent: &NObject,
+        rigid_body_parent: RigidBodyParent,
+        layer: &Layer,
+    ) -> NObject;
     fn remove_event(&mut self);
+    fn as_any(&self) -> &dyn Any;
+    fn collider_handle(&self) -> Option<rapier2d::geometry::ColliderHandle>;
+    fn rigidbody_handle(&self) -> Option<rapier2d::dynamics::RigidBodyHandle>;
 }
 
 pub trait Camera: GameObject {
     fn settings(&self) -> CameraSettings;
-}
-
-pub trait Collider: GameObject {
-    fn collider_handle(&self) -> Option<rapier2d::geometry::ColliderHandle>;
-}
-
-pub trait Rigidbody: Collider + GameObject {
-    fn rigidbody(&self) -> rapier2d::dynamics::RigidBodyHandle;
 }
 
 #[derive(Clone, Copy)]
@@ -126,7 +128,8 @@ impl Object {
 
 pub struct Node<T> {
     pub object: T,
-    pub parent: Option<Weak<Mutex<Node<T>>>>,
+    pub parent: Option<Weak<Mutex<Node<AObject>>>>,
+    pub rigid_body_parent: RigidBodyParent,
     pub children: Vec<Arc<Mutex<Node<T>>>>,
 }
 
@@ -163,12 +166,13 @@ impl Node<AObject> {
             .unwrap();
         self.children.remove(index);
     }
-    pub fn remove_children(&mut self, objects: &mut ObjectsMap) {
+    pub fn remove_children(&mut self, objects: &mut ObjectsMap, rigid_bodies: &mut ObjectsMap) {
         self.object.remove_event();
         for child in self.children.iter() {
-            child.clone().lock().remove_children(objects);
+            child.clone().lock().remove_children(objects, rigid_bodies);
         }
         objects.remove(&self.object.id());
+        rigid_bodies.remove(&self.object.id());
         self.children = vec![];
     }
     pub fn end_transform(&self) -> Transform {
@@ -264,6 +268,7 @@ pub struct Layer {
     pub root: NObject,
     pub camera: Arc<Mutex<Option<Box<dyn Camera>>>>,
     objects_map: Arc<Mutex<ObjectsMap>>,
+    pub(crate) rigid_body_roots: Arc<Mutex<ObjectsMap>>,
     latest_object: Arc<AtomicU64>,
     pub(crate) physics: Arc<Mutex<Physics>>,
     physics_enabled: Arc<AtomicBool>,
@@ -277,6 +282,7 @@ impl Layer {
             root,
             camera: Arc::new(Mutex::new(None)),
             objects_map: Arc::new(Mutex::new(objects_map)),
+            rigid_body_roots: Arc::new(Mutex::new(HashMap::new())),
             latest_object: Arc::new(AtomicU64::new(1)),
             physics: Arc::new(Mutex::new(Physics::new())),
             physics_enabled: Arc::new(AtomicBool::new(true)),
@@ -325,24 +331,43 @@ impl Layer {
 
     pub(crate) fn step_physics(&self, physics_pipeline: &mut PhysicsPipeline) {
         if self.physics_enabled.load(Ordering::Acquire) {
+            let mut map = self.rigid_body_roots.lock();
 
-            let rigid_bodies: Vec<(usize, Vec2, f32)> = {
-                let mut physics = self.physics.lock();
-                physics.step(physics_pipeline); // Rapier-side physics iteration run.
-                physics.rigid_body_set.iter().map(|(_, rigid_body)| {
-                    let position: Vec2 = (*rigid_body.translation()).into();
-                    let rotation: f32 =  rigid_body.rotation().angle();
+            let mut physics = self.physics.lock();
+            physics.step(physics_pipeline); // Rapier-side physics iteration run.
+            for (_, object) in map.iter_mut() {
+                let mut node = object.lock();
+                let rigid_body = physics
+                    .rigid_body_set
+                    .get(
+                        node
+                            .object
+                            .rigidbody_handle()
+                            .unwrap(),
+                    )
+                    .unwrap();
+                node.object.set_isometry(
+                    (*rigid_body.translation()).into(),
+                    rigid_body.rotation().angle(),
+                );
+            }
+            //let rigid_bodies: Vec<(usize, Vec2, f32)> = {
+            //     let mut physics = self.physics.lock();
+            //     physics.step(physics_pipeline); // Rapier-side physics iteration run.
+            //     physics.rigid_body_set.iter().map(|(_, rigid_body)| {
+            //         let position: Vec2 = (*rigid_body.translation()).into();
+            //         let rotation: f32 =  rigid_body.rotation().angle();
 
-                    (rigid_body.user_data as usize, position, rotation)
-                }).collect()
-            };
-            let map = self.objects_map.lock().clone();
-            for (id, position, rotation) in rigid_bodies { // Temporary BAD solution to be switched. just to test.
-                if let Some(object) = map.get(&id) {
-                    let mut object = object.lock();
-                    object.object.set_isometry(position, rotation); 
-                }
-            };
+            //         (rigid_body.user_data as usize, position, rotation)
+            //     }).collect()
+            // };
+            // let map = self.objects_map.lock().clone();
+            // for (id, position, rotation) in rigid_bodies { // Temporary BAD solution to be switched. just to test.
+            //     if let Some(object) = map.get(&id) {
+            //         let mut object = object.lock();
+            //         object.object.set_isometry(position, rotation);
+            //     }
+            // };
         }
     }
 
@@ -370,29 +395,23 @@ impl Layer {
         parent: Option<&AObject>,
         object: &mut T,
     ) -> Result<(), NoParentError> {
-
         let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
 
-        let placeholder = crate::prelude::Object::default();
-
+        let rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
             let map = self.objects_map.lock();
             if let Some(parent) = map.get(&parent.id()) {
+                rigid_body_parent = parent.lock().rigid_body_parent.clone();
                 parent.clone()
             } else {
                 return Err(NoParentError);
             }
         } else {
+            rigid_body_parent = None;
             self.root.clone()
         };
 
-        let node: NObject = Arc::new(Mutex::new(Node {
-            object: Box::new(placeholder),
-            parent: Some(Arc::downgrade(&parent)),
-            children: vec![],
-        }));
-
-        object.init_to_layer(id, &node, self);
+        let node = object.init_to_layer(id, &parent, rigid_body_parent, self);
 
         let boxed_object: Box<dyn GameObject> = Box::new(object.clone());
 
@@ -476,16 +495,18 @@ impl Layer {
         }
     }
 
-    pub fn remove_object(&self, object_id: usize) -> Result<(), NoObjectError> { // bugged. Deadlock found
-        let mut map = self.objects_map.lock().clone();
+    pub fn remove_object(&self, object_id: usize) -> Result<(), NoObjectError> {
+        let mut map = self.objects_map.lock();
+        let mut rigid_bodies = self.rigid_body_roots.lock();
         let node = if let Some(object) = map.remove(&object_id) {
             object
         } else {
             return Err(NoObjectError);
         };
+        rigid_bodies.remove(&object_id);
 
         let mut object = node.lock();
-        object.remove_children(&mut map);
+        object.remove_children(&mut map, &mut rigid_bodies);
 
         let parent = object.parent.clone().unwrap().upgrade().unwrap();
         let mut parent = parent.lock();
@@ -639,8 +660,21 @@ impl GameObject for Root {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, _id: usize, _object: &NObject, _layer: &Layer) {}
+    fn init_to_layer(
+        &mut self,
+        _id: usize,
+        _parent: &NObject,
+        _rigid_body_parent: RigidBodyParent,
+        _layer: &Layer,
+    ) -> NObject {
+        todo!()
+    }
     fn remove_event(&mut self) {}
+    fn as_any (&self) -> &dyn Any {
+        self
+    }
+    fn collider_handle(&self) -> Option<ColliderHandle> {None}
+    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {None}
 }
 impl Default for Root {
     fn default() -> Self {
@@ -659,6 +693,7 @@ impl Scene {
         let node = Layer::new(Arc::new(Mutex::new(Node {
             object,
             parent: None,
+            rigid_body_parent: None,
             children: vec![],
         })));
         self.layers.lock().insert(node.clone());
@@ -686,7 +721,10 @@ impl Scene {
         let mut objectguard = node.lock();
 
         //delete all the children of the layer too.
-        objectguard.remove_children(&mut layer.objects_map.lock());
+        objectguard.remove_children(
+            &mut layer.objects_map.lock(),
+            &mut layer.rigid_body_roots.lock(),
+        );
         //finish him!
         layers.remove(layer);
 
