@@ -22,9 +22,10 @@ use super::{
 };
 
 use crate::game::Node;
+use crate::utils;
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
-use glam::f32::{Mat4, Quat, Vec2, Vec3};
+use glam::f32::{Mat4, Quat, Vec3};
 
 pub(crate) struct Draw {
     pub recreate_swapchain: bool,
@@ -200,7 +201,7 @@ impl Draw {
                     let rotation = Mat4::from_rotation_z(camera.transform().rotation);
 
                     let zoom = 1.0 / camera.settings().zoom;
-                    proj = ortho_maker(
+                    proj = utils::ortho_maker(
                         camera.settings().mode,
                         camera.transform().position,
                         zoom,
@@ -325,16 +326,4 @@ impl Draw {
             }
         }
     }
-}
-
-fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: (f32, f32)) -> Mat4 {
-    let (width, height) = super::objects::scale(mode, dimensions);
-    Mat4::orthographic_rh(
-        position.x - zoom * width,
-        position.x + zoom * width,
-        position.y - zoom * height,
-        position.y + zoom * height,
-        -1.0,
-        1.0,
-    )
 }

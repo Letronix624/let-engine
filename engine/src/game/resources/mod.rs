@@ -1,5 +1,5 @@
 use super::{materials, Labelifier, Vulkan};
-use crate::{error::textures::*, texture::*};
+use crate::{error::textures::*, texture::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -180,10 +180,7 @@ impl Resources {
         let mut loader = self.loader.lock();
         loader.load_material(&self.vulkan, shaders, settings, descriptor_bindings)
     }
-    pub fn new_material(
-        &self,
-        settings: materials::MaterialSettings,
-    ) -> materials::Material {
+    pub fn new_material(&self, settings: materials::MaterialSettings) -> materials::Material {
         let mut loader = self.loader.lock();
         let shaders = self.vulkan.default_shaders.clone();
         loader.load_material(&self.vulkan, &shaders, settings, vec![])
@@ -281,14 +278,4 @@ pub fn load_sound(sound: &[u8]) -> Sound {
     Sound {
         data: Arc::from(sound.to_vec().into_boxed_slice()),
     }
-}
-
-fn u16tou8vec(data: Vec<u16>) -> Vec<u8> { // to utils.rs in the future
-    data.iter()
-        .flat_map(|&u16_value| {
-            let high_byte = ((u16_value >> 8) & 0xff) as u8;
-            let low_byte = (u16_value & 0xff) as u8;
-            vec![high_byte, low_byte]
-        })
-        .collect()
 }

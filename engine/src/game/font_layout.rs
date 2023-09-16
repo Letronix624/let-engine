@@ -7,7 +7,7 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font, PositionedGlyph, Scale};
 
-use crate::{texture::*, Data, Vertex, WeakObject, RigidBodyParent};
+use crate::{texture::*, Data, RigidBodyParent, Vertex, WeakObject};
 
 use super::{
     materials::*,
@@ -102,11 +102,17 @@ impl GameObject for Label {
     fn id(&self) -> usize {
         self.id
     }
-    fn init_to_layer(&mut self, id: usize, parent: &crate::NObject, rigid_body_parent: RigidBodyParent, _layer: &super::Layer) -> crate::NObject {
+    fn init_to_layer(
+        &mut self,
+        id: usize,
+        parent: &crate::NObject,
+        rigid_body_parent: RigidBodyParent,
+        _layer: &super::Layer,
+    ) -> crate::NObject {
         self.id = id;
         let parent_object = &parent.lock().object;
         self.parent_transform = parent_object.public_transform();
-        let node: crate::NObject = Arc::new(Mutex::new(crate::Node{
+        let node: crate::NObject = Arc::new(Mutex::new(crate::Node {
             object: Box::new(self.clone()),
             parent: Some(Arc::downgrade(parent)),
             rigid_body_parent,
@@ -120,8 +126,12 @@ impl GameObject for Label {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
-    fn collider_handle(&self) -> Option<ColliderHandle> {None}
-    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {None}
+    fn collider_handle(&self) -> Option<ColliderHandle> {
+        None
+    }
+    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {
+        None
+    }
 }
 impl Label {
     pub fn new(resources: &Resources, font: &Arc<GameFont>, create_info: LabelCreateInfo) -> Self {

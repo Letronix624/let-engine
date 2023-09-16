@@ -73,7 +73,10 @@ impl Vulkan {
         //Materials
         let vs = vertexshader::load(device.clone()).unwrap();
         let fs = fragmentshader::load(device.clone()).unwrap();
-        let default_shaders = materials::Shaders {vertex: vs.clone(), fragment: fs.clone()};
+        let default_shaders = materials::Shaders {
+            vertex: vs.clone(),
+            fragment: fs.clone(),
+        };
 
         let tfs = textured_fragmentshader::load(device.clone()).unwrap();
         let tafs = texture_array_fragmentshader::load(device.clone()).unwrap();

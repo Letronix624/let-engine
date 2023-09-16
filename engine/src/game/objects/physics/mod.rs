@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 pub use rapier2d::parry::transformation::vhacd::VHACDParameters;
 use rapier2d::prelude::*;
 use std::sync::Arc;
+pub mod joints;
 
 pub(crate) type APhysics = Arc<Mutex<Physics>>;
 
@@ -67,12 +68,14 @@ impl Physics {
             &(),
             &(),
         );
-        self.query_pipeline.update(&self.rigid_body_set, &self.collider_set);
+        self.query_pipeline
+            .update(&self.rigid_body_set, &self.collider_set);
         self.query_pipeline_out_of_date = false;
     }
     pub fn update_query_pipeline(&mut self) {
         if self.query_pipeline_out_of_date {
-            self.query_pipeline.update(&self.rigid_body_set, &self.collider_set);
+            self.query_pipeline
+                .update(&self.rigid_body_set, &self.collider_set);
             self.query_pipeline_out_of_date = false;
         }
     }
@@ -97,6 +100,10 @@ impl Physics {
             remove_colliders,
         );
     }
+    pub fn remove_joint(&mut self, handle: ImpulseJointHandle) {
+        let joints = &mut self.impulse_joint_set;
+        joints.remove(handle, true);
+    }
     pub fn insert_with_parent(
         &mut self,
         collider: rapier2d::geometry::Collider,
@@ -115,32 +122,53 @@ impl Physics {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub(crate) struct ObjectPhysics {
     pub physics: Option<APhysics>,
     pub collider: Option<Collider>,
     pub rigid_body: Option<RigidBody>,
     pub collider_handle: Option<ColliderHandle>,
     pub rigid_body_handle: Option<RigidBodyHandle>,
+    pub joint: joints::GenericJoint,
+    pub joint_handle: Option<ImpulseJointHandle>,
+}
+
+impl Default for ObjectPhysics {
+    fn default() -> Self {
+        Self {
+            physics: None,
+            collider: None,
+            rigid_body: None,
+            collider_handle: None,
+            rigid_body_handle: None,
+            joint: joints::FixedJointBuilder::new().into(),
+            joint_handle: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for ObjectPhysics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ObjectPhysics")
-         .field("collider", &self.collider.is_some())
-         .field("rigid body", &self.rigid_body.is_some())
-         .field("collider handle", &self.collider_handle.is_some())
-         .field("rigid body handle", &self.rigid_body_handle.is_some())
-         .finish()
+            .field("collider", &self.collider.is_some())
+            .field("rigid body", &self.rigid_body.is_some())
+            .field("collider handle", &self.collider_handle.is_some())
+            .field("rigid body handle", &self.rigid_body_handle.is_some())
+            .finish()
     }
 }
 impl ObjectPhysics {
-    pub fn update(&mut self, transform: &Transform, parent: &super::NObject, rigid_body_object: &mut crate::RigidBodyParent, id: u128) -> Transform {
+    pub fn update(
+        &mut self,
+        transform: &Transform,
+        parent: &super::NObject,
+        rigid_body_object: &mut crate::RigidBodyParent,
+        id: u128,
+    ) -> Transform {
         let parent = parent.lock();
         let parent_transform = parent.object.transform();
         let public_transform = transform.combine(parent_transform);
 
-        
         let mut physics = self.physics.as_ref().unwrap().lock();
         physics.query_pipeline_out_of_date = true;
         match (
@@ -152,14 +180,13 @@ impl ObjectPhysics {
             (Some(collider), None, None, None) => {
                 collider.0.set_position(public_transform.into());
                 collider.0.user_data = id;
-                self.collider_handle = Some(
-                    physics.collider_set.insert(collider.0.clone())
-                );
+                self.collider_handle = Some(physics.collider_set.insert(collider.0.clone()));
             }
             (None, Some(rigid_body), None, None) => {
                 rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
-                self.rigid_body_handle = Some(physics.rigid_body_set.insert(rigid_body.0.clone()));
+                let handle = physics.rigid_body_set.insert(rigid_body.0.clone());
+                self.rigid_body_handle = Some(handle);
             }
             (Some(collider), Some(rigid_body), None, None) => {
                 rigid_body.0.set_position(public_transform.into(), true);
@@ -268,10 +295,16 @@ impl ObjectPhysics {
                 *rigid_body_object = Some(None);
             }
         }
+        if let (Some(parent_handle), Some(handle)) = (parent.object.rigidbody_handle(), self.rigid_body_handle) {
+            physics
+                .impulse_joint_set
+                .insert(parent_handle, handle, self.joint.data, true);
+        } else if let Some(handle) = self.joint_handle {
+            physics.remove_joint(handle)
+        }
         parent_transform
     }
     pub fn remove(&mut self) {
-
         let mut physics = self.physics.as_ref().unwrap().lock();
         physics.query_pipeline_out_of_date = true;
         match (
@@ -290,7 +323,9 @@ impl ObjectPhysics {
             }
             _ => (),
         }
-
+        if let Some(joint_handle) = self.joint_handle {
+            physics.remove_joint(joint_handle)
+        }
     }
 }
 
@@ -429,7 +464,7 @@ impl From<Transform> for Isometry<Real> {
 impl From<(Vec2, Vec2, f32)> for Transform {
     fn from(val: (Vec2, Vec2, f32)) -> Self {
         Transform {
-            position: val.0, 
+            position: val.0,
             size: val.1,
             rotation: val.2,
         }
@@ -629,7 +664,7 @@ impl ColliderBuilder {
     pub fn sensor(mut self, is_sensor: bool) -> Self {
         self.is_sensor = is_sensor;
         self
-    } 
+    }
 
     /// Sets the friction coefficient of the collider this builder will build.
     pub fn friction(mut self, friction: Real) -> Self {
@@ -684,8 +719,6 @@ impl ColliderBuilder {
         self.enabled = enabled;
         self
     }
-
-
 }
 
 #[derive(Clone, Default, Debug)]
@@ -944,11 +977,12 @@ impl RigidBody {
     pub fn set_angvel(&mut self, angvel: Real, wake_up: bool) {
         self.0.set_angvel(angvel, wake_up)
     }
-    
+
     /// If this rigid body is kinematic, sets its future translation after the next timestep integration.
     pub fn set_next_kinematic_rotation(&mut self, rotation: Real) {
         if self.is_kinematic() {
-            self.0.set_next_kinematic_rotation(Rotation::from_angle(rotation));
+            self.0
+                .set_next_kinematic_rotation(Rotation::from_angle(rotation));
         }
     }
 
@@ -1190,7 +1224,7 @@ impl RigidBodyBuilder {
         self.linvel = linvel;
         self
     }
-    
+
     /// Sets the initial angular velocity of the rigid-body to be created.
     pub fn angvel(mut self, angvel: Real) -> Self {
         self.angvel = angvel;

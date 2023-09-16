@@ -339,12 +339,7 @@ impl Layer {
                 let mut node = object.lock();
                 let rigid_body = physics
                     .rigid_body_set
-                    .get(
-                        node
-                            .object
-                            .rigidbody_handle()
-                            .unwrap(),
-                    )
+                    .get(node.object.rigidbody_handle().unwrap())
                     .unwrap();
                 node.object.set_isometry(
                     (*rigid_body.translation()).into(),
@@ -670,11 +665,15 @@ impl GameObject for Root {
         todo!()
     }
     fn remove_event(&mut self) {}
-    fn as_any (&self) -> &dyn Any {
+    fn as_any(&self) -> &dyn Any {
         self
     }
-    fn collider_handle(&self) -> Option<ColliderHandle> {None}
-    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {None}
+    fn collider_handle(&self) -> Option<ColliderHandle> {
+        None
+    }
+    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {
+        None
+    }
 }
 impl Default for Root {
     fn default() -> Self {

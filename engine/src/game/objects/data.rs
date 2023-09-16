@@ -160,16 +160,18 @@ pub const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 /// A macro that makes it easy to create circles.
 #[macro_export]
 macro_rules! make_circle {
-    ($corners:expr) => {{
+    ($corners:expr) => {{ // Make a full circle fan with variable edges.
         use let_engine::{vec2, Vertex};
         let corners = $corners;
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
         use core::f64::consts::TAU;
+        // first point in the middle
         vertices.push(Vertex {
             position: vec2(0.0, 0.0),
             tex_position: vec2(0.0, 0.0),
         });
+        // Going through the number of steps and pushing the % of one complete TAU circle to the vertices.
         for i in 0..corners {
             vertices.push(Vertex {
                 position: vec2(
@@ -182,29 +184,30 @@ macro_rules! make_circle {
                 ),
             });
         }
-        for i in 0..corners - 1 {
+        // Adding the indices adding the middle point, index and index after this one.
+        for i in 0..corners - 1 { // -1 so the last index doesn't go above the total amounts of indices.
             indices.extend([0, i + 1, i + 2]);
         }
-
+        // Completing the indices by setting the last 2 indices to the last point and the first point of the circle.
         indices.extend([0, corners, 1]);
         Data { vertices, indices }
     }};
-    ($corners:expr, $purrcent:expr) => {{
+    ($corners:expr, $percent:expr) => {{ // Make a pie circle fan with the amount of edges and completeness of the circle.
         use core::f64::consts::TAU;
         use let_engine::{vec2, Vertex};
         let corners = $corners;
-        let purrcent = $purrcent as f64;
-        let purrcent: f64 = purrcent.clamp(0.0, 1.0);
+        let percent = $percent as f64;
+        let percent: f64 = percent.clamp(0.0, 1.0);
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
 
-        let count = TAU * purrcent;
+        let count = TAU * percent;
 
         vertices.push(Vertex {
             position: vec2(0.0, 0.0),
             tex_position: vec2(0.0, 0.0),
         });
-
+        // Do the same as last time just with +1 iterations, because the last index doesn't go back to the first circle position.
         for i in 0..corners + 1 {
             vertices.push(Vertex {
                 position: vec2(
@@ -217,6 +220,7 @@ macro_rules! make_circle {
                 ),
             });
         }
+        // This time the complete iteration is possible because the last index of the circle is not the first one as in the last.
         for i in 0..corners {
             indices.extend([0, i + 1, i + 2]);
         }
@@ -224,4 +228,3 @@ macro_rules! make_circle {
         Data { vertices, indices }
     }};
 }
-

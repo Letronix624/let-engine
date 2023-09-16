@@ -1,11 +1,9 @@
 # Let Engine
 *A 2d Rust game engine*
 
-- Heavily under construction. Hold tight! It's going to be awesome.
+- Heavily under construction. Not reccommended for use right now.
 
 ## Facts and features
-
-- Light and fast
 
 - Derive object and camera
 
@@ -16,6 +14,8 @@
 - Custom shader support
 
 - Egui support as a feature
+
+# Progress
 
 ## To do
 
@@ -29,7 +29,7 @@
 
 - Post processing
 
-3 stages of Rust repository building.
+## 3 stages of Rust repository building.
 
 1. [ ] Make it work first
 2. [ ] Make it right

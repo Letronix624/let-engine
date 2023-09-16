@@ -180,7 +180,11 @@ impl Shaders {
     ///
     /// When loading those shaders the engine doesn't know if they are right.
     /// So when they are wrong I'm not sure what will happen. Make it right!
-    pub(crate) unsafe fn from_bytes(vertex_bytes: &[u8], fragment_bytes: &[u8], vulkan: &Vulkan) -> Self {
+    pub(crate) unsafe fn from_bytes(
+        vertex_bytes: &[u8],
+        fragment_bytes: &[u8],
+        vulkan: &Vulkan,
+    ) -> Self {
         let vertex: Arc<ShaderModule> =
             unsafe { ShaderModule::from_bytes(vulkan.device.clone(), vertex_bytes).unwrap() };
         let fragment: Arc<ShaderModule> =
