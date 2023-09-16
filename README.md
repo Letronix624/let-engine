@@ -1,7 +1,7 @@
 # Let Engine
 *A 2d Rust game engine*
 
-- Heavily under construction. Not reccommended for use right now.
+- Heavily under construction. Not recommended for use right now.
 
 ## Facts and features
 
