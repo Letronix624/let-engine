@@ -10,10 +10,17 @@ pub struct Vertex {
     pub tex_position: Vec2,
 }
 
-pub fn vertex(x: f32, y: f32) -> Vertex {
+pub const fn vert(x: f32, y: f32) -> Vertex {
     Vertex {
         position: vec2(x, y),
         tex_position: vec2(x, y),
+    }
+}
+
+pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> Vertex {
+    Vertex {
+        position: vec2(x, y),
+        tex_position: vec2(tx, ty),
     }
 }
 
@@ -51,23 +58,18 @@ pub struct PushConstant {
 /// The 4 Camera scaling modes determine how far you can see when the window changes scale.
 /// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it's not on stretch mode.
 /// Those are the options in this game engine:
-///
-/// 1: Stretch - goes from -1 to 1 in both x and y. So the camera view stretches when the window is not square.
-///
-/// 2: Linear - Tries to be fair with window scaling and tries to have the same width\*height surface all the time. But when Making the window really thin or something like that you can still see the same height\*width so you could see really far.
-///
-/// 3: Circle - Imagine a rope tied to itself to make a circle and imagine trying to fit 4 corners of a rectangle as far away from each other. It's similar to Linear but you can't look that far the tighter the window is.
-///
-/// 4: Limited - The biggest side is always -1 to 1. Simple and more unfair the tighter your window is.
-///
-/// 5: Expand - The bigger the window is the more you can see. Good for HUDs, fonts and textures.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CameraScaling {
+    /// 1: Stretch - goes from -1 to 1 in both x and y. So the camera view stretches when the window is not square.
     Stretch = 1,
+    /// 2: Linear - Tries to be fair with window scaling and tries to have the same width\*height surface all the time. But when Making the window really thin or something like that you can still see the same height\*width so you could see really far.
     Linear = 2,
+    /// 3: Circle - Imagine a rope tied to itself to make a circle and imagine trying to fit 4 corners of a rectangle as far away from each other. It's similar to Linear but you can't look that far the tighter the window is.
     Circle = 3,
+    /// 4: Limited - The biggest side is always -1 to 1. Simple and more unfair the tighter your window is.
     Limited = 4,
+    /// 5: Expand - The bigger the window is the more you can see. Good for HUDs, fonts and textures.
     Expand = 5,
 }
 
@@ -121,45 +123,16 @@ impl Data {
 //struct object with position, size, rotation.
 
 #[allow(dead_code)]
-pub const TRIANGLE: [Vertex; 3] = [
-    Vertex {
-        position: vec2(0.0, -1.0),
-        tex_position: vec2(0.0, -1.0),
-    },
-    Vertex {
-        position: vec2(-1.0, 1.0),
-        tex_position: vec2(-1.0, 1.0),
-    },
-    Vertex {
-        position: vec2(1.0, 1.0),
-        tex_position: vec2(1.0, 1.0),
-    },
-];
+pub const TRIANGLE: [Vertex; 3] = [vert(0.0, -1.0), vert(-1.0, 1.0), vert(1.0, 1.0)];
 #[allow(dead_code)]
 pub const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
 
 #[allow(dead_code)]
 pub const SQUARE: [Vertex; 4] = [
-    Vertex {
-        // 0
-        position: vec2(-1.0, -1.0),
-        tex_position: vec2(-1.0, -1.0),
-    },
-    Vertex {
-        // 1
-        position: vec2(1.0, -1.0),
-        tex_position: vec2(1.0, -1.0),
-    },
-    Vertex {
-        // 2
-        position: vec2(-1.0, 1.0),
-        tex_position: vec2(-1.0, 1.0),
-    },
-    Vertex {
-        // 3
-        position: vec2(1.0, 1.0),
-        tex_position: vec2(1.0, 1.0),
-    },
+    vert(-1.0, -1.0),
+    vert(1.0, -1.0),
+    vert(-1.0, 1.0),
+    vert(1.0, 1.0),
 ];
 #[allow(dead_code)]
 pub const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
@@ -180,16 +153,10 @@ macro_rules! make_circle {
         });
         // Going through the number of steps and pushing the % of one complete TAU circle to the vertices.
         for i in 0..corners {
-            vertices.push(Vertex {
-                position: vec2(
+            vertices.push(vert(
                     (TAU * ((i as f64) / corners as f64)).cos() as f32,
                     (TAU * ((i as f64) / corners as f64)).sin() as f32,
-                ),
-                tex_position: vec2(
-                    (TAU * ((i as f64) / corners as f64)).cos() as f32,
-                    (TAU * ((i as f64) / corners as f64)).sin() as f32,
-                ),
-            });
+                ));
         }
         // Adding the indices adding the middle point, index and index after this one.
         for i in 0..corners - 1 { // -1 so the last index doesn't go above the total amounts of indices.
@@ -210,22 +177,13 @@ macro_rules! make_circle {
 
         let count = TAU * percent;
 
-        vertices.push(Vertex {
-            position: vec2(0.0, 0.0),
-            tex_position: vec2(0.0, 0.0),
-        });
+        vertices.push(vert(0.0, 0.0));
         // Do the same as last time just with +1 iterations, because the last index doesn't go back to the first circle position.
         for i in 0..corners + 1 {
-            vertices.push(Vertex {
-                position: vec2(
+            vertices.push(vert(
                     (count * ((i as f64) / corners as f64)).cos() as f32,
                     (count * ((i as f64) / corners as f64)).sin() as f32,
-                ),
-                tex_position: vec2(
-                    (count * ((i as f64) / corners as f64)).cos() as f32,
-                    (count * ((i as f64) / corners as f64)).sin() as f32,
-                ),
-            });
+                ));
         }
         // This time the complete iteration is possible because the last index of the circle is not the first one as in the last.
         for i in 0..corners {

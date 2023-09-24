@@ -5,7 +5,7 @@ pub mod texture;
 pub(crate) mod utils;
 
 pub use game::{
-    materials, physics, vertex, Appearance, Camera, CameraScaling, CameraSettings, Data, Font,
+    materials, physics, vert, tvert, Appearance, Camera, CameraScaling, CameraSettings, Data, Font,
     Game, GameBuilder, GameObject, Label, LabelCreateInfo, Layer, NObject, Node, Resources,
     RigidBodyParent, Scene, Time, Transform, Vertex, WeakObject,
 };

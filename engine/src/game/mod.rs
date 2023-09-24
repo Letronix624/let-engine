@@ -33,7 +33,7 @@ use std::{
     time::SystemTime,
 };
 
-pub use self::objects::data::{vertex, Vertex};
+pub use self::objects::data::{vert, tvert, Vertex};
 
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;

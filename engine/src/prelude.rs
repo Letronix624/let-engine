@@ -1,7 +1,7 @@
 pub use crate::{
-    make_circle, materials, vertex, Appearance, CameraScaling, CameraSettings, Data, Font, Game,
-    GameBuilder, GameObject, Label, LabelCreateInfo, Layer, Resources, Scene, Time, Transform,
-    Vertex, CENTER, N, NO, NW, O, S, SO, SW, W,
+    make_circle, materials, physics::*, vert, tvert, Appearance, CameraScaling, CameraSettings, Data,
+    Font, Game, GameBuilder, GameObject, Label, LabelCreateInfo, Layer, Resources, Scene, Time,
+    Transform, Vertex, CENTER, N, NO, NW, O, S, SO, SW, W,
 };
 pub use engine_macros::*;
 pub use glam;
