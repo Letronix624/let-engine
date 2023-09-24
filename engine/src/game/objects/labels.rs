@@ -7,13 +7,17 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font as RFont, PositionedGlyph, Scale};
 
-use crate::{resources::textures::*, objects::Data, objects::RigidBodyParent, Vertex, WeakObject,
-    materials::*,
-    objects::GameObject,
-    resources::{Font, Resources, Texture},
-    objects::Appearance, Transform,
-};
 use super::super::{vulkan::shaders::*, Loader, Vulkan};
+use crate::{
+    materials::*,
+    objects::Appearance,
+    objects::Data,
+    objects::GameObject,
+    objects::RigidBodyParent,
+    resources::textures::*,
+    resources::{Font, Resources, Texture},
+    Transform, Vertex, WeakObject,
+};
 use glam::f32::{vec2, Vec2};
 use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 

@@ -29,7 +29,7 @@ pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> Vertex {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
-pub struct ModelViewProj {
+pub(crate) struct ModelViewProj {
     //sepparate to vertex and fragment
     pub model: Mat4,
     pub view: Mat4,
@@ -38,7 +38,7 @@ pub struct ModelViewProj {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
-pub struct ObjectFrag {
+pub(crate) struct ObjectFrag {
     pub color: [f32; 4],
     pub texture_id: u32,
 }
@@ -54,7 +54,7 @@ impl Default for ObjectFrag {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, BufferContents)]
-pub struct PushConstant {
+pub(crate) struct PushConstant {
     pub resolution: [f32; 2],
 }
 

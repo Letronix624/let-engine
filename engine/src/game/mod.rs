@@ -2,8 +2,8 @@ pub mod resources;
 use resources::Resources;
 use resources::{Loader, Texture};
 pub mod objects;
-pub use objects::{GameObject, Scene, Transform, Layer, physics};
 use objects::Node;
+pub use objects::{physics, GameObject, Layer, Scene, Transform};
 pub mod camera;
 pub mod vulkan;
 use vulkan::Vulkan;
@@ -30,7 +30,8 @@ use std::{
     time::SystemTime,
 };
 
-pub use self::objects::data::{tvert, vert, Vertex};
+pub use objects::data;
+pub use objects::data::{tvert, vert, Vertex};
 
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;

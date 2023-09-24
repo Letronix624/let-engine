@@ -4,9 +4,8 @@ pub mod prelude;
 pub(crate) mod utils;
 
 pub use game::{
-    materials, objects, vert, tvert, camera,
-    Game, GameBuilder, NObject, resources,
-    Scene, Time, Transform, Vertex, WeakObject, Layer, physics
+    camera, data, materials, objects, physics, resources, tvert, vert, Game, GameBuilder, Layer,
+    NObject, Scene, Time, Transform, Vertex, WeakObject,
 };
 
 //RE EXPORTS
@@ -16,6 +15,7 @@ pub use glam::{vec2, Vec2};
 pub use parking_lot::Mutex;
 pub use rapier2d;
 
+/// Cardinal directions
 pub mod directions {
     pub const CENTER: [f32; 2] = [0.5; 2];
     pub const N: [f32; 2] = [0.5, 0.0];

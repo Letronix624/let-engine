@@ -5,8 +5,8 @@ pub use rapier2d::parry::transformation::vhacd::VHACDParameters;
 use rapier2d::prelude::*;
 use std::sync::Arc;
 
-pub mod joints;
 mod colliders;
+pub mod joints;
 mod rigid_bodies;
 pub use colliders::{Collider, ColliderBuilder, Shape};
 pub use rigid_bodies::{RigidBody, RigidBodyBuilder};

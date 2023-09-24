@@ -1,15 +1,14 @@
 pub use crate::{
-    make_circle, materials::*, vert, tvert,
-    Game, GameBuilder, resources::*, Scene, Time,
-    Vertex, directions::*, objects::*
+    data::*, directions::*, make_circle, materials::*, objects::*, resources::*, tvert, vert, Game,
+    GameBuilder, Scene, Time, Vertex,
 };
-pub use physics::*;
-pub use joints::*;
-pub use textures::*;
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
+pub use joints::*;
+pub use physics::*;
 pub use rapier2d::prelude::CoefficientCombineRule;
+pub use textures::*;
 
 use crate as let_engine;
 //use crate::game::objects::GameObject;

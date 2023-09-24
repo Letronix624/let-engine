@@ -1,11 +1,12 @@
 pub mod data;
-pub mod physics;
 pub mod labels;
+pub mod physics;
+use self::data::Data;
+
 use super::camera::{Camera, CameraScaling};
 use super::{materials, AObject, NObject};
 use crate::error::objects::*;
 use crate::error::textures::*;
-pub use data::*;
 use physics::Physics;
 
 use anyhow::Result;
