@@ -173,7 +173,7 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
                     children: vec![],
                 }));
                 if let Some(value) = &rigid_body_parent {
-                    if value.is_none() {
+                    if value.is_none() && self.physics.rigid_body.is_some() {
                         layer.rigid_body_roots.lock().insert(id, node.clone());
                     }
                 }
@@ -196,10 +196,13 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
         }
         impl #name {
             pub fn update(&mut self) { // receive
-                let arc = self.reference.clone().unwrap().upgrade().unwrap();
-                let object = &arc.lock().object;
-                self.transform = object.transform();
-                self.appearance = object.appearance().clone();
+                if let Some(arc) = self.reference.clone().unwrap().upgrade() {
+                    let object = &arc.lock().object;
+                    self.transform = object.transform();
+                    self.appearance = object.appearance().clone();
+                } else {
+                    Self::remove_event(self);
+                }
             }
             pub fn sync(&mut self) { // send
                 // update public position of all children recursively

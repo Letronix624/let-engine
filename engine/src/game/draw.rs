@@ -170,7 +170,6 @@ impl Draw {
             Node::order_position(&mut order, &layer.root.lock());
 
             for obj in order {
-                let transform = obj.transform.combine(obj.appearance.transform);
                 let appearance = &obj.appearance;
                 if !appearance.visible || appearance.data.vertices.is_empty() {
                     continue;
@@ -189,6 +188,7 @@ impl Draw {
                 let objectfrag_sub_buffer =
                     loader.object_buffer_allocator.allocate_sized().unwrap();
 
+                let transform = obj.transform.combine(obj.appearance.transform);
                 let scaling = Vec3::new(transform.size[0], transform.size[1], 0.0);
                 let rotation = Quat::from_rotation_z(transform.rotation);
                 let translation = Vec3::new(transform.position[0], transform.position[1], 0.0);

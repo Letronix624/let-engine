@@ -33,7 +33,7 @@ pub struct Transform {
 impl Transform {
     pub fn combine(self, rhs: Self) -> Self {
         Self {
-            position: self.position + rhs.position,
+            position: self.position + rhs.position.rotate(Vec2::from_angle(self.rotation)),
             size: self.size * rhs.size,
             rotation: self.rotation + rhs.rotation,
         }
@@ -346,23 +346,6 @@ impl Layer {
                     rigid_body.rotation().angle(),
                 );
             }
-            //let rigid_bodies: Vec<(usize, Vec2, f32)> = {
-            //     let mut physics = self.physics.lock();
-            //     physics.step(physics_pipeline); // Rapier-side physics iteration run.
-            //     physics.rigid_body_set.iter().map(|(_, rigid_body)| {
-            //         let position: Vec2 = (*rigid_body.translation()).into();
-            //         let rotation: f32 =  rigid_body.rotation().angle();
-
-            //         (rigid_body.user_data as usize, position, rotation)
-            //     }).collect()
-            // };
-            // let map = self.objects_map.lock().clone();
-            // for (id, position, rotation) in rigid_bodies { // Temporary BAD solution to be switched. just to test.
-            //     if let Some(object) = map.get(&id) {
-            //         let mut object = object.lock();
-            //         object.object.set_isometry(position, rotation);
-            //     }
-            // };
         }
     }
 
@@ -384,10 +367,55 @@ impl Layer {
     pub fn set_physics_parameters(&self, parameters: IntegrationParameters) {
         self.physics.lock().integration_parameters = parameters;
     }
-
-    pub fn add_object<T: GameObject + Clone + 'static>(
+    pub fn add_joint(
         &self,
-        parent: Option<&AObject>,
+        object1: &impl GameObject,
+        object2: &impl GameObject,
+        data: impl Into<physics::joints::GenericJoint>,
+        wake_up: bool,
+    ) -> Result<ImpulseJointHandle, NoRigidBodyError> {
+        if let (Some(handle1), Some(handle2)) =
+            (object1.rigidbody_handle(), object2.rigidbody_handle())
+        {
+            Ok(self.physics.lock().impulse_joint_set.insert(
+                handle1,
+                handle2,
+                data.into().data,
+                wake_up,
+            ))
+        } else {
+            Err(NoRigidBodyError)
+        }
+    }
+    pub fn get_joint(&self, handle: ImpulseJointHandle) -> Option<physics::joints::GenericJoint> {
+        self.physics
+            .lock()
+            .impulse_joint_set
+            .get(handle)
+            .map(|joint| physics::joints::GenericJoint { data: joint.data })
+    }
+    pub fn set_joint(
+        &self,
+        data: impl Into<physics::joints::GenericJoint>,
+        handle: ImpulseJointHandle,
+    ) -> Result<(), NoJointError> {
+        if let Some(joint) = self.physics.lock().impulse_joint_set.get_mut(handle) {
+            joint.data = data.into().data;
+            Ok(())
+        } else {
+            Err(NoJointError)
+        }
+    }
+    pub fn remove_joint(&self, handle: ImpulseJointHandle, wake_up: bool) {
+        self.physics
+            .lock()
+            .impulse_joint_set
+            .remove(handle, wake_up);
+    }
+
+    pub fn add_object_with_optional_parent<T: GameObject + Clone + 'static>(
+        &self,
+        parent: Option<&T>,
         object: &mut T,
     ) -> Result<(), NoParentError> {
         let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
@@ -415,6 +443,39 @@ impl Layer {
         parent.lock().children.push(node.clone());
 
         self.objects_map.lock().insert(id, node);
+
+        Ok(())
+    }
+
+    pub fn add_object<T: GameObject + Clone + 'static>(&self, object: &mut T) {
+        Self::add_object_with_optional_parent(self, None, object).unwrap();
+    }
+    pub fn add_object_with_parent<T: GameObject + Clone + 'static>(
+        &self,
+        parent: &T,
+        object: &mut T,
+    ) -> Result<(), NoParentError> {
+        Self::add_object_with_optional_parent(self, Some(parent), object)
+    }
+
+    /// Removes an object using it's ID.
+    pub fn remove_object(&self, object: &mut impl GameObject) -> Result<(), NoObjectError> {
+        let mut map = self.objects_map.lock();
+        let mut rigid_bodies = self.rigid_body_roots.lock();
+        let node = if let Some(object) = map.remove(&object.id()) {
+            object
+        } else {
+            return Err(NoObjectError);
+        };
+        rigid_bodies.remove(&object.id());
+        object.remove_event();
+
+        let mut object = node.lock();
+        object.remove_children(&mut map, &mut rigid_bodies);
+
+        let parent = object.parent.clone().unwrap().upgrade().unwrap();
+        let mut parent = parent.lock();
+        parent.remove_child(&node);
 
         Ok(())
     }
@@ -482,37 +543,12 @@ impl Layer {
             shape.0.as_ref(),
             QueryFilter::default(),
         );
-
-        if let Some(handle) = result {
-            Some(physics.collider_set.get(handle).unwrap().user_data as usize)
-        } else {
-            None
-        }
-    }
-
-    pub fn remove_object(&self, object_id: usize) -> Result<(), NoObjectError> {
-        let mut map = self.objects_map.lock();
-        let mut rigid_bodies = self.rigid_body_roots.lock();
-        let node = if let Some(object) = map.remove(&object_id) {
-            object
-        } else {
-            return Err(NoObjectError);
-        };
-        rigid_bodies.remove(&object_id);
-
-        let mut object = node.lock();
-        object.remove_children(&mut map, &mut rigid_bodies);
-
-        let parent = object.parent.clone().unwrap().upgrade().unwrap();
-        let mut parent = parent.lock();
-        parent.remove_child(&node);
-
-        Ok(())
+        result.map(|handle| physics.collider_set.get(handle).unwrap().user_data as usize)
     }
 
     pub fn move_to(
         &self,
-        object: &AObject,
+        object: &impl GameObject,
         index: usize,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let node = Self::to_node(self, object)?;
@@ -526,7 +562,7 @@ impl Layer {
         Ok(())
     }
 
-    pub fn move_down(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn move_down(&self, object: &impl GameObject) -> Result<(), Box<dyn std::error::Error>> {
         let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
         let index = Self::find_child_index(&parent, &node);
@@ -538,7 +574,7 @@ impl Layer {
         Ok(())
     }
 
-    pub fn move_up(&self, object: &AObject) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn move_up(&self, object: &impl GameObject) -> Result<(), Box<dyn std::error::Error>> {
         let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
         let count = Self::count_children(&node);
@@ -551,15 +587,15 @@ impl Layer {
         Ok(())
     }
 
-    pub fn move_to_bottom(&self, object: &AObject) -> Result<(), NoObjectError> {
+    pub fn move_to_bottom(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
         let node = Self::to_node(self, object)?;
         Self::move_object_to(node, 0);
         Ok(())
     }
 
-    pub fn move_to_top(&self, object: &AObject) -> Result<(), NoObjectError> {
+    pub fn move_to_top(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
         let node = Self::to_node(self, object)?;
-        let count = Self::count_children(&node);
+        let count = Self::count_children(&node) - 1;
         Self::move_object_to(node, count);
         Ok(())
     }
@@ -584,7 +620,7 @@ impl Layer {
         parent.children.len()
     }
 
-    fn to_node(&self, object: &AObject) -> Result<NObject, NoObjectError> {
+    fn to_node(&self, object: &impl GameObject) -> Result<NObject, NoObjectError> {
         let map = self.objects_map.lock();
         if let Some(object) = map.get(&object.id()) {
             Ok(object.clone())
@@ -605,7 +641,7 @@ impl Layer {
         parent.children.swap(index, dst);
     }
 
-    pub fn children_count(&self, parent: &AObject) -> Result<usize, NoObjectError> {
+    pub fn children_count(&self, parent: &impl GameObject) -> Result<usize, NoObjectError> {
         let node = Self::to_node(self, parent)?;
         Ok(Self::count_children(&node))
     }

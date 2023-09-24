@@ -9,7 +9,7 @@ pub mod joints;
 pub(crate) type APhysics = Arc<Mutex<Physics>>;
 
 pub use rapier2d::dynamics::{
-    IntegrationParameters, LockedAxes, RigidBodyActivation, RigidBodyType,
+    ImpulseJointHandle, IntegrationParameters, LockedAxes, RigidBodyActivation, RigidBodyType,
 };
 
 pub(crate) struct Physics {
@@ -100,10 +100,6 @@ impl Physics {
             remove_colliders,
         );
     }
-    pub fn remove_joint(&mut self, handle: ImpulseJointHandle) {
-        let joints = &mut self.impulse_joint_set;
-        joints.remove(handle, true);
-    }
     pub fn insert_with_parent(
         &mut self,
         collider: rapier2d::geometry::Collider,
@@ -122,29 +118,13 @@ impl Physics {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct ObjectPhysics {
     pub physics: Option<APhysics>,
     pub collider: Option<Collider>,
     pub rigid_body: Option<RigidBody>,
     pub collider_handle: Option<ColliderHandle>,
     pub rigid_body_handle: Option<RigidBodyHandle>,
-    pub joint: joints::GenericJoint,
-    pub joint_handle: Option<ImpulseJointHandle>,
-}
-
-impl Default for ObjectPhysics {
-    fn default() -> Self {
-        Self {
-            physics: None,
-            collider: None,
-            rigid_body: None,
-            collider_handle: None,
-            rigid_body_handle: None,
-            joint: joints::FixedJointBuilder::new().into(),
-            joint_handle: None,
-        }
-    }
 }
 
 impl std::fmt::Debug for ObjectPhysics {
@@ -290,17 +270,8 @@ impl ObjectPhysics {
             }
             _ => (),
         };
-        if rigid_body_object.is_none() {
-            if self.rigid_body.is_some() {
-                *rigid_body_object = Some(None);
-            }
-        }
-        if let (Some(parent_handle), Some(handle)) = (parent.object.rigidbody_handle(), self.rigid_body_handle) {
-            physics
-                .impulse_joint_set
-                .insert(parent_handle, handle, self.joint.data, true);
-        } else if let Some(handle) = self.joint_handle {
-            physics.remove_joint(handle)
+        if rigid_body_object.is_none() && self.rigid_body.is_some() {
+            *rigid_body_object = Some(None);
         }
         parent_transform
     }
@@ -323,9 +294,8 @@ impl ObjectPhysics {
             }
             _ => (),
         }
-        if let Some(joint_handle) = self.joint_handle {
-            physics.remove_joint(joint_handle)
-        }
+        self.collider_handle = None;
+        self.rigid_body_handle = None;
     }
 }
 
@@ -1262,7 +1232,7 @@ impl RigidBodyBuilder {
         let builder = rapier2d::dynamics::RigidBodyBuilder::new(self.body_type)
             .locked_axes(self.mprops_flags)
             .linvel(self.linvel.into())
-            .angvel(self.angvel.into())
+            .angvel(self.angvel)
             .gravity_scale(self.gravity_scale)
             .linear_damping(self.linear_damping)
             .angular_damping(self.angular_damping)
@@ -1276,9 +1246,9 @@ impl RigidBodyBuilder {
     }
 }
 
-impl Into<RigidBody> for RigidBodyBuilder {
-    fn into(self) -> RigidBody {
-        self.build()
+impl From<RigidBodyBuilder> for RigidBody {
+    fn from(val: RigidBodyBuilder) -> Self {
+        val.build()
     }
 }
 

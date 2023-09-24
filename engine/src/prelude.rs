@@ -1,5 +1,5 @@
 pub use crate::{
-    make_circle, materials, Appearance, CameraScaling, CameraSettings, Data, Font, Game,
+    make_circle, materials, vertex, Appearance, CameraScaling, CameraSettings, Data, Font, Game,
     GameBuilder, GameObject, Label, LabelCreateInfo, Layer, Resources, Scene, Time, Transform,
     Vertex, CENTER, N, NO, NW, O, S, SO, SW, W,
 };

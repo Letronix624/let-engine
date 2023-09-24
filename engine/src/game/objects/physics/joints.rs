@@ -328,9 +328,9 @@ impl GenericJointBuilder {
     }
 }
 
-impl Into<GenericJoint> for GenericJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0
+impl From<GenericJointBuilder> for GenericJoint {
+    fn from(val: GenericJointBuilder) -> Self {
+        val.0
     }
 }
 
@@ -470,9 +470,9 @@ impl FixedJointBuilder {
     }
 }
 
-impl Into<GenericJoint> for FixedJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0.data.into()
+impl From<FixedJointBuilder> for GenericJoint {
+    fn from(val: FixedJointBuilder) -> Self {
+        val.0.data
     }
 }
 
@@ -624,10 +624,9 @@ impl PrismaticJoint {
         self
     }
 }
-
-impl Into<GenericJoint> for PrismaticJoint {
-    fn into(self) -> GenericJoint {
-        self.data
+impl From<PrismaticJoint> for GenericJoint {
+    fn from(val: PrismaticJoint) -> Self {
+        val.data
     }
 }
 
@@ -734,10 +733,9 @@ impl PrismaticJointBuilder {
         self.0
     }
 }
-
-impl Into<GenericJoint> for PrismaticJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0.into()
+impl From<PrismaticJointBuilder> for GenericJoint {
+    fn from(val: PrismaticJointBuilder) -> Self {
+        val.0.into()
     }
 }
 
@@ -873,9 +871,15 @@ impl RevoluteJoint {
     }
 }
 
-impl Into<GenericJoint> for RevoluteJoint {
-    fn into(self) -> GenericJoint {
-        self.data
+impl Default for RevoluteJoint {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<RevoluteJoint> for GenericJoint {
+    fn from(val: RevoluteJoint) -> Self {
+        val.data
     }
 }
 
@@ -975,9 +979,15 @@ impl RevoluteJointBuilder {
     }
 }
 
-impl Into<GenericJoint> for RevoluteJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0.into()
+impl Default for RevoluteJointBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<RevoluteJointBuilder> for GenericJoint {
+    fn from(val: RevoluteJointBuilder) -> Self {
+        val.0.into()
     }
 }
 
@@ -1151,9 +1161,15 @@ impl RopeJoint {
     }
 }
 
-impl Into<GenericJoint> for RopeJoint {
-    fn into(self) -> GenericJoint {
-        self.data
+impl Default for RopeJoint {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<RopeJoint> for GenericJoint {
+    fn from(val: RopeJoint) -> Self {
+        val.data
     }
 }
 
@@ -1260,9 +1276,13 @@ impl RopeJointBuilder {
         self.0
     }
 }
-
-impl Into<GenericJoint> for RopeJointBuilder {
-    fn into(self) -> GenericJoint {
-        self.0.into()
+impl From<RopeJointBuilder> for GenericJoint {
+    fn from(val: RopeJointBuilder) -> Self {
+        val.0.into()
+    }
+}
+impl Default for RopeJointBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }

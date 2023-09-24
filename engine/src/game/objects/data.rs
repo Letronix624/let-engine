@@ -10,6 +10,13 @@ pub struct Vertex {
     pub tex_position: Vec2,
 }
 
+pub fn vertex(x: f32, y: f32) -> Vertex {
+    Vertex {
+        position: vec2(x, y),
+        tex_position: vec2(x, y),
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
 pub struct ModelViewProj {
