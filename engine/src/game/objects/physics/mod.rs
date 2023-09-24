@@ -6,8 +6,8 @@ use rapier2d::prelude::*;
 use std::sync::Arc;
 
 pub mod joints;
-pub mod colliders;
-pub mod rigid_bodies;
+mod colliders;
+mod rigid_bodies;
 pub use colliders::{Collider, ColliderBuilder, Shape};
 pub use rigid_bodies::{RigidBody, RigidBodyBuilder};
 

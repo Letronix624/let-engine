@@ -1,5 +1,5 @@
 pub mod resources;
-pub use resources::Resources;
+use resources::Resources;
 use resources::{GameFont, Loader, Texture};
 pub mod objects;
 pub use objects::{
@@ -33,7 +33,7 @@ use std::{
     time::SystemTime,
 };
 
-pub use self::objects::data::{vert, tvert, Vertex};
+pub use self::objects::data::{tvert, vert, Vertex};
 
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;

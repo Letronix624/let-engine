@@ -1,4 +1,4 @@
-use crate::VHACDParameters;
+use super::VHACDParameters;
 use crate::{Data, Transform};
 use glam::Vec2;
 use rapier2d::prelude::*;

@@ -10,13 +10,16 @@ pub struct Vertex {
     pub tex_position: Vec2,
 }
 
+// vert2d in the future
+/// Creates a vertex with given x and y coordinates for both position and texture position.
 pub const fn vert(x: f32, y: f32) -> Vertex {
     Vertex {
         position: vec2(x, y),
         tex_position: vec2(x, y),
     }
 }
-
+// tvert2d
+/// Creates a vertex with given x and y coordinates for position and given tx and ty coordinates for the UV texture mapping for those points.
 pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> Vertex {
     Vertex {
         position: vec2(x, y),
@@ -78,16 +81,6 @@ impl Default for CameraScaling {
         Self::Stretch
     }
 }
-
-pub const CENTER: [f32; 2] = [0.5; 2];
-pub const N: [f32; 2] = [0.5, 0.0];
-pub const NO: [f32; 2] = [1.0, 0.0];
-pub const O: [f32; 2] = [1.0, 0.5];
-pub const SO: [f32; 2] = [1.0; 2];
-pub const S: [f32; 2] = [0.5, 1.0];
-pub const SW: [f32; 2] = [0.0, 1.0];
-pub const W: [f32; 2] = [0.0, 0.5];
-pub const NW: [f32; 2] = [0.0; 2];
 
 /// Vertex and index data for the appearance and shape of objects.
 /// Has 3 simple presets.
