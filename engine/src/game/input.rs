@@ -1,4 +1,4 @@
-use super::Layer;
+use crate::Layer;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

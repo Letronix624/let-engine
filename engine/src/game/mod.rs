@@ -1,11 +1,10 @@
 pub mod resources;
 use resources::Resources;
-use resources::{GameFont, Loader, Texture};
+use resources::{Loader, Texture};
 pub mod objects;
-pub use objects::{
-    data::Data, physics, Appearance, Camera, CameraScaling, CameraSettings, GameObject, Layer,
-    Node, RigidBodyParent, Scene, Transform,
-};
+pub use objects::{GameObject, Scene, Transform, Layer, physics};
+use objects::Node;
+pub mod camera;
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
@@ -15,9 +14,7 @@ use winit::{
 };
 mod draw;
 use draw::Draw;
-mod font_layout;
-use font_layout::Labelifier;
-pub use font_layout::{Label, LabelCreateInfo};
+use objects::labels::Labelifier;
 pub mod input;
 pub mod materials;
 pub use input::Input;
@@ -38,7 +35,6 @@ pub use self::objects::data::{tvert, vert, Vertex};
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;
 pub type WeakObject = Weak<Mutex<Node<AObject>>>;
-pub type Font = GameFont;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {

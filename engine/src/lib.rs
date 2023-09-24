@@ -1,13 +1,12 @@
 pub mod error;
 mod game;
 pub mod prelude;
-pub mod texture;
 pub(crate) mod utils;
 
 pub use game::{
-    materials, physics, vert, tvert, Appearance, Camera, CameraScaling, CameraSettings, Data, Font,
-    Game, GameBuilder, GameObject, Label, LabelCreateInfo, Layer, NObject, Node, resources,
-    RigidBodyParent, Scene, Time, Transform, Vertex, WeakObject,
+    materials, objects, vert, tvert, camera,
+    Game, GameBuilder, NObject, resources,
+    Scene, Time, Transform, Vertex, WeakObject, Layer, physics
 };
 
 //RE EXPORTS

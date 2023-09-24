@@ -56,7 +56,7 @@ pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> 
                 fields.named.push(
                     syn::Field::parse_named
                         .parse2(quote! {
-                            pub appearance: let_engine::Appearance
+                            pub appearance: let_engine::objects::Appearance
                         })
                         .expect("appearance failed"),
                 );
@@ -105,14 +105,14 @@ pub fn camera(_args: TokenStream, input: TokenStream) -> TokenStream {
             fields.named.push(
                 syn::Field::parse_named
                     .parse2(quote! {
-                        pub camera: let_engine::CameraSettings
+                        pub camera: let_engine::camera::CameraSettings
                     })
                     .unwrap(),
             );
         }
         quote! {
-            impl let_engine::Camera for #name {
-                fn settings(&self) -> let_engine::CameraSettings {
+            impl let_engine::camera::Camera for #name {
+                fn settings(&self) -> let_engine::camera::CameraSettings {
                     self.camera
                 }
             }
@@ -142,7 +142,7 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
     quote! {
         #[let_engine::objectinit_without_implements]
         #ast
-        impl let_engine::GameObject for #name {
+        impl let_engine::objects::GameObject for #name {
             fn transform(&self) -> Transform {
                 self.transform
             }
@@ -156,17 +156,17 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn set_parent_transform(&mut self, transform: Transform) {
                 self.parent_transform = transform;
             }
-            fn appearance(&self) -> &Appearance {
+            fn appearance(&self) -> &let_engine::objects::Appearance {
                 &self.appearance
             }
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, parent: &let_engine::NObject, mut rigid_body_parent: let_engine::RigidBodyParent, layer: &let_engine::Layer) -> let_engine::NObject {
+            fn init_to_layer(&mut self, id: usize, parent: &let_engine::NObject, mut rigid_body_parent: let_engine::objects::RigidBodyParent, layer: &let_engine::Layer) -> let_engine::NObject {
                 self.id = id;
                 self.physics.physics = Some(layer.physics.clone());
                 self.parent_transform = self.physics.update(&self.transform, parent, &mut rigid_body_parent, id as u128);
-                let node: let_engine::NObject = std::sync::Arc::new(let_engine::Mutex::new(let_engine::Node{
+                let node: let_engine::NObject = std::sync::Arc::new(let_engine::Mutex::new(let_engine::objects::Node{
                     object: Box::new(self.clone()),
                     parent: Some(std::sync::Arc::downgrade(parent)),
                     rigid_body_parent: rigid_body_parent.clone(),

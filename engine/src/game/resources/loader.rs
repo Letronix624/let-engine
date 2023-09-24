@@ -20,7 +20,7 @@ use vulkano::{
     sampler::Sampler,
 };
 
-use crate::texture::{Format as tFormat, TextureSettings};
+use super::textures::{Format as tFormat, TextureSettings};
 
 pub(crate) struct Loader {
     pub memory_allocator: Arc<StandardMemoryAllocator>,

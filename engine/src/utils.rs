@@ -1,4 +1,4 @@
-use crate::CameraScaling;
+use crate::camera::CameraScaling;
 use glam::{Mat4, Vec2};
 
 pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: (f32, f32)) -> Mat4 {

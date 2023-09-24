@@ -1,5 +1,5 @@
 use super::{materials, Labelifier, Vulkan};
-use crate::{error::textures::*, texture::*, utils::u16tou8vec};
+use crate::{error::textures::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -10,6 +10,9 @@ use winit::window::Window;
 
 mod loader;
 pub(crate) use loader::Loader;
+
+pub mod textures;
+use textures::*;
 
 #[derive(Clone)]
 pub struct Resources {
@@ -40,7 +43,7 @@ impl Resources {
     }
 
     //loading
-    pub fn load_font(&self, font: &[u8]) -> Arc<GameFont> {
+    pub fn load_font(&self, font: &[u8]) -> Font {
         let mut labelifier = self.labelifier.lock();
         labelifier.load_font(font)
     }
@@ -245,8 +248,8 @@ pub struct Texture {
     pub set: Arc<PersistentDescriptorSet>,
 }
 
-pub struct GameFont {
-    pub font: rusttype::Font<'static>,
+pub struct Font {
+    pub font: Arc<rusttype::Font<'static>>,
     pub fontid: usize,
 }
 

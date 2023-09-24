@@ -1,8 +1,11 @@
 pub use crate::{
-    make_circle, materials, physics::*, vert, tvert, Appearance, CameraScaling, CameraSettings, Data,
-    Font, Game, GameBuilder, GameObject, Label, LabelCreateInfo, Layer, resources, Scene, Time,
-    Transform, Vertex, directions::*,
+    make_circle, materials::*, vert, tvert,
+    Game, GameBuilder, resources::*, Scene, Time,
+    Vertex, directions::*, objects::*
 };
+pub use physics::*;
+pub use joints::*;
+pub use textures::*;
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};

@@ -7,11 +7,11 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font as RFont, PositionedGlyph, Scale};
 
-use crate::{resources::textures::*, Data, RigidBodyParent, Vertex, WeakObject,
+use crate::{resources::textures::*, objects::Data, objects::RigidBodyParent, Vertex, WeakObject,
     materials::*,
-    GameObject,
+    objects::GameObject,
     resources::{Font, Resources, Texture},
-    Appearance, Transform,
+    objects::Appearance, Transform,
 };
 use super::super::{vulkan::shaders::*, Loader, Vulkan};
 use glam::f32::{vec2, Vec2};
@@ -110,7 +110,7 @@ impl GameObject for Label {
         self.id = id;
         let parent_object = &parent.lock().object;
         self.parent_transform = parent_object.public_transform();
-        let node: crate::NObject = Arc::new(Mutex::new(crate::Node {
+        let node: crate::NObject = Arc::new(Mutex::new(crate::objects::Node {
             object: Box::new(self.clone()),
             parent: Some(Arc::downgrade(parent)),
             rigid_body_parent,

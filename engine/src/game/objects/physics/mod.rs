@@ -148,7 +148,7 @@ impl ObjectPhysics {
         &mut self,
         transform: &Transform,
         parent: &super::NObject,
-        rigid_body_object: &mut crate::RigidBodyParent,
+        rigid_body_object: &mut crate::objects::RigidBodyParent,
         id: u128,
     ) -> Transform {
         let parent = parent.lock();
