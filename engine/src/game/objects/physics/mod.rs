@@ -122,6 +122,7 @@ impl Physics {
 pub(crate) struct ObjectPhysics {
     pub physics: Option<APhysics>,
     pub collider: Option<Collider>,
+    pub local_collider_position: Vec2,
     pub rigid_body: Option<RigidBody>,
     pub collider_handle: Option<ColliderHandle>,
     pub rigid_body_handle: Option<RigidBodyHandle>,
@@ -171,7 +172,7 @@ impl ObjectPhysics {
             (Some(collider), Some(rigid_body), None, None) => {
                 rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
-                collider.0.set_position(vec2(0.0, 0.0).into()); //please make this somehow editable by the user in the future at some point. Goal right now is to make it work.
+                collider.0.set_position(self.local_collider_position.into());
                 collider.0.user_data = id;
                 let rigid_body_handle = physics.rigid_body_set.insert(rigid_body.0.clone());
                 self.collider_handle =
@@ -227,7 +228,7 @@ impl ObjectPhysics {
                 rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
 
-                collider.0.set_position(vec2(0.0, 0.0).into()); //please make this somehow editable by the user in the future at some point. Goal right now is to make it work.
+                collider.0.set_position(self.local_collider_position.into());
                 collider.0.user_data = id;
                 self.collider_handle =
                     Some(physics.insert_with_parent(collider.0.clone(), *rigid_body_handle));

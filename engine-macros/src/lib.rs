@@ -238,6 +238,12 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             pub fn rigid_body_mut(&mut self) -> &mut Option<let_engine::physics::RigidBody> {
                 &mut self.physics.rigid_body
             }
+            pub fn local_collider_position(&self) -> let_engine::Vec2 {
+                self.physics.local_collider_position
+            }
+            pub fn set_local_collider_position(&mut self, pos: let_engine::Vec2) {
+                self.physics.local_collider_position = pos;
+            }
         }
     }
     .into()
