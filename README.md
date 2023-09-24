@@ -46,7 +46,7 @@ cargo add let_engine
 or for your ``Cargo.toml``:
 
 ```
-let_engine = "0.5.0"
+let_engine = "0.6.*"
 ```
 
 ### Debian based dependencies
