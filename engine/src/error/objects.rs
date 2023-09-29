@@ -1,3 +1,5 @@
+//! Object based errors.
+
 //use std::{error::Error, io::ErrorKind};
 use thiserror::Error;
 

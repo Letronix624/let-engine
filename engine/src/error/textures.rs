@@ -1,3 +1,5 @@
+//! Object based errors.
+
 use thiserror::Error;
 
 /// This error gets returned when you set the texture ID of an Appearance object higher than the

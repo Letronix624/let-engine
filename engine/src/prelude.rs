@@ -1,3 +1,9 @@
+//! # usage:
+//! ```rust
+//! use let_engine::prelude::*;
+//! ```
+//! - imports everything this engine has to offer.
+
 pub use crate::{
     data::*, directions::*, make_circle, materials::*, objects::*, resources::*, tvert, vert, Game,
     GameBuilder, Scene, Time, Vertex,

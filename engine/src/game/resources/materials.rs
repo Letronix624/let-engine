@@ -1,5 +1,6 @@
-use super::{objects::data::Vertex as GameVertex, Texture, Vulkan};
-use crate::error::textures::*;
+//! Material related settings that determine the way the scene gets rendered.
+
+use crate::{Vertex as GameVertex, resources::{Texture, Vulkan}, error::textures::*};
 use derive_builder::Builder;
 use std::sync::Arc;
 
@@ -19,21 +20,28 @@ use vulkano::pipeline::{
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 
+/// The way in which an object gets drawn using it's vertices and indices.
 #[derive(Clone, Copy)]
 pub enum Topology {
+    /// Creates triangles using every 3 vertices for one triangle.
     TriangleList,
+    /// Creates triangles using 3 vertices for the first triangle and every next triangle using the next vertex and the 2 vertices before that.
     TriangleStrip,
+    /// Creates a line using every 2 vertices.
     LineList,
+    /// Creates a line using the vertices as guiding points where to go next.
     LineStrip,
+    /// Creates a pixel for every vertex.
     PointList,
 }
 
+/// A material holding the way an object should be drawn.
 #[derive(Clone, PartialEq)]
 pub struct Material {
-    pub pipeline: Arc<GraphicsPipeline>,
-    pub descriptor: Option<Arc<PersistentDescriptorSet>>,
-    pub texture: Option<Texture>,
-    pub layer: u32,
+    pub(crate) pipeline: Arc<GraphicsPipeline>,
+    pub(crate) descriptor: Option<Arc<PersistentDescriptorSet>>,
+    pub(crate) texture: Option<Texture>,
+    pub(crate) layer: u32,
 }
 
 impl std::fmt::Debug for Material {
@@ -103,6 +111,8 @@ impl Material {
             texture: settings.texture,
         }
     }
+
+    /// Writes to the material changing the variables for the shaders.
     pub fn write(
         &mut self,
         descriptor: Vec<WriteDescriptorSet>,
@@ -117,7 +127,9 @@ impl Material {
             .unwrap(),
         );
     }
-    pub fn layer(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
+
+    /// Sets the layer of the texture in case it has a texture with layers.
+    pub fn set_layer(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
             if id > texture.layers - 1 {
                 return Err(Box::new(TextureIDError));
@@ -128,9 +140,14 @@ impl Material {
         self.layer = id;
         Ok(())
     }
+
     pub fn get_layer(&self) -> u32 {
         self.layer
     }
+
+    /// Goes to the next frame of the layer.
+    /// 
+    /// Returns an error if it reached the limit.
     pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
             if texture.layers <= self.layer + 1 {
@@ -142,6 +159,10 @@ impl Material {
         self.layer += 1;
         Ok(())
     }
+
+    /// Goes to the last frame of the layer.
+    /// 
+    /// Returns an error if the layer is 0.
     pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.texture.is_some() {
             if self.layer == 0 {
@@ -152,6 +173,16 @@ impl Material {
         }
         self.layer -= 1;
         Ok(())
+    }
+    
+    /// Returns the texture.
+    pub fn get_texture(&self) -> Option<Texture> {
+        self.texture.clone()
+    }
+
+    /// Sets the texture.
+    pub fn set_texture(&mut self, texture: Option<Texture>) {
+        self.texture = texture;
     }
 }
 
@@ -169,6 +200,7 @@ pub struct MaterialSettings {
     pub initial_layer: u32,
 }
 
+/// Holds compiled shaders in form of ShaderModules to use in a material.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shaders {
     pub(crate) vertex: Arc<ShaderModule>,
@@ -176,6 +208,8 @@ pub struct Shaders {
 }
 
 impl Shaders {
+    /// Creates a shader from SpirV bytes.
+    /// 
     /// # Safety
     ///
     /// When loading those shaders the engine doesn't know if they are right.

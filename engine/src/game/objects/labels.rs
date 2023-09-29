@@ -1,3 +1,5 @@
+//! Default labels given by the engine.
+
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -21,6 +23,7 @@ use crate::{
 use glam::f32::{vec2, Vec2};
 use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 
+/// Info to create default label objects with.
 #[derive(Clone)]
 pub struct LabelCreateInfo {
     pub transform: Transform,
@@ -30,14 +33,20 @@ pub struct LabelCreateInfo {
     pub align: [f32; 2],
 }
 impl LabelCreateInfo {
+    /// Sets the transform of the label and returns it back.
+    #[inline]
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
         self
     }
+    /// Sets the appearance of the label and returns it back.
+    #[inline]
     pub fn appearance(mut self, appearance: Appearance) -> Self {
         self.appearance = appearance;
         self
     }
+    /// Sets the text of the label and returns it back.
+    #[inline]
     pub fn text<T>(mut self, text: T) -> Self
     where
         T: Into<String>,

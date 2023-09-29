@@ -1,3 +1,5 @@
+//! The default input system by the engine.
+
 use crate::Layer;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -12,6 +14,10 @@ use glam::f32::{vec2, Vec2};
 use hashbrown::HashSet;
 use parking_lot::Mutex;
 
+
+/// Holds the input information to be used in game.
+/// 
+/// Updates each frame.
 #[derive(Clone)]
 pub struct Input {
     //pressed keyboard buttons
@@ -78,13 +84,13 @@ impl Input {
         vec2(cp[0], cp[1])
     }
     pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
-        let (width, height) = super::objects::scale(layer.camera_scaling(), self.dimensions.load());
+        let (width, height) = crate::utils::scale(layer.camera_scaling(), self.dimensions.load());
         let cp = self.cursor_position.load();
         vec2(cp[0] * width, cp[1] * height)
     }
     pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
         let dims = self.dimensions.load();
-        let (width, height) = super::objects::scale(layer.camera_scaling(), dims);
+        let (width, height) = crate::utils::scale(layer.camera_scaling(), dims);
         let cp = self.cursor_position.load();
         let cam = layer.camera_position();
         let zoom = 1.0 / layer.zoom();

@@ -8,17 +8,12 @@ use vulkano::instance::{Instance, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 
+/// Initializes a new Vulkan instance.
 pub fn create_instance() -> Arc<Instance> {
-    let library = match VulkanLibrary::new() {
-        Err(e) => {
-            println!(
-                "Your PC does not support the required Vulkan libraries to run this program.\n{e}"
-            );
-            std::process::exit(0);
-        }
-        Ok(a) => a,
-    };
+    let library = VulkanLibrary::new().expect("Your Devices hardware does not fulfill the minimum requirements to run this program.\n");
+
     let required_extensions = vulkano_win::required_extensions(&library);
+
     let extensions = InstanceExtensions {
         ext_debug_utils: true,
         ..required_extensions
@@ -29,7 +24,7 @@ pub fn create_instance() -> Arc<Instance> {
         //"VK_LAYER_VALVE_steam_overlay_64".to_owned(),
     ];
 
-    let gameinfo = InstanceCreateInfo {
+    let game_info = InstanceCreateInfo {
         enabled_layers: layers,
         enabled_extensions: extensions,
         engine_name: Some("Let Engine".into()),
@@ -40,7 +35,7 @@ pub fn create_instance() -> Arc<Instance> {
         },
         ..Default::default()
     };
-    Instance::new(library, gameinfo).expect("Couldn't start Vulkan.")
+    Instance::new(library, game_info).expect("Couldn't start Vulkan.")
 }
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
@@ -48,12 +43,15 @@ pub fn create_device_extensions() -> DeviceExtensions {
         ..DeviceExtensions::empty()
     }
 }
-pub fn create_physical_and_queue(
+
+/// Makes a physical device.
+pub fn create_physical_device(
     instance: &Arc<Instance>,
     device_extensions: DeviceExtensions,
     features: Features,
     surface: &Arc<Surface>,
 ) -> (Arc<PhysicalDevice>, u32) {
+    // selects the physical device to be used using this order of preferred devices.
     instance
         .enumerate_physical_devices()
         .unwrap()
@@ -80,6 +78,8 @@ pub fn create_physical_and_queue(
         })
         .expect("No suitable physical device found")
 }
+
+/// Makes the device and queues.
 pub fn create_device_and_queues(
     physical_device: &Arc<PhysicalDevice>,
     device_extensions: &DeviceExtensions,

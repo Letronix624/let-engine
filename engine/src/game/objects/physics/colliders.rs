@@ -1,3 +1,5 @@
+//! Wrapping of Rapiers colliders to be used with Let Engine and Glam.
+
 use super::VHACDParameters;
 use crate::{objects::Data, Transform};
 use glam::Vec2;

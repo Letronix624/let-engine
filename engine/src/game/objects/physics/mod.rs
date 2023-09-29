@@ -1,3 +1,5 @@
+//! Physics related structs.
+
 use crate::Transform;
 use glam::f32::{vec2, Vec2};
 use parking_lot::Mutex;
@@ -17,6 +19,7 @@ pub use rapier2d::dynamics::{
     ImpulseJointHandle, IntegrationParameters, LockedAxes, RigidBodyActivation, RigidBodyType,
 };
 
+/// Main Rapier data holding struct.
 pub(crate) struct Physics {
     pub rigid_body_set: RigidBodySet,
     pub collider_set: ColliderSet,
@@ -57,6 +60,7 @@ impl Physics {
             query_pipeline_out_of_date: false,
         }
     }
+    /// Physics iteration.
     pub fn step(&mut self, physics_pipeline: &mut PhysicsPipeline) {
         physics_pipeline.step(
             &self.gravity,
@@ -69,14 +73,16 @@ impl Physics {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            None,
+            None, // Doesn't update that well with the query pipeline in here.
             &(),
             &(),
         );
+        // So it updates here.
         self.query_pipeline
             .update(&self.rigid_body_set, &self.collider_set);
         self.query_pipeline_out_of_date = false;
     }
+    /// Updates the query pipeline if it requires one after someone manually moved a collider.
     pub fn update_query_pipeline(&mut self) {
         if self.query_pipeline_out_of_date {
             self.query_pipeline
@@ -84,12 +90,14 @@ impl Physics {
             self.query_pipeline_out_of_date = false;
         }
     }
+    /// Removes a collider.
     pub fn remove_collider(&mut self, handle: ColliderHandle) {
         let colliders = &mut self.collider_set;
         let island_manager = &mut self.island_manager;
         let rigid_body_set = &mut self.rigid_body_set;
         colliders.remove(handle, island_manager, rigid_body_set, true);
     }
+    /// Removes a rigid body.
     pub fn remove_rigid_body(&mut self, handle: RigidBodyHandle, remove_colliders: bool) {
         let rigid_bodies = &mut self.rigid_body_set;
         let island_manager = &mut self.island_manager;
@@ -105,6 +113,7 @@ impl Physics {
             remove_colliders,
         );
     }
+    /// Adds a rigidbody with given collider child.
     pub fn insert_with_parent(
         &mut self,
         collider: rapier2d::geometry::Collider,
@@ -113,6 +122,7 @@ impl Physics {
         self.collider_set
             .insert_with_parent(collider, rigid_body_handle, &mut self.rigid_body_set)
     }
+    /// Sets the parent of a specific collider to a new parent.
     pub fn set_parent(
         &mut self,
         handle: ColliderHandle,
@@ -123,6 +133,11 @@ impl Physics {
     }
 }
 
+/// The physics part that every object holds.
+/// 
+/// It holds a Arc to the physics part so it can update it with Sync.
+/// 
+/// It also holds the collider, it's position, rigid body and all it's handles.
 #[derive(Clone, Default)]
 pub(crate) struct ObjectPhysics {
     pub physics: Option<APhysics>,
@@ -144,7 +159,8 @@ impl std::fmt::Debug for ObjectPhysics {
     }
 }
 impl ObjectPhysics {
-    pub fn update(
+    /// Updates the physics part of the objects on Sync.
+    pub fn update( // Needs a trim
         &mut self,
         transform: &Transform,
         parent: &super::NObject,
@@ -157,6 +173,7 @@ impl ObjectPhysics {
 
         let mut physics = self.physics.as_ref().unwrap().lock();
         physics.query_pipeline_out_of_date = true;
+        // What happens in every combination.
         match (
             self.collider.as_mut(),
             self.rigid_body.as_mut(),
@@ -281,6 +298,7 @@ impl ObjectPhysics {
         }
         parent_transform
     }
+    /// In case the object gets removed from the layer.
     pub fn remove(&mut self) {
         let mut physics = self.physics.as_ref().unwrap().lock();
         physics.query_pipeline_out_of_date = true;

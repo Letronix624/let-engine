@@ -1,3 +1,5 @@
+//! Objects to be drawn to the screen.
+
 pub mod data;
 pub mod labels;
 pub mod physics;
@@ -7,6 +9,7 @@ use super::camera::{Camera, CameraScaling};
 use super::{materials, AObject, NObject};
 use crate::error::objects::*;
 use crate::error::textures::*;
+use crate::utils::scale;
 use physics::Physics;
 
 use anyhow::Result;
@@ -27,6 +30,7 @@ use std::{
 pub type RigidBodyParent = Option<Option<Weak<Mutex<Node<AObject>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 
+/// Holds position size and rotation of an object.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Transform {
     pub position: Vec2,
@@ -65,6 +69,7 @@ impl Default for Transform {
     }
 }
 
+/// The trait that automatically gets implemented to each object you give the object attribute.
 pub trait GameObject: Send + Any {
     fn transform(&self) -> Transform;
     fn set_isometry(&mut self, position: Vec2, rotation: f32);
@@ -86,11 +91,12 @@ pub trait GameObject: Send + Any {
 }
 
 #[derive(Clone)]
-pub struct Object {
+pub(crate) struct Object {
     pub transform: Transform,
     pub appearance: Appearance,
 }
 impl Object {
+    /// Combines the object position data.
     pub fn combined(object: &AObject, other: &AObject) -> Self {
         let transform = object.transform().combine(other.transform());
         let appearance = other.appearance().clone();
@@ -101,6 +107,7 @@ impl Object {
     }
 }
 
+/// Node structure for the layer.
 pub struct Node<T> {
     pub object: T,
     pub parent: Option<Weak<Mutex<Node<AObject>>>>,
@@ -109,7 +116,8 @@ pub struct Node<T> {
 }
 
 impl Node<AObject> {
-    pub fn order_position(order: &mut Vec<Object>, objects: &Self) {
+    /// Takes a vector of every object transform and appearance and fills it with the right drawing order based on the root node inserted.
+    pub(crate) fn order_position(order: &mut Vec<Object>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
             let object = Object::combined(&objects.object, &child.object);
@@ -124,6 +132,7 @@ impl Node<AObject> {
             }
         }
     }
+    /// Iterates to the last child to update all public position held by the Node.
     pub fn update_children_position(&mut self, parent_pos: Transform) {
         self.object.set_parent_transform(parent_pos);
         for child in self.children.iter() {
@@ -132,6 +141,7 @@ impl Node<AObject> {
                 .update_children_position(self.object.public_transform());
         }
     }
+    /// Searches for the given object to be removed from the list of children.
     pub fn remove_child(&mut self, object: &NObject) {
         let index = self
             .children
@@ -141,6 +151,7 @@ impl Node<AObject> {
             .unwrap();
         self.children.remove(index);
     }
+    /// Removes all children and their children from the layer.
     pub fn remove_children(&mut self, objects: &mut ObjectsMap, rigid_bodies: &mut ObjectsMap) {
         self.object.remove_event();
         for child in self.children.iter() {
@@ -150,6 +161,7 @@ impl Node<AObject> {
         rigid_bodies.remove(&self.object.id());
         self.children = vec![];
     }
+    /// Returns the public transform of this objects.
     pub fn end_transform(&self) -> Transform {
         if let Some(parent) = &self.parent {
             let parent = parent.upgrade().unwrap();
@@ -172,23 +184,27 @@ pub struct Appearance {
     pub color: [f32; 4],
 }
 impl Appearance {
+    /// Makes a default appearance.
     pub fn new() -> Self {
         Self {
             ..Default::default()
         }
     }
+    /// Makes a while 1x1 square.
     pub fn new_square() -> Self {
         Self {
             data: Data::square(),
             ..Default::default()
         }
     }
+    /// Makes a new appearance with given color.
     pub fn new_color(color: [f32; 4]) -> Self {
         Self {
             color,
             ..Default::default()
         }
     }
+    /// Scales the object appearance according to the texture applied. Works best in Expand camera mode for best quality.
     pub fn auto_scale(&mut self) -> Result<(), NoTextureError> {
         let dimensions;
         if let Some(material) = &self.material {
@@ -205,22 +221,30 @@ impl Appearance {
 
         Ok(())
     }
+    /// Sets visibility of this appearance.
+    #[inline]
     pub fn visible(mut self, visible: bool) -> Self {
         self.visible = visible;
         self
     }
+    /// Sets the model data of this appearance.
+    #[inline]
     pub fn data(mut self, data: Data) -> Self {
         self.data = data;
         self
     }
+    /// Sets the transform of this appearance.
+    #[inline]
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
         self
     }
+    /// Sets the color of this appearance.
     pub fn color(mut self, color: [f32; 4]) -> Self {
         self.color = color;
         self
     }
+    /// Sets the material of this appearance.
     pub fn material(mut self, material: materials::Material) -> Self {
         self.material = Some(material);
         self
@@ -238,6 +262,7 @@ impl default::Default for Appearance {
         }
     }
 }
+/// A layer struct holding it's own object hierarchy, camera and physics iteration.
 #[derive(Clone)]
 pub struct Layer {
     pub root: NObject,
@@ -250,6 +275,7 @@ pub struct Layer {
 }
 
 impl Layer {
+    /// Creates a new layer with the given root.
     pub fn new(root: NObject) -> Self {
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
@@ -263,6 +289,7 @@ impl Layer {
             physics_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
+    /// Sets the camera of this layer.
     pub fn set_camera<T: Camera + 'static>(&self, camera: T) {
         *self.camera.lock() = Some(Box::new(camera));
     }
@@ -288,6 +315,8 @@ impl Layer {
         }
     }
 
+    /// Returns the position of a given side with given window dimensions to world space.
+    ///
     /// Be careful! Don't use this when the camera is locked.
     pub fn side_to_world(&self, direction: [f32; 2], dimensions: (f32, f32)) -> Vec2 {
         let camera = Self::camera_position(self);
@@ -300,6 +329,7 @@ impl Layer {
         )
     }
 
+    /// Checks if the layer contains this object.
     pub fn contains_object(&self, object_id: &usize) -> bool {
         self.objects_map.lock().contains_key(object_id)
     }
@@ -324,24 +354,31 @@ impl Layer {
         }
     }
 
+    /// Gets the gravity parameter.
     pub fn gravity(&self) -> Vec2 {
         self.physics.lock().gravity.into()
     }
+    /// Sets the gravity parameter.
     pub fn set_gravity(&self, gravity: Vec2) {
         self.physics.lock().gravity = gravity.into();
     }
+    /// Returns if physics is enabled.
     pub fn physics_enabled(&self) -> bool {
         self.physics_enabled.load(Ordering::Acquire)
     }
+    /// Set physics to be enabled or disabled.
     pub fn set_physics_enabled(&self, enabled: bool) {
         self.physics_enabled.store(enabled, Ordering::Release)
     }
+    /// Takes the physics simulation parameters.
     pub fn physics_parameters(&self) -> IntegrationParameters {
         self.physics.lock().integration_parameters
     }
+    /// Sets the physics simulation parameters.
     pub fn set_physics_parameters(&self, parameters: IntegrationParameters) {
         self.physics.lock().integration_parameters = parameters;
     }
+    /// Adds a joint between object 1 and 2.
     pub fn add_joint(
         &self,
         object1: &impl GameObject,
@@ -362,6 +399,7 @@ impl Layer {
             Err(NoRigidBodyError)
         }
     }
+    /// Returns if the joint exists.
     pub fn get_joint(&self, handle: ImpulseJointHandle) -> Option<physics::joints::GenericJoint> {
         self.physics
             .lock()
@@ -369,6 +407,7 @@ impl Layer {
             .get(handle)
             .map(|joint| physics::joints::GenericJoint { data: joint.data })
     }
+    /// Updates a joint.
     pub fn set_joint(
         &self,
         data: impl Into<physics::joints::GenericJoint>,
@@ -381,6 +420,7 @@ impl Layer {
             Err(NoJointError)
         }
     }
+    /// Removes a joint.
     pub fn remove_joint(&self, handle: ImpulseJointHandle, wake_up: bool) {
         self.physics
             .lock()
@@ -388,6 +428,7 @@ impl Layer {
             .remove(handle, wake_up);
     }
 
+    /// Adds object with an optional parent.
     pub fn add_object_with_optional_parent<T: GameObject + Clone + 'static>(
         &self,
         parent: Option<&T>,
@@ -422,9 +463,11 @@ impl Layer {
         Ok(())
     }
 
+    /// Just adds an object without parent.
     pub fn add_object<T: GameObject + Clone + 'static>(&self, object: &mut T) {
         Self::add_object_with_optional_parent(self, None, object).unwrap();
     }
+    /// Adds an object with given parent.
     pub fn add_object_with_parent<T: GameObject + Clone + 'static>(
         &self,
         parent: &T,
@@ -521,6 +564,7 @@ impl Layer {
         result.map(|handle| physics.collider_set.get(handle).unwrap().user_data as usize)
     }
 
+    /// Moves an object on the given index in it's parents children order.
     pub fn move_to(
         &self,
         object: &impl GameObject,
@@ -537,6 +581,7 @@ impl Layer {
         Ok(())
     }
 
+    /// Moves an object one down in it's parents children order.
     pub fn move_down(&self, object: &impl GameObject) -> Result<(), Box<dyn std::error::Error>> {
         let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
@@ -549,6 +594,7 @@ impl Layer {
         Ok(())
     }
 
+    /// Moves an object one up in it's parents children order.
     pub fn move_up(&self, object: &impl GameObject) -> Result<(), Box<dyn std::error::Error>> {
         let node = Self::to_node(self, object)?;
         let parent = Self::get_parent(&node);
@@ -562,13 +608,15 @@ impl Layer {
         Ok(())
     }
 
-    pub fn move_to_bottom(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
+    /// Moves an object all the way to the top of it's parents children list.
+    pub fn move_to_top(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
         let node = Self::to_node(self, object)?;
         Self::move_object_to(node, 0);
         Ok(())
     }
 
-    pub fn move_to_top(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
+    /// Moves an object all the way to the bottom of it's parents children list.
+    pub fn move_to_bottom(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
         let node = Self::to_node(self, object)?;
         let count = Self::count_children(&node) - 1;
         Self::move_object_to(node, count);
@@ -604,6 +652,7 @@ impl Layer {
         }
     }
 
+    /// Moves an object on the given index in it's parents children order.
     fn move_object_to(src: NObject, dst: usize) {
         let parent = src.lock().parent.clone().unwrap().upgrade().unwrap();
         let mut parent = parent.lock();
@@ -640,12 +689,14 @@ impl std::hash::Hash for Layer {
     }
 }
 
+/// The whole scene seen with all it's layers.
 #[derive(Clone)]
 pub struct Scene {
     layers: Arc<Mutex<IndexSet<Layer>>>,
     physics_pipeline: Arc<Mutex<PhysicsPipeline>>,
 }
 
+/// Default layer root object.
 struct Root {
     pub transform: Transform,
     pub appearance: Appearance,
@@ -697,6 +748,17 @@ impl Default for Root {
 }
 
 impl Scene {
+    /// Iterates through all physics.
+    pub fn iterate_all_physics(&self) {
+        let mut pipeline = self.physics_pipeline.lock();
+        let layers = self.layers.lock();
+
+        for layer in layers.iter() {
+            layer.step_physics(&mut pipeline);
+        }
+    }
+
+    /// Initializes a new layer into the scene.
     pub fn new_layer(&self) -> Layer {
         let object = Box::<Root>::default();
 
@@ -711,15 +773,7 @@ impl Scene {
         node
     }
 
-    pub fn iterate_all_physics(&self) {
-        let mut pipeline = self.physics_pipeline.lock();
-        let layers = self.layers.lock();
-
-        for layer in layers.iter() {
-            layer.step_physics(&mut pipeline);
-        }
-    }
-
+    /// Removes a layer from the scene.
     pub fn remove_layer(&self, layer: &mut Layer) -> Result<(), NoObjectError> {
         let node: NObject;
         let mut layers = self.layers.lock();
@@ -741,6 +795,7 @@ impl Scene {
         Ok(())
     }
 
+    /// Returns an IndexSet of all layers.
     pub fn get_layers(&self) -> IndexSet<Layer> {
         self.layers.lock().clone()
     }
@@ -754,25 +809,5 @@ impl Default for Scene {
             layers: Arc::new(Mutex::new(indexset![])),
             physics_pipeline: Arc::new(Mutex::new(PhysicsPipeline::new())),
         }
-    }
-}
-
-use core::f32::consts::FRAC_1_SQRT_2; // Update. move to crate/utils.rs
-pub fn scale(mode: CameraScaling, dimensions: (f32, f32)) -> (f32, f32) {
-    match mode {
-        CameraScaling::Stretch => (1.0, 1.0),
-        CameraScaling::Linear => (
-            0.5 / (dimensions.1 / (dimensions.0 + dimensions.1)),
-            0.5 / (dimensions.0 / (dimensions.0 + dimensions.1)),
-        ),
-        CameraScaling::Circle => (
-            1.0 / (dimensions.1.atan2(dimensions.0).sin() / FRAC_1_SQRT_2),
-            1.0 / (dimensions.1.atan2(dimensions.0).cos() / FRAC_1_SQRT_2),
-        ),
-        CameraScaling::Limited => (
-            1.0 / (dimensions.1 / dimensions.0.clamp(0.0, dimensions.1)),
-            1.0 / (dimensions.0 / dimensions.1.clamp(0.0, dimensions.0)),
-        ),
-        CameraScaling::Expand => (dimensions.0 * 0.001, dimensions.1 * 0.001),
     }
 }

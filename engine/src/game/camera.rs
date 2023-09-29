@@ -1,3 +1,5 @@
+//! Camera and vision related settings.
+
 use crate::objects::GameObject;
 
 /// The 4 Camera scaling modes determine how far you can see when the window changes scale.
@@ -28,6 +30,7 @@ pub trait Camera: GameObject {
     fn settings(&self) -> CameraSettings;
 }
 
+/// Settings that determine your camera vision.
 #[derive(Clone, Copy)]
 pub struct CameraSettings {
     pub zoom: f32,

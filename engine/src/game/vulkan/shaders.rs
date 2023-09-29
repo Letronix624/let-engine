@@ -1,3 +1,5 @@
+// Default shaders.
+
 pub mod vertexshader {
     vulkano_shaders::shader! {
         ty: "vertex",
@@ -32,9 +34,3 @@ pub mod text_fragmentshader {
         path: "src/shaders/text.frag"
     }
 }
-
-//vert:
-//  set 0 binding 0 = mvp matrix,
-//frag:
-//  set 0 binding 1 = color, layer.
-//  set 1 binding 0 = texture.

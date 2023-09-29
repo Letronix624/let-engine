@@ -1,3 +1,5 @@
+//! Holds model related data structures like Vertices and premade models as well as a circle maker macro.
+
 use glam::f32::{vec2, Mat4, Vec2};
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
@@ -12,6 +14,7 @@ pub struct Vertex {
 
 // vert2d in the future
 /// Creates a vertex with given x and y coordinates for both position and texture position.
+#[inline]
 pub const fn vert(x: f32, y: f32) -> Vertex {
     Vertex {
         position: vec2(x, y),
@@ -20,6 +23,7 @@ pub const fn vert(x: f32, y: f32) -> Vertex {
 }
 // tvert2d
 /// Creates a vertex with given x and y coordinates for position and given tx and ty coordinates for the UV texture mapping for those points.
+#[inline]
 pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> Vertex {
     Vertex {
         position: vec2(x, y),
@@ -27,6 +31,7 @@ pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> Vertex {
     }
 }
 
+/// MVP matrix.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
 pub(crate) struct ModelViewProj {

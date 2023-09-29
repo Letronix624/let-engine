@@ -1,3 +1,5 @@
+//! Wrapping of Rapiers rigid bodies to be used with Let Engine and Glam.
+
 use glam::Vec2;
 use rapier2d::prelude::*;
 

@@ -5,6 +5,8 @@
 
 ## Facts and features
 
+- Better than Unity
+
 - Derive object and camera
 
 - Layer based object system
