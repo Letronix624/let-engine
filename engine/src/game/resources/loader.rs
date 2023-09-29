@@ -20,8 +20,9 @@ use vulkano::{
     sampler::Sampler,
 };
 
-use crate::texture::{Format as tFormat, TextureSettings};
+use super::textures::{Format as tFormat, TextureSettings};
 
+/// Loads thing to the gpu.
 pub(crate) struct Loader {
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub vertex_buffer_allocator: SubbufferAllocator,
@@ -32,6 +33,7 @@ pub(crate) struct Loader {
 }
 
 impl Loader {
+    /// Initializes the loader
     pub fn init(vulkan: &Vulkan) -> Self {
         let memory_allocator =
             Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
@@ -75,6 +77,7 @@ impl Loader {
         }
     }
 
+    /// Loads a material to the gpu.
     pub fn load_material(
         &mut self,
         vulkan: &Vulkan,
@@ -93,6 +96,7 @@ impl Loader {
         )
     }
 
+    /// Loads a texture to the GPU.
     pub fn load_texture(
         &mut self,
         vulkan: &Vulkan,
@@ -190,6 +194,7 @@ impl Loader {
             .unwrap();
         set
     }
+    /// Makes a descriptor write.
     pub fn write_descriptor<T: BufferContents>(
         &self,
         descriptor: T,

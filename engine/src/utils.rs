@@ -1,8 +1,11 @@
-use crate::CameraScaling;
+//! General utitities used throughout the engine.
+
+use crate::camera::CameraScaling;
 use glam::{Mat4, Vec2};
+use core::f32::consts::FRAC_1_SQRT_2; // Update. move to crate/utils.rs
 
 pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: (f32, f32)) -> Mat4 {
-    let (width, height) = crate::game::objects::scale(mode, dimensions);
+    let (width, height) = scale(mode, dimensions);
     Mat4::orthographic_rh(
         position.x - zoom * width,
         position.x + zoom * width,
@@ -22,4 +25,23 @@ pub fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
             vec![high_byte, low_byte]
         })
         .collect()
+}
+
+pub fn scale(mode: CameraScaling, dimensions: (f32, f32)) -> (f32, f32) {
+    match mode {
+        CameraScaling::Stretch => (1.0, 1.0),
+        CameraScaling::Linear => (
+            0.5 / (dimensions.1 / (dimensions.0 + dimensions.1)),
+            0.5 / (dimensions.0 / (dimensions.0 + dimensions.1)),
+        ),
+        CameraScaling::Circle => (
+            1.0 / (dimensions.1.atan2(dimensions.0).sin() / FRAC_1_SQRT_2),
+            1.0 / (dimensions.1.atan2(dimensions.0).cos() / FRAC_1_SQRT_2),
+        ),
+        CameraScaling::Limited => (
+            1.0 / (dimensions.1 / dimensions.0.clamp(0.0, dimensions.1)),
+            1.0 / (dimensions.0 / dimensions.1.clamp(0.0, dimensions.0)),
+        ),
+        CameraScaling::Expand => (dimensions.0 * 0.001, dimensions.1 * 0.001),
+    }
 }

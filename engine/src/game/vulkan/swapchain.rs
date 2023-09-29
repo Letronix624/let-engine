@@ -8,6 +8,7 @@ use vulkano::swapchain::{
 };
 use winit::window::Window;
 
+// Creates the swapchain.
 pub fn create_swapchain_and_images(
     device: &Arc<Device>,
     surface: &Arc<Surface>,

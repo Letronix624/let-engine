@@ -1,12 +1,20 @@
+//! # usage:
+//! ```rust
+//! use let_engine::prelude::*;
+//! ```
+//! - imports everything this engine has to offer.
+
 pub use crate::{
-    make_circle, materials, vertex, Appearance, CameraScaling, CameraSettings, Data, Font, Game,
-    GameBuilder, GameObject, Label, LabelCreateInfo, Layer, Resources, Scene, Time, Transform,
-    Vertex, CENTER, N, NO, NW, O, S, SO, SW, W,
+    data::*, directions::*, make_circle, materials::*, objects::*, resources::*, tvert, vert, Game,
+    GameBuilder, Scene, Time, Vertex,
 };
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
+pub use joints::*;
+pub use physics::*;
 pub use rapier2d::prelude::CoefficientCombineRule;
+pub use textures::*;
 
 use crate as let_engine;
 //use crate::game::objects::GameObject;

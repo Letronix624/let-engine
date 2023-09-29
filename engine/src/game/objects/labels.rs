@@ -1,3 +1,5 @@
+//! Default labels given by the engine.
+
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -5,20 +7,23 @@ use parking_lot::Mutex;
 use anyhow::Result;
 
 use rusttype::gpu_cache::Cache;
-use rusttype::{point, Font, PositionedGlyph, Scale};
+use rusttype::{point, Font as RFont, PositionedGlyph, Scale};
 
-use crate::{texture::*, Data, RigidBodyParent, Vertex, WeakObject};
-
-use super::{
+use super::super::{vulkan::shaders::*, Loader, Vulkan};
+use crate::{
     materials::*,
+    objects::Appearance,
+    objects::Data,
     objects::GameObject,
-    resources::{GameFont, Resources, Texture},
-    vulkan::shaders::*,
-    Appearance, Loader, Transform, Vulkan,
+    objects::RigidBodyParent,
+    resources::textures::*,
+    resources::{Font, Resources, Texture},
+    Transform, Vertex, WeakObject,
 };
 use glam::f32::{vec2, Vec2};
 use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 
+/// Info to create default label objects with.
 #[derive(Clone)]
 pub struct LabelCreateInfo {
     pub transform: Transform,
@@ -28,14 +33,20 @@ pub struct LabelCreateInfo {
     pub align: [f32; 2],
 }
 impl LabelCreateInfo {
+    /// Sets the transform of the label and returns it back.
+    #[inline]
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
         self
     }
+    /// Sets the appearance of the label and returns it back.
+    #[inline]
     pub fn appearance(mut self, appearance: Appearance) -> Self {
         self.appearance = appearance;
         self
     }
+    /// Sets the text of the label and returns it back.
+    #[inline]
     pub fn text<T>(mut self, text: T) -> Self
     where
         T: Into<String>,
@@ -76,7 +87,7 @@ pub struct Label {
     pub appearance: Appearance,
     id: usize,
     reference: Option<WeakObject>,
-    pub font: Arc<GameFont>,
+    pub font: Arc<Font>,
     pub text: String,
     pub scale: Vec2,
     pub align: [f32; 2],
@@ -107,12 +118,12 @@ impl GameObject for Label {
         id: usize,
         parent: &crate::NObject,
         rigid_body_parent: RigidBodyParent,
-        _layer: &super::Layer,
+        _layer: &crate::Layer,
     ) -> crate::NObject {
         self.id = id;
         let parent_object = &parent.lock().object;
         self.parent_transform = parent_object.public_transform();
-        let node: crate::NObject = Arc::new(Mutex::new(crate::Node {
+        let node: crate::NObject = Arc::new(Mutex::new(crate::objects::Node {
             object: Box::new(self.clone()),
             parent: Some(Arc::downgrade(parent)),
             rigid_body_parent,
@@ -134,7 +145,7 @@ impl GameObject for Label {
     }
 }
 impl Label {
-    pub fn new(resources: &Resources, font: &Arc<GameFont>, create_info: LabelCreateInfo) -> Self {
+    pub fn new(resources: &Resources, font: &Arc<Font>, create_info: LabelCreateInfo) -> Self {
         let labelifier = resources.labelifier.clone();
         Self {
             transform: create_info.transform,
@@ -357,11 +368,11 @@ impl Labelifier {
         self.queued.push(DrawTask { label, glyphs });
     }
     /// Loads a font ready to get layed out and rendered.
-    pub fn load_font(&mut self, font: &[u8]) -> Arc<GameFont> {
-        let font = Arc::new(GameFont {
-            font: Font::try_from_vec(font.to_vec()).unwrap(),
+    pub fn load_font(&mut self, font: &[u8]) -> Font {
+        let font = Font {
+            font: Arc::new(RFont::try_from_vec(font.to_vec()).unwrap()),
             fontid: self.font_id,
-        });
+        };
         self.font_id += 1;
         font
     }

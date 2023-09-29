@@ -597,7 +597,7 @@ checksum = "b8ecd80612937e0267909d5351770fe150004e24dab93954f69ca62eecd3f77e"
 
 [[package]]
 name = "engine-macros"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "quote",
  "syn 2.0.37",
@@ -943,7 +943,7 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 
 [[package]]
 name = "let-engine"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "atomic_float",

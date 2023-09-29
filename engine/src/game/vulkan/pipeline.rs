@@ -10,6 +10,7 @@ use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 
+/// Creates the graphics pipeline.
 pub fn create_pipeline(
     device: &Arc<Device>,
     vs: &Arc<ShaderModule>,
@@ -19,6 +20,7 @@ pub fn create_pipeline(
     GraphicsPipeline::start()
         .vertex_input_state(GameVertex::per_vertex())
         .input_assembly_state(InputAssemblyState::new())
+        // Assumes the shader entry points to always be called "main"
         .vertex_shader(vs.entry_point("main").unwrap(), ())
         .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
         .fragment_shader(fs.entry_point("main").unwrap(), ())

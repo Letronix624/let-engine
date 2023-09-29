@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use super::materials;
 
+/// Just a holder of general immutable information about Vulkan.
 #[derive(Clone)]
 pub(crate) struct Vulkan {
     pub surface: Arc<Surface>,
@@ -43,7 +44,7 @@ impl Vulkan {
             ..Features::empty()
         };
         let (physical_device, queue_family_index) =
-            instance::create_physical_and_queue(&instance, device_extensions, features, &surface);
+            instance::create_physical_device(&instance, device_extensions, features, &surface);
         let (device, queue) = instance::create_device_and_queues(
             &physical_device,
             &device_extensions,
@@ -124,6 +125,8 @@ impl Vulkan {
     }
 }
 
+/// Sets the dynamic viewport up to work with the newly set resolution of the window.
+//  For games make the viewport less dynamic.
 pub fn window_size_dependent_setup(
     images: &[Arc<SwapchainImage>],
     render_pass: Arc<RenderPass>,

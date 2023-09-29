@@ -1,5 +1,7 @@
-use super::{materials, Labelifier, Vulkan};
-use crate::{error::textures::*, texture::*, utils::u16tou8vec};
+//! Resources to be handled by the engine like textures, sounds and fonts.
+
+use super::{Labelifier, Vulkan};
+use crate::{error::textures::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -11,6 +13,12 @@ use winit::window::Window;
 mod loader;
 pub(crate) use loader::Loader;
 
+pub mod textures;
+use textures::*;
+
+pub mod materials;
+
+/// The resource holder part of the game struct.
 #[derive(Clone)]
 pub struct Resources {
     pub(crate) vulkan: Vulkan,
@@ -39,12 +47,13 @@ impl Resources {
         labelifier.update(&self.vulkan, &mut loader);
     }
 
-    //loading
-    pub fn load_font(&self, font: &[u8]) -> Arc<GameFont> {
+    /// Loads a font into the game resources.
+    pub fn load_font(&self, font: &[u8]) -> Font {
         let mut labelifier = self.labelifier.lock();
         labelifier.load_font(font)
     }
 
+    /// Loads a texture to the GPU using a raw image.
     pub fn load_texture_from_raw(
         &self,
         texture: &[u8],
@@ -62,6 +71,7 @@ impl Resources {
         }
     }
 
+    /// Loads a texture to the GPU using the given image format.
     pub fn load_texture(
         &self,
         texture: &[u8],
@@ -85,7 +95,6 @@ impl Resources {
         let mut dimensions: (u32, u32);
 
         let mut format = Format::RGBA8;
-
         let image: Vec<u8> = match image {
             DynamicImage::ImageLuma8(image) => {
                 format = Format::R8;
@@ -155,6 +164,8 @@ impl Resources {
         ))
     }
     //shaders
+    /// Loads a shader from glsl bytes.
+    /// 
     /// # Safety
     ///
     /// Any wrong shaders bytes can mess up the program in a way I didn't text before.
@@ -166,11 +177,16 @@ impl Resources {
     ) -> materials::Shaders {
         unsafe { materials::Shaders::from_bytes(vertex_bytes, fragment_bytes, &self.vulkan) }
     }
+
     // fn new_shader ..requires the vulkano_shaders library function load() device
+
+    /// Loads a new write operation for a shader.
     pub fn new_descriptor_write<T: BufferContents>(&self, buf: T, set: u32) -> WriteDescriptorSet {
         let loader = self.loader.lock();
         loader.write_descriptor(buf, set)
     }
+
+    /// Creates a new material using the given shaders, settings and write operations.
     pub fn new_material_with_shaders(
         &self,
         shaders: &materials::Shaders,
@@ -185,6 +201,7 @@ impl Resources {
         let shaders = self.vulkan.default_shaders.clone();
         loader.load_material(&self.vulkan, &shaders, settings, vec![])
     }
+
     /// Simplification of making a texture and putting it into a material.
     pub fn new_material_from_texture(
         &self,
@@ -197,7 +214,7 @@ impl Resources {
 
         Ok(Self::default_textured_material(self, &texture))
     }
-    /// Simplification of making a texture and putting it into a material.
+    /// Simplification of making a texture from raw and putting it into a material.
     pub fn new_material_from_raw_texture(
         &self,
         texture: &[u8],
@@ -210,6 +227,8 @@ impl Resources {
             Self::load_texture_from_raw(self, texture, format, dimensions, layers, settings);
         Self::default_textured_material(self, &texture)
     }
+
+    /// Creates a simple material made just for showing a texture.
     pub fn default_textured_material(&self, texture: &Texture) -> materials::Material {
         let default = if texture.layers == 1 {
             self.vulkan.textured_material.clone()
@@ -222,6 +241,7 @@ impl Resources {
         }
     }
 
+    /// Returns the window instance from resources.
     pub fn get_window(&self) -> &Window {
         self.vulkan
             .surface
@@ -231,12 +251,14 @@ impl Resources {
             .unwrap()
     }
 
+    /// Returns the dimensions of the window.
     pub fn window_dimensions(&self) -> (u32, u32) {
         let dim = Self::get_window(self).inner_size();
         (dim.width, dim.height)
     }
 }
 
+/// A texture to be used with materials.
 #[derive(Clone)]
 pub struct Texture {
     pub data: Arc<[u8]>,
@@ -245,13 +267,22 @@ pub struct Texture {
     pub set: Arc<PersistentDescriptorSet>,
 }
 
-pub struct GameFont {
-    pub font: rusttype::Font<'static>,
+/// A font to be used with the default label system.
+pub struct Font {
+    pub font: Arc<rusttype::Font<'static>>,
     pub fontid: usize,
 }
 
 pub struct Sound {
     pub data: Arc<[u8]>,
+}
+
+/// Not done.
+#[allow(dead_code)]
+pub fn load_sound(sound: &[u8]) -> Sound {
+    Sound {
+        data: Arc::from(sound.to_vec().into_boxed_slice()),
+    }
 }
 
 impl PartialEq for Texture {
@@ -269,13 +300,5 @@ impl std::fmt::Debug for Texture {
             .field("dimensions", &self.dimensions)
             .field("frames", &self.layers)
             .finish()
-    }
-}
-
-/// Not done.
-#[allow(dead_code)]
-pub fn load_sound(sound: &[u8]) -> Sound {
-    Sound {
-        data: Arc::from(sound.to_vec().into_boxed_slice()),
     }
 }

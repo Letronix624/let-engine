@@ -27,6 +27,7 @@ use crate::utils;
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
 use glam::f32::{Mat4, Quat, Vec3};
 
+/// Responsible for drawing on the surface.
 pub(crate) struct Draw {
     pub recreate_swapchain: bool,
     pub swapchain: Arc<Swapchain>,
@@ -75,6 +76,7 @@ impl Draw {
         }
     }
 
+    /// Redraws the scene.
     pub fn redrawevent(
         &mut self,
         vulkan: &Vulkan,
@@ -98,6 +100,7 @@ impl Draw {
             return;
         }
 
+        // Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
         if self.recreate_swapchain {
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: dimensions.into(),
@@ -140,6 +143,7 @@ impl Draw {
         )
         .unwrap();
 
+        // Makes a commandbuffer that takes multiple secondary buffers.
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
@@ -164,6 +168,7 @@ impl Draw {
         .unwrap();
         secondary_builder.set_viewport(0, [self.viewport.clone()]);
 
+        // Draws the Game Scene for the first command buffer.
         for layer in scene.get_layers().iter() {
             let mut order: Vec<Object> = vec![];
 
@@ -293,12 +298,14 @@ impl Draw {
 
         #[cfg(feature = "egui")]
         {
+            // Creates and draws the second command buffer in case of egui.
             let cb = gui.draw_on_subpass_image(dimensions);
             builder.execute_commands(cb).unwrap();
         }
         builder.end_render_pass().unwrap();
         let command_buffer = builder.build().unwrap();
 
+        // Creates a future in which the command buffer gets executed.
         let future = self
             .previous_frame_end
             .take()

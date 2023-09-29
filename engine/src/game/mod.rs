@@ -1,11 +1,10 @@
 pub mod resources;
-pub use resources::Resources;
-use resources::{GameFont, Loader, Texture};
+use resources::Resources;
+use resources::Loader;
 pub mod objects;
-pub use objects::{
-    data::Data, physics, Appearance, Camera, CameraScaling, CameraSettings, GameObject, Layer,
-    Node, RigidBodyParent, Scene, Transform,
-};
+use objects::Node;
+pub use objects::{physics, GameObject, Layer, Scene, Transform};
+pub mod camera;
 pub mod vulkan;
 use vulkan::Vulkan;
 use winit::{
@@ -15,11 +14,9 @@ use winit::{
 };
 mod draw;
 use draw::Draw;
-mod font_layout;
-use font_layout::Labelifier;
-pub use font_layout::{Label, LabelCreateInfo};
+use objects::labels::Labelifier;
 pub mod input;
-pub mod materials;
+pub use resources::materials;
 pub use input::Input;
 #[cfg(feature = "egui")]
 pub mod egui;
@@ -33,12 +30,12 @@ use std::{
     time::SystemTime,
 };
 
-pub use self::objects::data::{vertex, Vertex};
+pub use objects::data;
+pub use objects::data::{tvert, vert, Vertex};
 
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;
 pub type WeakObject = Weak<Mutex<Node<AObject>>>;
-pub type Font = GameFont;
 
 /// This is what you create your whole game session with.
 pub struct GameBuilder {
@@ -162,6 +159,7 @@ impl Game {
             .update(event, self.resources.get_window().inner_size());
     }
 
+    /// Updates the Egui gui.
     #[cfg(feature = "egui")]
     pub fn update_gui(&mut self, func: impl FnOnce(egui_winit_vulkano::egui::Context)) {
         self.gui.immediate_ui(|gui| {
@@ -170,11 +168,13 @@ impl Game {
         self.gui_updated = true;
     }
 
+    /// Sets the background color to clear the screen with.
     pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
         self.clear_background_color = color;
     }
 }
 
+/// Holds the timings of the engine like runtime and delta time.
 #[derive(Clone)]
 pub struct Time {
     pub time: SystemTime,
@@ -193,20 +193,25 @@ impl Default for Time {
 }
 
 impl Time {
-    /// Don't call this function. This is for the game struct to handle.
-    pub fn update(&mut self) {
+    pub(crate) fn update(&mut self) {
         self.delta_time.store(
             self.delta_instant.elapsed().unwrap().as_secs_f64(),
             Ordering::Release,
         );
         self.delta_instant = SystemTime::now();
     }
+
+    /// Returns the time it took to execute last iteration.
     pub fn delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire)
     }
+
+    /// Returns the frames per second.
     pub fn fps(&self) -> f64 {
         1.0 / self.delta_time.load(Ordering::Acquire)
     }
+
+    /// Returns the time since start of the engine game session.
     pub fn time(&self) -> f64 {
         self.time.elapsed().unwrap().as_secs_f64()
     }

@@ -1,3 +1,5 @@
+//! Wrapping of Rapiers joints to be used with Let Engine and Glam.
+
 use glam::Vec2;
 use rapier2d::{
     dynamics::GenericJoint as RGenericJoint,
@@ -5,6 +7,7 @@ use rapier2d::{
 };
 
 pub use rapier2d::dynamics::JointAxesMask;
+
 
 // GenericJoint
 
