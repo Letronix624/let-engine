@@ -268,6 +268,7 @@ pub struct Texture {
 }
 
 /// A font to be used with the default label system.
+#[derive(Clone)]
 pub struct Font {
     pub font: Arc<rusttype::Font<'static>>,
     pub fontid: usize,
