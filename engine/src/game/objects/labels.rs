@@ -87,7 +87,7 @@ pub struct Label {
     pub appearance: Appearance,
     id: usize,
     reference: Option<WeakObject>,
-    pub font: Arc<Font>,
+    pub font: Font,
     pub text: String,
     pub scale: Vec2,
     pub align: [f32; 2],
@@ -145,7 +145,7 @@ impl GameObject for Label {
     }
 }
 impl Label {
-    pub fn new(resources: &Resources, font: &Arc<Font>, create_info: LabelCreateInfo) -> Self {
+    pub fn new(resources: &Resources, font: &Font, create_info: LabelCreateInfo) -> Self {
         let labelifier = resources.labelifier.clone();
         Self {
             transform: create_info.transform,

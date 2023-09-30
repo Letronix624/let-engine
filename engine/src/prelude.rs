@@ -5,8 +5,7 @@
 //! - imports everything this engine has to offer.
 
 pub use crate::{
-    data::*, directions::*, make_circle, materials::*, objects::*, resources::*, tvert, vert, Game,
-    GameBuilder, Scene, Time, Vertex,
+    data::*, directions::*, materials::*, objects::*, resources::*, camera::*, *
 };
 pub use engine_macros::*;
 pub use glam;
@@ -15,6 +14,7 @@ pub use joints::*;
 pub use physics::*;
 pub use rapier2d::prelude::CoefficientCombineRule;
 pub use textures::*;
+pub use labels::*;
 
 use crate as let_engine;
 //use crate::game::objects::GameObject;
