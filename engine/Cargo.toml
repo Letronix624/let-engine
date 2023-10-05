@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.6.1"
+version = "0.1.0-alpha"
 authors = ["Let"]
 edition = "2021"
 description = "A game engine to learn vulkan made by Let. Not done yet."
@@ -36,12 +36,12 @@ crossbeam = "0.8.2"
 glam = { version = "0.24.2", features = [ "bytemuck" ] }
 nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
 
-engine-macros = { path = "../engine-macros", version = "0.2.*" }
+engine-macros = { path = "../engine-macros", version = "0.3.*" }
 
 rusttype = { version = "0.9.3", features = [ "gpu_cache" ] }
 egui_winit_vulkano = { version = "0.25.0", optional = true }
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
 
 [features]
+default = []
 egui = ["dep:egui_winit_vulkano"]
-

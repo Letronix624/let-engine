@@ -27,7 +27,6 @@ use std::{
         Arc, Weak,
     },
 };
-pub type RigidBodyParent = Option<Option<Weak<Mutex<Node<AObject>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 
 /// Holds position size and rotation of an object.
@@ -81,7 +80,6 @@ pub trait GameObject: Send + Any {
         &mut self,
         id: usize,
         parent: &NObject,
-        rigid_body_parent: RigidBodyParent,
         layer: &Layer,
     ) -> NObject;
     fn remove_event(&mut self);
@@ -111,7 +109,6 @@ impl Object {
 pub struct Node<T> {
     pub object: T,
     pub parent: Option<Weak<Mutex<Node<AObject>>>>,
-    pub rigid_body_parent: RigidBodyParent,
     pub children: Vec<Arc<Mutex<Node<T>>>>,
 }
 
@@ -434,23 +431,21 @@ impl Layer {
         parent: Option<&T>,
         object: &mut T,
     ) -> Result<(), NoParentError> {
+        // Create ID for object
         let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
 
-        let rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
             let map = self.objects_map.lock();
             if let Some(parent) = map.get(&parent.id()) {
-                rigid_body_parent = parent.lock().rigid_body_parent.clone();
                 parent.clone()
             } else {
                 return Err(NoParentError);
             }
         } else {
-            rigid_body_parent = None;
             self.root.clone()
         };
 
-        let node = object.init_to_layer(id, &parent, rigid_body_parent, self);
+        let node = object.init_to_layer(id, &parent, self);
 
         let boxed_object: Box<dyn GameObject> = Box::new(object.clone());
 
@@ -721,7 +716,6 @@ impl GameObject for Root {
         &mut self,
         _id: usize,
         _parent: &NObject,
-        _rigid_body_parent: RigidBodyParent,
         _layer: &Layer,
     ) -> NObject {
         todo!()
@@ -765,7 +759,6 @@ impl Scene {
         let node = Layer::new(Arc::new(Mutex::new(Node {
             object,
             parent: None,
-            rigid_body_parent: None,
             children: vec![],
         })));
         self.layers.lock().insert(node.clone());

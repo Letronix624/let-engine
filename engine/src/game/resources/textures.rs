@@ -4,11 +4,15 @@ pub use vulkano::sampler::BorderColor;
 use vulkano::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
+pub use image::ImageFormat;
 
 /// Formats for the texture from raw data.
 pub enum Format {
+    /// 8 bits red
     R8,
+    /// 8 bits red green blue alpha
     RGBA8,
+    /// 16 bits red green blue alpha
     RGBA16,
 }
 
@@ -28,16 +32,6 @@ pub enum AddressMode {
     ClampToEdge,
     /// Coordinates outside 0 - 1 are colored to the border color settable in the Sampler struct.
     ClampToBorder,
-}
-
-/// Format of the image.
-pub enum ImageFormat {
-    PNG,
-    JPG,
-    BMP,
-    TIFF,
-    WebP,
-    TGA,
 }
 
 /// The sampler of the texture that determines how the shader should handle textures.
@@ -93,6 +87,7 @@ impl Sampler {
                 Filter::Nearest => SamplerMipmapMode::Nearest,
                 Filter::Linear => SamplerMipmapMode::Linear,
             },
+            // improvable.
             address_mode: [
                 match self.address_mode[0] {
                     AddressMode::Repeat => SamplerAddressMode::Repeat,

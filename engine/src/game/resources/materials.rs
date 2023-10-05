@@ -36,6 +36,8 @@ pub enum Topology {
 }
 
 /// A material holding the way an object should be drawn.
+/// 
+/// Takes some time.
 #[derive(Clone, PartialEq)]
 pub struct Material {
     pub(crate) pipeline: Arc<GraphicsPipeline>,
@@ -54,6 +56,7 @@ impl std::fmt::Debug for Material {
 }
 
 impl Material {
+    /// Makes a new material.
     pub(crate) fn new(
         settings: MaterialSettings,
         shaders: &Shaders,

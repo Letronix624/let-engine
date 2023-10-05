@@ -4,36 +4,6 @@ use quote::quote;
 use syn::{parse::Parser, parse_macro_input, DeriveInput};
 
 #[proc_macro_attribute]
-pub fn objectinit(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
-    let name = &ast.ident;
-    quote! {
-        #[let_engine::objectinit_without_implements]
-        #ast
-        impl #name {
-            pub fn update(&mut self) {
-                let arc = self.reference.clone().unwrap().upgrade().unwrap();
-                let object = &arc.lock().object;
-                self.transform = object.transform();
-
-                self.appearance = object.appearance().clone();
-            }
-            pub fn sync(&self) {
-                // update public position of children
-                let transform = Self::public_transform(self);
-                let node = self.reference.clone().unwrap().upgrade().unwrap();
-                node.lock().update_children_position(transform);
-
-                let arc = self.reference.clone().unwrap().upgrade().unwrap();
-                let mut object = arc.lock();
-                object.object = Box::new(self.clone());
-            }
-        }
-    }
-    .into()
-}
-
-#[proc_macro_attribute]
 pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> TokenStream {
     let mut ast = parse_macro_input!(input as DeriveInput);
     match &mut ast.data {
@@ -162,21 +132,15 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn id(&self) -> usize {
                 self.id
             }
-            fn init_to_layer(&mut self, id: usize, parent: &let_engine::NObject, mut rigid_body_parent: let_engine::objects::RigidBodyParent, layer: &let_engine::Layer) -> let_engine::NObject {
+            fn init_to_layer(&mut self, id: usize, parent: &let_engine::NObject, layer: &let_engine::Layer) -> let_engine::NObject {
                 self.id = id;
                 self.physics.physics = Some(layer.physics.clone());
-                self.parent_transform = self.physics.update(&self.transform, parent, &mut rigid_body_parent, id as u128);
+                self.parent_transform = self.physics.update(&self.transform, parent, id as u128);
                 let node: let_engine::NObject = std::sync::Arc::new(let_engine::Mutex::new(let_engine::objects::Node{
                     object: Box::new(self.clone()),
                     parent: Some(std::sync::Arc::downgrade(parent)),
-                    rigid_body_parent: rigid_body_parent.clone(),
                     children: vec![],
                 }));
-                if let Some(value) = &rigid_body_parent {
-                    if value.is_none() && self.physics.rigid_body.is_some() {
-                        layer.rigid_body_roots.lock().insert(id, node.clone());
-                    }
-                }
 
                 self.reference = Some(std::sync::Arc::downgrade(&node));
                 node
@@ -212,7 +176,7 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
                     self.parent_transform = self.physics.update(
                         &self.transform,
                         &node.parent.clone().unwrap().upgrade().unwrap(),
-                        &mut node.rigid_body_parent, self.id as u128
+                        self.id as u128
                     );
                 }
                 node.lock().update_children_position(Self::public_transform(self));

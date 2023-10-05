@@ -8,9 +8,7 @@ pub(crate) fn init(event_loop: &EventLoop<()>, vulkan: &Vulkan) -> Gui {
         vulkan.surface.clone(),
         vulkan.queue.clone(),
         vulkan.subpass.clone(),
-        GuiConfig {
-            preferred_format: Some(vulkano::format::Format::R8G8B8A8_UNORM),
-            ..Default::default()
-        },
+        vulkano::format::Format::R8G8B8A8_UNORM,
+        GuiConfig::default()
     )
 }

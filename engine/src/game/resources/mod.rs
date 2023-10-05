@@ -2,7 +2,7 @@
 
 use super::{Labelifier, Vulkan};
 use crate::{error::textures::*, utils::u16tou8vec};
-use image::{load_from_memory_with_format, DynamicImage, ImageFormat as IFormat};
+use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
@@ -79,15 +79,7 @@ impl Resources {
         layers: u32,
         settings: TextureSettings,
     ) -> Result<Texture, InvalidFormatError> {
-        let image_format = match format {
-            ImageFormat::PNG => IFormat::Png,
-            ImageFormat::JPG => IFormat::Jpeg,
-            ImageFormat::BMP => IFormat::Bmp,
-            ImageFormat::TIFF => IFormat::Tiff,
-            ImageFormat::WebP => IFormat::WebP,
-            ImageFormat::TGA => IFormat::Tga,
-        };
-        let image = match load_from_memory_with_format(texture, image_format) {
+        let image = match load_from_memory_with_format(texture, format) {
             Err(_) => return Err(InvalidFormatError),
             Ok(v) => v,
         };

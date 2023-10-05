@@ -74,7 +74,7 @@ pub struct Data {
 }
 
 impl Data {
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Data {
             vertices: vec![],
             indices: vec![],

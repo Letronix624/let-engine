@@ -15,7 +15,6 @@ use crate::{
     objects::Appearance,
     objects::Data,
     objects::GameObject,
-    objects::RigidBodyParent,
     resources::textures::*,
     resources::{Font, Resources, Texture},
     Transform, Vertex, WeakObject,
@@ -54,6 +53,8 @@ impl LabelCreateInfo {
         self.text = text.into();
         self
     }
+    /// Sets the scale of the label and returns it back.
+    #[inline]
     pub fn scale<T>(mut self, scale: T) -> Self
     where
         T: Into<Vec2>,
@@ -61,6 +62,8 @@ impl LabelCreateInfo {
         self.scale = scale.into();
         self
     }
+    /// Sets the alignment of the label and returns it back.
+    #[inline]
     pub fn align<T>(mut self, align: T) -> Self
     where
         T: Into<[f32; 2]>,
@@ -94,22 +97,32 @@ pub struct Label {
     labelifier: Arc<Mutex<Labelifier>>,
 }
 impl GameObject for Label {
+    /// Returns the transform of the label.
+    #[inline]
     fn transform(&self) -> Transform {
         self.transform
-    }
+    } 
+    /// Sets the position and rotation of the label.
+    #[inline]
     fn set_isometry(&mut self, position: Vec2, rotation: f32) {
         self.transform.position = position;
         self.transform.rotation = rotation;
     }
+    /// Returns the public position of the label.
+    #[inline]
     fn public_transform(&self) -> Transform {
         self.transform.combine(self.parent_transform)
     }
+    #[inline]
     fn set_parent_transform(&mut self, transform: Transform) {
         self.parent_transform = transform;
     }
+    /// Returns a reference of the appearance of the label.
     fn appearance(&self) -> &Appearance {
         &self.appearance
     }
+    /// Returns the index of the label in the layer it's inside.
+    #[inline]
     fn id(&self) -> usize {
         self.id
     }
@@ -117,7 +130,6 @@ impl GameObject for Label {
         &mut self,
         id: usize,
         parent: &crate::NObject,
-        rigid_body_parent: RigidBodyParent,
         _layer: &crate::Layer,
     ) -> crate::NObject {
         self.id = id;
@@ -126,7 +138,6 @@ impl GameObject for Label {
         let node: crate::NObject = Arc::new(Mutex::new(crate::objects::Node {
             object: Box::new(self.clone()),
             parent: Some(Arc::downgrade(parent)),
-            rigid_body_parent,
             children: vec![],
         }));
         self.reference = Some(Arc::downgrade(&node));
@@ -145,6 +156,7 @@ impl GameObject for Label {
     }
 }
 impl Label {
+    /// Creates a new label with the given settings.
     pub fn new(resources: &Resources, font: &Font, create_info: LabelCreateInfo) -> Self {
         let labelifier = resources.labelifier.clone();
         Self {
@@ -160,31 +172,42 @@ impl Label {
             labelifier,
         }
     }
+    /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
     pub fn update(&mut self) {
         let arc = self.reference.clone().unwrap().upgrade().unwrap();
         let object = &arc.lock().object;
         self.transform = object.transform();
         self.appearance = object.appearance().clone();
     }
+    /// Changes the text of the label and updates it on the layer.
     pub fn update_text(&mut self, text: String) {
         self.text = text;
         Self::sync(self);
     }
+    /// Syncs the public layer side label to be the same as the current.
     pub fn sync(&self) {
         self.labelifier.lock().queue(self.clone());
     }
 }
 
+/// A label maker holding
 pub(crate) struct Labelifier {
+    /// the default material,
     material: Material,
+    /// RustType font cache,
     cache: Cache<'static>,
+    /// the global font texture,
     cache_pixel_buffer: Vec<u8>,
+    /// yasks to be executed on next update,
     queued: Vec<DrawTask<'static>>,
+    /// the index of the latest added font resource to be incremented by 1 every new font
     font_id: usize,
+    /// and the boolean if it should update.
     ready: bool,
 }
 
 impl Labelifier {
+    /// Makes a new label maker.
     pub fn new(vulkan: &Vulkan, loader: &mut Loader) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
@@ -226,6 +249,7 @@ impl Labelifier {
             ready: false,
         }
     }
+    /// Updates the cache in case a label was changed or added.
     fn update_cache(
         &mut self,
         vulkan: &Vulkan,
@@ -265,12 +289,11 @@ impl Labelifier {
         });
         Ok(())
     }
-    pub fn update(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
-        if !self.ready {
-            return;
-        }
 
+    /// Updates the cache and grows it, in case it's too small for everything.
+    fn update_and_resize_cache(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
         loop {
+            // Adds every queued task to the cache
             for task in self.queued.iter() {
                 for glyph in task.glyphs.clone() {
                     self.cache.queue_glyph(task.label.font.fontid, glyph);
@@ -278,7 +301,9 @@ impl Labelifier {
             }
 
             match self.update_cache(vulkan, loader) {
+                // Success
                 Ok(_) => (),
+                // Grows the cache buffer by 2x for the rest of the runtime in case too many characters were queued for the cache to handle.
                 _ => {
                     let dimensions = self.cache.dimensions().0 * 2;
                     self.cache
@@ -291,6 +316,10 @@ impl Labelifier {
             };
             break;
         }
+    }
+
+    /// Updates each queued object.
+    fn update_each_object(&self) {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
@@ -353,6 +382,18 @@ impl Labelifier {
             let mut object = arc.lock();
             object.object = Box::new(label.clone());
         }
+    }
+
+    /// Updates everything.
+    pub fn update(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
+        if !self.ready {
+            return;
+        }
+
+        Self::update_and_resize_cache(self, vulkan, loader);
+
+        Self::update_each_object(self);
+        
         self.queued = vec![];
         self.ready = false;
     }
