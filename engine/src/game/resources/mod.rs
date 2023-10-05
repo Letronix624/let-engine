@@ -4,11 +4,11 @@ use super::{Labelifier, Vulkan};
 use crate::{error::textures::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
 use parking_lot::Mutex;
-use vulkano::pipeline::cache::PipelineCache;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
 use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
 use vulkano::descriptor_set::WriteDescriptorSet;
+use vulkano::pipeline::cache::PipelineCache;
 use winit::window::Window;
 
 mod loader;
@@ -19,7 +19,7 @@ use textures::*;
 
 pub mod materials;
 
-/// The resource holder part of the game struct.
+/// All the resources kept in the game engine like textures, fonts, sounds and models.
 #[derive(Clone)]
 pub struct Resources {
     pub(crate) vulkan: Vulkan,
@@ -28,7 +28,7 @@ pub struct Resources {
 }
 
 impl Resources {
-    //initialisation
+    /// Initialisation
     pub(crate) fn new(
         vulkan: Vulkan,
         loader: Arc<Mutex<Loader>>,
@@ -49,15 +49,25 @@ impl Resources {
     }
 
     /// Merges a pipeline cache into the resources potentially making the creation of materials faster.
-    /// 
+    ///
     /// # Safety
-    /// Unsafe because vulkan blindly trusts that this data comes from the get_pipeline_binary function.
+    ///
+    /// Unsafe because vulkan blindly trusts that this data comes from the `get_pipeline_binary` function.
     /// The program will crash if the data provided is not right.
+    ///
+    /// The binary given to the function must be made with the same hardware and vulkan driver version.
     pub unsafe fn load_pipeline_cache(&self, data: &[u8]) {
         let cache = PipelineCache::with_data(self.vulkan.device.clone(), data).unwrap();
-        self.loader.lock().pipeline_cache.merge(vec![&cache].iter()).unwrap();
+        self.loader
+            .lock()
+            .pipeline_cache
+            .merge([&cache].iter())
+            .unwrap();
     }
 
+    /// Returns the binary of the pipeline cache.
+    ///
+    /// Allows this binary to be loaded with the `load_pipeline_cache` function to make loading materials potentially faster.
     pub fn get_pipeline_binary(&self) -> Vec<u8> {
         self.loader.lock().pipeline_cache.get_data().unwrap()
     }
@@ -172,10 +182,10 @@ impl Resources {
     }
     //shaders
     /// Loads a shader from glsl bytes.
-    /// 
+    ///
     /// # Safety
     ///
-    /// Any wrong shaders bytes can mess up the program in a way I didn't text before.
+    /// Just crashes the program if the bytes given are not right.
     pub unsafe fn new_shader_from_raw(
         // loading things all temporary. Will get sepparated to their own things soon.
         &self,

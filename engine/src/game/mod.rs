@@ -1,6 +1,5 @@
 pub mod resources;
-use resources::Resources;
-use resources::Loader;
+use resources::{Loader, Resources};
 pub mod objects;
 use objects::Node;
 pub use objects::{physics, GameObject, Layer, Scene, Transform};
@@ -16,8 +15,8 @@ mod draw;
 use draw::Draw;
 use objects::labels::Labelifier;
 pub mod input;
-pub use resources::materials;
 pub use input::Input;
+pub use resources::materials;
 #[cfg(feature = "egui")]
 pub mod egui;
 
@@ -44,16 +43,19 @@ pub struct GameBuilder {
 }
 
 impl GameBuilder {
+    /// Makes a new game builder.
     pub fn new() -> Self {
         Self {
             window_builder: None,
             clear_background_color: [0.0; 4],
         }
     }
+    /// Adds a window builder.
     pub fn with_window_builder(mut self, window_builder: WindowBuilder) -> Self {
         self.window_builder = Some(window_builder);
         self
     }
+    /// Adds a clear color.
     pub fn with_clear_color(mut self, color: [f32; 4]) -> Self {
         self.clear_background_color = color;
         self
@@ -120,6 +122,7 @@ pub struct Game {
 }
 
 impl Game {
+    /// Renders the font and draws the image of the window.
     pub fn update<T: 'static>(&mut self, event: &Event<T>) {
         match event {
             Event::WindowEvent {
@@ -193,6 +196,7 @@ impl Default for Time {
 }
 
 impl Time {
+    /// Updates the time data on frame redraw.
     pub(crate) fn update(&mut self) {
         self.delta_time.store(
             self.delta_instant.elapsed().unwrap().as_secs_f64(),

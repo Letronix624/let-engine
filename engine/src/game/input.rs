@@ -14,9 +14,8 @@ use glam::f32::{vec2, Vec2};
 use hashbrown::HashSet;
 use parking_lot::Mutex;
 
-
 /// Holds the input information to be used in game.
-/// 
+///
 /// Updates each frame.
 #[derive(Clone)]
 pub struct Input {
@@ -34,7 +33,18 @@ pub struct Input {
 }
 
 impl Input {
-    pub fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: PhysicalSize<u32>) {
+    pub(crate) fn new() -> Self {
+        Self {
+            keyboard_down: Arc::new(Mutex::new(HashSet::new())),
+            keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
+            mouse_down: Arc::new(Mutex::new(HashSet::new())),
+            cursor_position: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
+            cursor_inside: Arc::new(AtomicBool::new(false)),
+            dimensions: Arc::new(AtomicCell::new((0.0, 0.0))),
+        }
+    }
+    /// Updates the input with the event.
+    pub(crate) fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: PhysicalSize<u32>) {
         self.dimensions
             .store((dimensions.width as f32, dimensions.height as f32));
         if let Event::WindowEvent { event, .. } = event {
@@ -73,21 +83,30 @@ impl Input {
         }
     }
 
+    /// Returns true if the given key is pressed on the keyboard.
     pub fn is_down(&self, key: &u32) -> bool {
         self.keyboard_down.lock().contains(key)
     }
+
+    /// Returns true if the given mouse button is pressed.
     pub fn mouse_down(&self, button: &MouseButton) -> bool {
         self.mouse_down.lock().contains(button)
     }
+
+    /// Returns the cursor position going from -1.0 to 1.0 x and y.
     pub fn cursor_position(&self) -> Vec2 {
         let cp = self.cursor_position.load();
         vec2(cp[0], cp[1])
     }
+
+    /// Returns the cursor position going from -1.0 to 1.0 x and y scaled with the inserted layers scaling properties.
     pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
         let (width, height) = crate::utils::scale(layer.camera_scaling(), self.dimensions.load());
         let cp = self.cursor_position.load();
         vec2(cp[0] * width, cp[1] * height)
     }
+
+    /// Returns the cursor position in layer world space.
     pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
         let dims = self.dimensions.load();
         let (width, height) = crate::utils::scale(layer.camera_scaling(), dims);
@@ -100,18 +119,27 @@ impl Input {
         )
     }
 
+    /// Returns true if shift is pressed on the keyboard.
     pub fn shift(&self) -> bool {
         self.keyboard_modifiers.lock().shift()
     }
+
+    /// Returns true if ctrl is pressed on the keyboard.
     pub fn ctrl(&self) -> bool {
         self.keyboard_modifiers.lock().ctrl()
     }
+
+    /// Returns true if alt is pressed on the keyboard.
     pub fn alt(&self) -> bool {
         self.keyboard_modifiers.lock().alt()
     }
+
+    /// Returns true if the logo key is pressed on the keyboard.
     pub fn logo(&self) -> bool {
         self.keyboard_modifiers.lock().logo()
     }
+
+    /// Returns true if the cursor is located in the window.
     pub fn cursor_inside(&self) -> bool {
         self.cursor_inside.load(Ordering::Acquire)
     }
@@ -119,13 +147,6 @@ impl Input {
 
 impl Default for Input {
     fn default() -> Self {
-        Self {
-            keyboard_down: Arc::new(Mutex::new(HashSet::new())),
-            keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
-            mouse_down: Arc::new(Mutex::new(HashSet::new())),
-            cursor_position: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
-            cursor_inside: Arc::new(AtomicBool::new(false)),
-            dimensions: Arc::new(AtomicCell::new((0.0, 0.0))),
-        }
+        Self::new()
     }
 }

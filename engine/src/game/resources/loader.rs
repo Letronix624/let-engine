@@ -15,7 +15,7 @@ use vulkano::{
         ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
     },
     memory::allocator::StandardMemoryAllocator,
-    pipeline::{Pipeline, cache::PipelineCache},
+    pipeline::{cache::PipelineCache, Pipeline},
     render_pass::Subpass,
     sampler::Sampler,
 };
@@ -30,7 +30,7 @@ pub(crate) struct Loader {
     pub object_buffer_allocator: SubbufferAllocator,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub command_buffer_allocator: StandardCommandBufferAllocator,
-    pub pipeline_cache: Arc<PipelineCache>
+    pub pipeline_cache: Arc<PipelineCache>,
 }
 
 impl Loader {

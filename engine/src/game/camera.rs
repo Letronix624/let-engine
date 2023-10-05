@@ -45,10 +45,14 @@ impl Default for CameraSettings {
     }
 }
 impl CameraSettings {
+    /// Returns the zoom.
+    #[inline]
     pub fn zoom(mut self, zoom: f32) -> Self {
         self.zoom = zoom;
         self
     }
+    /// Returns the camera mode.
+    #[inline]
     pub fn mode(mut self, mode: CameraScaling) -> Self {
         self.mode = mode;
         self

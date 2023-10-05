@@ -1,10 +1,10 @@
 //! Texture related options.
 
+pub use image::ImageFormat;
 pub use vulkano::sampler::BorderColor;
 use vulkano::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
-pub use image::ImageFormat;
 
 /// Formats for the texture from raw data.
 pub enum Format {

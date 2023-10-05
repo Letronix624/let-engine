@@ -8,7 +8,6 @@ use rapier2d::{
 
 pub use rapier2d::dynamics::JointAxesMask;
 
-
 // GenericJoint
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]

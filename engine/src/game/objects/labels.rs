@@ -84,6 +84,14 @@ impl Default for LabelCreateInfo {
         }
     }
 }
+
+/// A Label object made to display text.
+///
+/// # note
+///
+/// It is recommended to sync or update the text with all other visible labels so the texture of all labels change to the same texture.
+/// At the beginning of the game update all the text gets rendered if any labels changed. This produces a new texture which if not synced
+/// to every label produces multiple textures, which take more memory.
 #[derive(Clone)]
 pub struct Label {
     pub transform: Transform,
@@ -102,7 +110,7 @@ impl GameObject for Label {
     #[inline]
     fn transform(&self) -> Transform {
         self.transform
-    } 
+    }
     /// Sets the position and rotation of the label.
     #[inline]
     fn set_isometry(&mut self, position: Vec2, rotation: f32) {
@@ -214,6 +222,8 @@ impl Labelifier {
     pub fn new(vulkan: &Vulkan, loader: &mut Loader) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
+
+        // Make the cache a texture.
         let texture = Texture {
             data: Arc::from(cache_pixel_buffer.clone().into_boxed_slice()),
             dimensions: cache.dimensions(),
@@ -274,6 +284,8 @@ impl Labelifier {
                 src_index += width;
             }
         })?;
+        // Creates a new texture to be inserted into every syncing label.
+        // Unsynced label keep holding the old texture.
         self.material.texture = Some(Texture {
             data: Arc::from(self.cache_pixel_buffer.clone().into_boxed_slice()),
             dimensions: self.cache.dimensions(),
@@ -395,7 +407,7 @@ impl Labelifier {
         Self::update_and_resize_cache(self, vulkan, loader);
 
         Self::update_each_object(self);
-        
+
         self.queued = vec![];
         self.ready = false;
     }

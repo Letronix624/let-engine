@@ -4,17 +4,15 @@
 //! ```
 //! - imports everything this engine has to offer.
 
-pub use crate::{
-    data::*, directions::*, materials::*, objects::*, resources::*, camera::*, *
-};
+pub use crate::{camera::*, data::*, directions::*, materials::*, objects::*, resources::*, *};
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
 pub use joints::*;
+pub use labels::*;
 pub use physics::*;
 pub use rapier2d::prelude::CoefficientCombineRule;
 pub use textures::*;
-pub use labels::*;
 
 use crate as let_engine;
 //use crate::game::objects::GameObject;

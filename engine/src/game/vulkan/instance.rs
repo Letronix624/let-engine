@@ -10,7 +10,9 @@ use vulkano::{library::VulkanLibrary, Version};
 
 /// Initializes a new Vulkan instance.
 pub fn create_instance() -> Arc<Instance> {
-    let library = VulkanLibrary::new().expect("Your Devices hardware does not fulfill the minimum requirements to run this program.\n");
+    let library = VulkanLibrary::new().expect(
+        "Your Devices hardware does not fulfill the minimum requirements to run this program.\n",
+    );
 
     let required_extensions = vulkano_win::required_extensions(&library);
 

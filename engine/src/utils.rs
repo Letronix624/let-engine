@@ -1,9 +1,10 @@
 //! General utitities used throughout the engine.
 
 use crate::camera::CameraScaling;
-use glam::{Mat4, Vec2};
-use core::f32::consts::FRAC_1_SQRT_2; // Update. move to crate/utils.rs
+use core::f32::consts::FRAC_1_SQRT_2;
+use glam::{Mat4, Vec2}; // Update. move to crate/utils.rs
 
+/// Makes an orthographic projection matrix with the given information.
 pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: (f32, f32)) -> Mat4 {
     let (width, height) = scale(mode, dimensions);
     Mat4::orthographic_rh(
@@ -16,6 +17,7 @@ pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: (
     )
 }
 
+/// Converts a Vec<u16> to a Vec<u8> where each number is split into it's high and low bytes.
 pub fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
     // to utils.rs in the future
     data.iter()
@@ -27,6 +29,7 @@ pub fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
         .collect()
 }
 
+/// Scales the given dimensions using the given scaling algorithm.
 pub fn scale(mode: CameraScaling, dimensions: (f32, f32)) -> (f32, f32) {
     match mode {
         CameraScaling::Stretch => (1.0, 1.0),

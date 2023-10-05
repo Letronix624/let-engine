@@ -8,8 +8,6 @@ pub use game::{
     NObject, Scene, Time, Transform, Vertex, WeakObject,
 };
 
-//RE EXPORTS
-
 pub use engine_macros::*;
 pub use glam::{vec2, Vec2};
 pub use parking_lot::Mutex;

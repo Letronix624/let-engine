@@ -12,7 +12,7 @@ pub fn create_window(
     builder: WindowBuilder,
 ) -> (EventLoop<()>, Arc<Surface>) {
     let event_loop = winit::event_loop::EventLoopBuilder::new().build();
-    
+
     let surface = builder
         .build_vk_surface(&event_loop, instance.clone())
         .unwrap();

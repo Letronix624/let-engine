@@ -1,6 +1,10 @@
 //! Material related settings that determine the way the scene gets rendered.
 
-use crate::{Vertex as GameVertex, resources::{Texture, Vulkan}, error::textures::*};
+use crate::{
+    error::textures::*,
+    resources::{Texture, Vulkan},
+    Vertex as GameVertex,
+};
 use derive_builder::Builder;
 use std::sync::Arc;
 
@@ -8,6 +12,7 @@ use vulkano::descriptor_set::{
     allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
 };
 use vulkano::pipeline::{
+    cache::PipelineCache,
     graphics::{
         color_blend::ColorBlendState,
         input_assembly::{InputAssemblyState, PrimitiveTopology},
@@ -15,7 +20,7 @@ use vulkano::pipeline::{
         vertex_input::Vertex,
         viewport::ViewportState,
     },
-    GraphicsPipeline, Pipeline, StateMode, cache::PipelineCache,
+    GraphicsPipeline, Pipeline, StateMode,
 };
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
@@ -36,7 +41,7 @@ pub enum Topology {
 }
 
 /// A material holding the way an object should be drawn.
-/// 
+///
 /// Takes some time.
 #[derive(Clone, PartialEq)]
 pub struct Material {
@@ -151,7 +156,7 @@ impl Material {
     }
 
     /// Goes to the next frame of the layer.
-    /// 
+    ///
     /// Returns an error if it reached the limit.
     pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
@@ -166,7 +171,7 @@ impl Material {
     }
 
     /// Goes to the last frame of the layer.
-    /// 
+    ///
     /// Returns an error if the layer is 0.
     pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.texture.is_some() {
@@ -179,7 +184,7 @@ impl Material {
         self.layer -= 1;
         Ok(())
     }
-    
+
     /// Returns the texture.
     pub fn get_texture(&self) -> Option<Texture> {
         self.texture.clone()
@@ -214,7 +219,7 @@ pub struct Shaders {
 
 impl Shaders {
     /// Creates a shader from SpirV bytes.
-    /// 
+    ///
     /// # Safety
     ///
     /// When loading those shaders the engine doesn't know if they are right.
