@@ -2,14 +2,15 @@ use std::sync::Arc;
 use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
-        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassContents,
+        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract, RenderPassBeginInfo,
+        SecondaryAutoCommandBuffer, SubpassContents,
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
-    pipeline::{graphics::viewport::Viewport, Pipeline},
+    pipeline::{graphics::viewport::Viewport, GraphicsPipeline, Pipeline},
     render_pass::Framebuffer,
     swapchain::{
-        acquire_next_image, AcquireError, Swapchain, SwapchainCreateInfo, SwapchainCreationError,
-        SwapchainPresentInfo,
+        acquire_next_image, AcquireError, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        SwapchainCreationError, SwapchainPresentInfo,
     },
     sync::{self, FlushError, GpuFuture},
 };
@@ -21,8 +22,8 @@ use super::{
     Loader,
 };
 
-use crate::game::Node;
 use crate::utils;
+use crate::{camera::Camera, game::Node};
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
 use glam::f32::{Mat4, Quat, Vec3};
@@ -34,6 +35,8 @@ pub(crate) struct Draw {
     pub viewport: Viewport,
     pub framebuffers: Vec<Arc<Framebuffer>>,
     pub previous_frame_end: Option<Box<dyn GpuFuture>>,
+    dimensions: [u32; 2],
+    default_material: Arc<GraphicsPipeline>,
 }
 
 impl Draw {
@@ -67,43 +70,27 @@ impl Draw {
                 .unwrap()
                 .boxed(),
         );
+
+        let dimensions = [0; 2];
+
+        let default_material = vulkan.default_material.pipeline.clone();
+
         Self {
             recreate_swapchain,
             swapchain,
             viewport,
             framebuffers,
             previous_frame_end,
+            dimensions,
+            default_material,
         }
     }
 
-    /// Redraws the scene.
-    pub fn redrawevent(
-        &mut self,
-        vulkan: &Vulkan,
-        loader: &mut Loader,
-        scene: &super::Scene,
-        clear_color: [f32; 4],
-        #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
-    ) {
-        //windowevents
-        let window = vulkan
-            .surface
-            .object()
-            .unwrap()
-            .downcast_ref::<Window>()
-            .unwrap();
-        let dimensions = window.inner_size();
-
-        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
-
-        if dimensions.width == 0 || dimensions.height == 0 {
-            return;
-        }
-
-        // Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
+    /// Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
+    fn recreate_swapchain(&mut self, vulkan: &Vulkan) {
         if self.recreate_swapchain {
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
-                image_extent: dimensions.into(),
+                image_extent: self.dimensions,
                 ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
@@ -119,23 +106,19 @@ impl Draw {
             );
             self.recreate_swapchain = false;
         }
+    }
 
-        let (image_num, suboptimal, acquire_future) =
-            match acquire_next_image(self.swapchain.clone(), None) {
-                Ok(r) => r,
-                Err(AcquireError::OutOfDate) => {
-                    self.recreate_swapchain = true;
-                    return;
-                }
-                Err(e) => panic!("Failed to acquire next image: {:?}", e),
-            };
-
-        let dimensions = self.framebuffers[image_num as usize].extent();
-
-        if suboptimal {
-            self.recreate_swapchain = true;
-        }
-
+    /// Makes a primary and secondary command buffer already inside a render pass.
+    fn make_command_buffer(
+        &self,
+        vulkan: &Vulkan,
+        clear_color: [f32; 4],
+        loader: &Loader,
+        image_num: usize,
+    ) -> (
+        AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+        AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
+    ) {
         let mut builder = AutoCommandBufferBuilder::primary(
             &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
@@ -148,9 +131,7 @@ impl Draw {
             .begin_render_pass(
                 RenderPassBeginInfo {
                     clear_values: vec![Some(clear_color.into())],
-                    ..RenderPassBeginInfo::framebuffer(
-                        self.framebuffers[image_num as usize].clone(),
-                    )
+                    ..RenderPassBeginInfo::framebuffer(self.framebuffers[image_num].clone())
                 },
                 SubpassContents::SecondaryCommandBuffers,
             )
@@ -168,70 +149,95 @@ impl Draw {
         .unwrap();
         secondary_builder.set_viewport(0, [self.viewport.clone()]);
 
-        // Draws the Game Scene for the first command buffer.
+        (builder, secondary_builder)
+    }
+
+    fn make_mvp_matrix(
+        object: &Object,
+        dimensions: [u32; 2],
+        camera: Option<&Box<impl Camera + ?Sized>>,
+    ) -> ModelViewProj {
+        let transform = object.transform.combine(object.appearance.transform);
+        let scaling = Vec3::new(transform.size[0], transform.size[1], 0.0);
+        let rotation = Quat::from_rotation_z(transform.rotation);
+        let translation = Vec3::new(transform.position[0], transform.position[1], 0.0);
+
+        // Model matrix
+        let model = Mat4::from_scale_rotation_translation(scaling, rotation, translation);
+
+        // Projection matrix
+        let proj;
+
+        // View matrix
+        let view = if let Some(camera) = camera {
+            let rotation = Mat4::from_rotation_z(camera.transform().rotation);
+
+            let zoom = 1.0 / camera.settings().zoom;
+            proj = utils::ortho_maker(
+                camera.settings().mode,
+                camera.transform().position,
+                zoom,
+                (dimensions[0] as f32, dimensions[1] as f32),
+            );
+
+            Mat4::look_at_rh(
+                Vec3::from([
+                    camera.transform().position[0],
+                    camera.transform().position[1],
+                    1.0,
+                ]),
+                Vec3::from([
+                    camera.transform().position[0],
+                    camera.transform().position[1],
+                    0.0,
+                ]),
+                Vec3::Y,
+            ) * rotation
+        } else {
+            // In case you don't have a camera all you're going to see is -1.0 to 1.0.
+            proj = Mat4::orthographic_rh(-1.0, 1.0, 1.0, -1.0, -1.0, 1.0);
+            Mat4::look_at_rh(Vec3::from([0., 0., 0.]), Vec3::from([0., 0., 0.]), Vec3::Y)
+        };
+        ModelViewProj { model, view, proj }
+    }
+
+    /// Draws the Game Scene on the given command buffer.
+    fn write_secondary_command_buffer(
+        &self,
+        scene: &super::Scene,
+        command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
+        loader: &Loader,
+    ) {
         for layer in scene.get_layers().iter() {
             let mut order: Vec<Object> = vec![];
 
             Node::order_position(&mut order, &layer.root.lock());
 
-            for obj in order {
-                let appearance = &obj.appearance;
+            for object in order {
+                let appearance = &object.appearance;
+                // Skip drawing the object if the object is not marked visible or has no vertices.
                 if !appearance.visible || appearance.data.vertices.is_empty() {
                     continue;
                 }
 
+                // The pipeline of the current object. Takes the default one if there is none.
                 let pipeline = if let Some(material) = &appearance.material {
                     material.pipeline.clone()
                 } else {
-                    vulkan.default_material.pipeline.clone()
+                    self.default_material.clone()
                 };
 
                 let mut descriptors = vec![];
 
+                // MVP matrix for the object
                 let objectvert_sub_buffer =
                     loader.object_buffer_allocator.allocate_sized().unwrap();
+                // Simple color and texture data for the fragment shader.
                 let objectfrag_sub_buffer =
                     loader.object_buffer_allocator.allocate_sized().unwrap();
 
-                let transform = obj.transform.combine(obj.appearance.transform);
-                let scaling = Vec3::new(transform.size[0], transform.size[1], 0.0);
-                let rotation = Quat::from_rotation_z(transform.rotation);
-                let translation = Vec3::new(transform.position[0], transform.position[1], 0.0);
-
-                let model = Mat4::from_scale_rotation_translation(scaling, rotation, translation);
-
-                let proj;
-
-                let view = if let Some(camera) = layer.camera.lock().as_ref() {
-                    let rotation = Mat4::from_rotation_z(camera.transform().rotation);
-
-                    let zoom = 1.0 / camera.settings().zoom;
-                    proj = utils::ortho_maker(
-                        camera.settings().mode,
-                        camera.transform().position,
-                        zoom,
-                        (dimensions[0] as f32, dimensions[1] as f32),
-                    );
-
-                    Mat4::look_at_rh(
-                        Vec3::from([
-                            camera.transform().position[0],
-                            camera.transform().position[1],
-                            1.0,
-                        ]),
-                        Vec3::from([
-                            camera.transform().position[0],
-                            camera.transform().position[1],
-                            0.0,
-                        ]),
-                        Vec3::Y,
-                    ) * rotation
-                } else {
-                    proj = Mat4::orthographic_rh(-1.0, 1.0, 1.0, -1.0, -1.0, 1.0);
-                    Mat4::look_at_rh(Vec3::from([0., 0., 0.]), Vec3::from([0., 0., 0.]), Vec3::Y)
-                };
-
-                *objectvert_sub_buffer.write().unwrap() = ModelViewProj { model, view, proj };
+                *objectvert_sub_buffer.write().unwrap() =
+                    Self::make_mvp_matrix(&object, self.dimensions, layer.camera.lock().as_ref());
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
                     color: appearance.color,
                     texture_id: if let Some(material) = &appearance.material {
@@ -260,6 +266,7 @@ impl Draw {
                     .unwrap(),
                 );
 
+                // ---------This part into loader.rs for making models.---------
                 let vertex_sub_buffer = loader
                     .vertex_buffer_allocator
                     .allocate_slice(appearance.data.vertices.clone().len() as _)
@@ -277,8 +284,9 @@ impl Draw {
                     .write()
                     .unwrap()
                     .copy_from_slice(&appearance.data.indices);
+                // -------------------------------------------------------------
 
-                secondary_builder
+                command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
                     .bind_descriptor_sets(
                         vulkano::pipeline::PipelineBindPoint::Graphics,
@@ -292,20 +300,16 @@ impl Draw {
                     .unwrap();
             }
         }
-        builder
-            .execute_commands(secondary_builder.build().unwrap())
-            .unwrap();
+    }
 
-        #[cfg(feature = "egui")]
-        {
-            // Creates and draws the second command buffer in case of egui.
-            let cb = gui.draw_on_subpass_image(dimensions);
-            builder.execute_commands(cb).unwrap();
-        }
-        builder.end_render_pass().unwrap();
-        let command_buffer = builder.build().unwrap();
-
-        // Creates a future in which the command buffer gets executed.
+    /// Creates and executes a future in which the command buffer gets executed.
+    fn execute_command_buffer(
+        &mut self,
+        command_buffer: PrimaryAutoCommandBuffer,
+        acquire_future: SwapchainAcquireFuture,
+        image_num: u32,
+        vulkan: &Vulkan,
+    ) {
         let future = self
             .previous_frame_end
             .take()
@@ -332,5 +336,67 @@ impl Draw {
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
             }
         }
+    }
+
+    /// Redraws the scene.
+    pub fn redrawevent(
+        &mut self,
+        vulkan: &Vulkan,
+        loader: &mut Loader,
+        scene: &super::Scene,
+        clear_color: [f32; 4],
+        #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
+    ) {
+        //windowevents
+        let window = vulkan
+            .surface
+            .object()
+            .unwrap()
+            .downcast_ref::<Window>()
+            .unwrap();
+
+        self.dimensions = window.inner_size().into();
+
+        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
+
+        if self.dimensions.contains(&0) {
+            return;
+        }
+
+        Self::recreate_swapchain(self, vulkan);
+
+        let (image_num, suboptimal, acquire_future) =
+            match acquire_next_image(self.swapchain.clone(), None) {
+                Ok(r) => r,
+                Err(AcquireError::OutOfDate) => {
+                    self.recreate_swapchain = true;
+                    return;
+                }
+                Err(e) => panic!("Failed to acquire next image: {:?}", e),
+            };
+
+        if suboptimal {
+            self.recreate_swapchain = true;
+        }
+
+        let (mut builder, mut secondary_builder) =
+            Self::make_command_buffer(self, vulkan, clear_color, loader, image_num as usize);
+
+        Self::write_secondary_command_buffer(self, scene, &mut secondary_builder, loader);
+
+        builder
+            .execute_commands(secondary_builder.build().unwrap())
+            .unwrap();
+
+        #[cfg(feature = "egui")]
+        {
+            // Creates and draws the second command buffer in case of egui.
+            let cb = gui.draw_on_subpass_image(dimensions);
+            builder.execute_commands(cb).unwrap();
+        }
+        builder.end_render_pass().unwrap();
+        let command_buffer = builder.build().unwrap();
+
+        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num, vulkan);
     }
 }
