@@ -4,6 +4,7 @@ use super::{Labelifier, Vulkan};
 use crate::{error::textures::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
 use parking_lot::Mutex;
+use vulkano::pipeline::cache::PipelineCache;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
 use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
@@ -45,6 +46,20 @@ impl Resources {
         let mut loader = self.loader.lock();
         let mut labelifier = self.labelifier.lock();
         labelifier.update(&self.vulkan, &mut loader);
+    }
+
+    /// Merges a pipeline cache into the resources potentially making the creation of materials faster.
+    /// 
+    /// # Safety
+    /// Unsafe because vulkan blindly trusts that this data comes from the get_pipeline_binary function.
+    /// The program will crash if the data provided is not right.
+    pub unsafe fn load_pipeline_cache(&self, data: &[u8]) {
+        let cache = PipelineCache::with_data(self.vulkan.device.clone(), data).unwrap();
+        self.loader.lock().pipeline_cache.merge(vec![&cache].iter()).unwrap();
+    }
+
+    pub fn get_pipeline_binary(&self) -> Vec<u8> {
+        self.loader.lock().pipeline_cache.get_data().unwrap()
     }
 
     /// Loads a font into the game resources.

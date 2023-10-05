@@ -15,7 +15,7 @@ use vulkano::pipeline::{
         vertex_input::Vertex,
         viewport::ViewportState,
     },
-    GraphicsPipeline, Pipeline, StateMode,
+    GraphicsPipeline, Pipeline, StateMode, cache::PipelineCache,
 };
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
@@ -62,6 +62,7 @@ impl Material {
         shaders: &Shaders,
         descriptor: Vec<WriteDescriptorSet>,
         vulkan: &Vulkan,
+        pipeline_cache: Arc<PipelineCache>,
         subpass: Subpass,
         allocator: &StandardDescriptorSetAllocator,
     ) -> Self {
@@ -88,6 +89,7 @@ impl Material {
             .fragment_shader(fs.entry_point("main").unwrap(), ())
             .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
             .render_pass(subpass)
+            .build_with_cache(pipeline_cache)
             .build(vulkan.device.clone())
             .unwrap();
         let descriptor = if !descriptor.is_empty() {
