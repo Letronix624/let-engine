@@ -15,6 +15,7 @@ use crate::{
     objects::Appearance,
     objects::Data,
     objects::GameObject,
+    objects::RigidBodyParent,
     resources::textures::*,
     resources::{Font, Resources, Texture},
     Transform, Vertex, WeakObject,
@@ -130,6 +131,7 @@ impl GameObject for Label {
         &mut self,
         id: usize,
         parent: &crate::NObject,
+        rigid_body_parent: RigidBodyParent,
         _layer: &crate::Layer,
     ) -> crate::NObject {
         self.id = id;
@@ -138,6 +140,7 @@ impl GameObject for Label {
         let node: crate::NObject = Arc::new(Mutex::new(crate::objects::Node {
             object: Box::new(self.clone()),
             parent: Some(Arc::downgrade(parent)),
+            rigid_body_parent,
             children: vec![],
         }));
         self.reference = Some(Arc::downgrade(&node));
@@ -318,7 +321,6 @@ impl Labelifier {
         }
     }
 
-    /// Updates each queued object.
     fn update_each_object(&self) {
         for task in self.queued.iter() {
             let mut label = task.label.clone();

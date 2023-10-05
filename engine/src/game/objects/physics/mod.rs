@@ -164,6 +164,7 @@ impl ObjectPhysics {
         &mut self,
         transform: &Transform,
         parent: &super::NObject,
+        rigid_body_object: &mut crate::objects::RigidBodyParent,
         id: u128,
     ) -> Transform {
         let parent = parent.lock();
@@ -292,6 +293,9 @@ impl ObjectPhysics {
             }
             _ => (),
         };
+        if rigid_body_object.is_none() && self.rigid_body.is_some() {
+            *rigid_body_object = Some(None);
+        }
         parent_transform
     }
     /// In case the object gets removed from the layer.
