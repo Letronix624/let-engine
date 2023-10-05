@@ -6,6 +6,7 @@ edition = "2021"
 description = "A game engine to learn vulkan made by Let. Not done yet."
 readme = "../README.md"
 repository = "https://github.com/Letronix624/Let-Engine"
+documentation = "https://let-server.net/docs/let_engine"
 keywords = [
     "gamedev",
     "graphics",
@@ -38,7 +39,7 @@ nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
 engine-macros = { path = "../engine-macros", version = "0.2.*" }
 
 rusttype = { version = "0.9.3", features = [ "gpu_cache" ] }
-egui_winit_vulkano = { version = "0.24.0", optional = true }
+egui_winit_vulkano = { version = "0.25.0", optional = true }
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
 
 [features]
