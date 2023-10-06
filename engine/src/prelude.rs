@@ -12,6 +12,7 @@ pub use joints::*;
 pub use labels::*;
 pub use physics::*;
 pub use rapier2d::prelude::CoefficientCombineRule;
+pub use scenes::*;
 pub use textures::*;
 
 use crate as let_engine;

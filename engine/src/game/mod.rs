@@ -2,7 +2,11 @@ pub mod resources;
 use resources::{Loader, Resources};
 pub mod objects;
 use objects::Node;
-pub use objects::{physics, GameObject, Layer, Scene, Transform};
+pub use objects::{
+    physics,
+    scenes::{Layer, Scene},
+    GameObject, Transform,
+};
 pub mod camera;
 pub mod vulkan;
 use vulkan::Vulkan;

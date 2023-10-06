@@ -160,6 +160,9 @@ impl GameObject for Label {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+    fn as_node(&self) -> crate::NObject {
+        self.reference.as_ref().unwrap().upgrade().unwrap()
+    }
     fn collider_handle(&self) -> Option<ColliderHandle> {
         None
     }

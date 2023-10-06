@@ -157,6 +157,9 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             fn as_any(&self) -> &dyn std::any::Any {
                 self
             }
+            fn as_node(&self) -> let_engine::NObject {
+                self.reference.as_ref().unwrap().upgrade().unwrap()
+            }
             fn rigidbody_handle(&self) -> Option<let_engine::rapier2d::dynamics::RigidBodyHandle> {
                 self.physics.rigid_body_handle
             }
