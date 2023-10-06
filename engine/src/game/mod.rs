@@ -29,8 +29,8 @@ use std::{
     time::SystemTime,
 };
 
-pub use objects::data;
-pub use objects::data::{tvert, vert, Vertex};
+pub use resources::data;
+pub use resources::data::{tvert, vert, Vertex};
 
 pub type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;

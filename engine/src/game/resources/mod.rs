@@ -1,6 +1,7 @@
 //! Resources to be handled by the engine like textures, sounds and fonts.
 
 use super::{Labelifier, Vulkan};
+use crate::data::Data;
 use crate::{error::textures::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
 use parking_lot::Mutex;
@@ -17,7 +18,10 @@ pub(crate) use loader::Loader;
 pub mod textures;
 use textures::*;
 
+pub mod data;
 pub mod materials;
+pub mod model;
+pub use model::Model;
 
 /// All the resources kept in the game engine like textures, fonts, sounds and models.
 #[derive(Clone)]
@@ -70,6 +74,11 @@ impl Resources {
     /// Allows this binary to be loaded with the `load_pipeline_cache` function to make loading materials potentially faster.
     pub fn get_pipeline_binary(&self) -> Vec<u8> {
         self.loader.lock().pipeline_cache.get_data().unwrap()
+    }
+
+    pub fn load_model(&self, data: Data) -> Model {
+        let mut loader = self.loader.lock();
+        Model::new(data, &mut loader)
     }
 
     /// Loads a font into the game resources.

@@ -10,6 +10,7 @@ use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font as RFont, PositionedGlyph, Scale};
 
 use super::super::{vulkan::shaders::*, Loader, Vulkan};
+use crate::resources::Model;
 use crate::{
     materials::*,
     objects::Appearance,
@@ -333,7 +334,7 @@ impl Labelifier {
         }
     }
 
-    fn update_each_object(&self) {
+    fn update_each_object(&self, loader: &mut Loader) {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
@@ -389,8 +390,11 @@ impl Labelifier {
                     }
                 })
                 .collect();
-            label.appearance.data = Data { vertices, indices };
-            label.appearance.material = Some(self.material.clone());
+            let model = Model::new(Data::new(vertices, indices), loader);
+            label.appearance = label
+                .appearance
+                .model(model)
+                .material(self.material.clone());
             //label.sync();
             let arc = label.reference.clone().unwrap().upgrade().unwrap();
             let mut object = arc.lock();
@@ -406,7 +410,7 @@ impl Labelifier {
 
         Self::update_and_resize_cache(self, vulkan, loader);
 
-        Self::update_each_object(self);
+        Self::update_each_object(self, loader);
 
         self.queued = vec![];
         self.ready = false;

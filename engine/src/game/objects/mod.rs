@@ -1,14 +1,13 @@
 //! Objects to be drawn to the screen.
 
-pub mod data;
 pub mod labels;
 pub mod physics;
-use self::data::Data;
+use crate::data::Data;
+use crate::resources::model::Model;
 
 use super::camera::{Camera, CameraScaling};
 use super::{materials, AObject, NObject};
-use crate::error::objects::*;
-use crate::error::textures::*;
+use crate::error::{objects::*, textures::*};
 use crate::utils::scale;
 use physics::Physics;
 
@@ -179,7 +178,7 @@ impl Node<AObject> {
 pub struct Appearance {
     pub visible: bool,
     pub material: Option<materials::Material>,
-    pub data: Data,
+    pub model: Option<Model>,
     pub transform: Transform,
     pub color: [f32; 4],
 }
@@ -187,13 +186,6 @@ impl Appearance {
     /// Makes a default appearance.
     pub fn new() -> Self {
         Self {
-            ..Default::default()
-        }
-    }
-    /// Makes a while 1x1 square.
-    pub fn new_square() -> Self {
-        Self {
-            data: Data::square(),
             ..Default::default()
         }
     }
@@ -229,8 +221,8 @@ impl Appearance {
     }
     /// Sets the model data of this appearance.
     #[inline]
-    pub fn data(mut self, data: Data) -> Self {
-        self.data = data;
+    pub fn model(mut self, model: Model) -> Self {
+        self.model = Some(model);
         self
     }
     /// Sets the transform of this appearance.
@@ -256,7 +248,7 @@ impl default::Default for Appearance {
         Self {
             visible: true,
             material: None,
-            data: Data::empty(),
+            model: None,
             transform: Transform::default(),
             color: [1.0, 1.0, 1.0, 1.0],
         }
@@ -545,6 +537,48 @@ impl Layer {
         }
     }
 
+    /// Returns id of the first collider intersecting with given ray.
+    pub fn intersections_with_ray(
+        &self,
+        position: Vec2,
+        direction: Vec2,
+        time_of_impact: Real,
+        solid: bool,
+    ) -> Vec<usize> {
+        let mut physics = self.physics.lock();
+        physics.update_query_pipeline();
+
+        let mut intersections = vec![];
+        let bodies = &physics.rigid_body_set;
+        let colliders = &physics.collider_set;
+        let filter = QueryFilter::default();
+        let mut callback = |handle| {
+            intersections.push(physics.collider_set.get(handle).unwrap().user_data as usize);
+            true
+        };
+
+        if direction.eq(&vec2(0.0, 0.0)) {
+            physics.query_pipeline.intersections_with_point(
+                bodies,
+                colliders,
+                &position.into(),
+                filter,
+                callback,
+            );
+        } else {
+            physics.query_pipeline.intersections_with_ray(
+                bodies,
+                colliders,
+                &Ray::new(position.into(), direction.into()),
+                time_of_impact,
+                solid,
+                filter,
+                |handle, _| callback(handle),
+            );
+        };
+        intersections
+    }
+
     /// Cast a shape and return the first collider intersecting with it.
     pub fn intersection_with_shape(
         &self,
@@ -562,6 +596,32 @@ impl Layer {
             QueryFilter::default(),
         );
         result.map(|handle| physics.collider_set.get(handle).unwrap().user_data as usize)
+    }
+
+    /// Cast a shape and return the first collider intersecting with it.
+    pub fn intersections_with_shape(
+        &self,
+        shape: physics::Shape,
+        position: (Vec2, f32),
+    ) -> Vec<usize> {
+        let mut physics = self.physics.lock();
+        physics.update_query_pipeline();
+
+        let mut intersections = vec![];
+        let callback = |handle| {
+            intersections.push(physics.collider_set.get(handle).unwrap().user_data as usize);
+            true
+        };
+
+        physics.query_pipeline.intersections_with_shape(
+            &physics.rigid_body_set,
+            &physics.collider_set,
+            &position.into(),
+            shape.0.as_ref(),
+            QueryFilter::default(),
+            callback
+        );
+        intersections
     }
 
     /// Moves an object on the given index in it's parents children order.

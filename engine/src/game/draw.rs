@@ -17,7 +17,8 @@ use vulkano::{
 use winit::window::Window;
 
 use super::{
-    objects::{data::*, Object},
+    objects::Object,
+    resources::data::*,
     vulkan::{window_size_dependent_setup, Vulkan},
     Loader,
 };
@@ -216,7 +217,7 @@ impl Draw {
             for object in order {
                 let appearance = &object.appearance;
                 // Skip drawing the object if the object is not marked visible or has no vertices.
-                if !appearance.visible || appearance.data.vertices.is_empty() {
+                if !appearance.visible || appearance.model.is_none() {
                     continue;
                 }
 
@@ -266,25 +267,7 @@ impl Draw {
                     .unwrap(),
                 );
 
-                // ---------This part into loader.rs for making models.---------
-                let vertex_sub_buffer = loader
-                    .vertex_buffer_allocator
-                    .allocate_slice(appearance.data.vertices.clone().len() as _)
-                    .unwrap();
-                let index_sub_buffer = loader
-                    .index_buffer_allocator
-                    .allocate_slice(appearance.data.indices.clone().len() as _)
-                    .unwrap();
-
-                vertex_sub_buffer
-                    .write()
-                    .unwrap()
-                    .copy_from_slice(&appearance.data.vertices);
-                index_sub_buffer
-                    .write()
-                    .unwrap()
-                    .copy_from_slice(&appearance.data.indices);
-                // -------------------------------------------------------------
+                let model = appearance.model.as_ref().unwrap();
 
                 command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
@@ -294,9 +277,9 @@ impl Draw {
                         0,
                         descriptors,
                     )
-                    .bind_vertex_buffers(0, vertex_sub_buffer.clone())
-                    .bind_index_buffer(index_sub_buffer.clone())
-                    .draw_indexed(appearance.data.indices.len() as u32, 1, 0, 0, 0)
+                    .bind_vertex_buffers(0, model.get_vertex_buffer())
+                    .bind_index_buffer(model.get_index_buffer())
+                    .draw_indexed(model.get_size() as u32, 1, 0, 0, 0)
                     .unwrap();
             }
         }
@@ -391,7 +374,7 @@ impl Draw {
         #[cfg(feature = "egui")]
         {
             // Creates and draws the second command buffer in case of egui.
-            let cb = gui.draw_on_subpass_image(dimensions);
+            let cb = gui.draw_on_subpass_image(self.dimensions);
             builder.execute_commands(cb).unwrap();
         }
         builder.end_render_pass().unwrap();

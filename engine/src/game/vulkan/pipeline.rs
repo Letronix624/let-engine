@@ -1,4 +1,4 @@
-use crate::game::objects::data::Vertex as GameVertex;
+use crate::data::Vertex as GameVertex;
 use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::pipeline::graphics::color_blend::ColorBlendState;
