@@ -4,36 +4,6 @@ use quote::quote;
 use syn::{parse::Parser, parse_macro_input, DeriveInput};
 
 #[proc_macro_attribute]
-pub fn objectinit(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
-    let name = &ast.ident;
-    quote! {
-        #[let_engine::objectinit_without_implements]
-        #ast
-        impl #name {
-            pub fn update(&mut self) {
-                let arc = self.reference.clone().unwrap().upgrade().unwrap();
-                let object = &arc.lock().object;
-                self.transform = object.transform();
-
-                self.appearance = object.appearance().clone();
-            }
-            pub fn sync(&self) {
-                // update public position of children
-                let transform = Self::public_transform(self);
-                let node = self.reference.clone().unwrap().upgrade().unwrap();
-                node.lock().update_children_position(transform);
-
-                let arc = self.reference.clone().unwrap().upgrade().unwrap();
-                let mut object = arc.lock();
-                object.object = Box::new(self.clone());
-            }
-        }
-    }
-    .into()
-}
-
-#[proc_macro_attribute]
 pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> TokenStream {
     let mut ast = parse_macro_input!(input as DeriveInput);
     match &mut ast.data {
@@ -89,42 +59,6 @@ pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> 
     quote! {
         #[derive(Clone)]
         #ast
-    }
-    .into()
-}
-
-/// Implements GameObject and Camera to an object. Marks an object to be able to be used as a
-/// camera and automatically adds a camera field which holds the mode and zoom.
-#[proc_macro_attribute]
-pub fn camera(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut ast = parse_macro_input!(input as DeriveInput);
-    let name = &ast.ident;
-
-    let implements = if let syn::Data::Struct(ref mut struct_data) = ast.data {
-        if let syn::Fields::Named(fields) = &mut struct_data.fields {
-            fields.named.push(
-                syn::Field::parse_named
-                    .parse2(quote! {
-                        pub camera: let_engine::camera::CameraSettings
-                    })
-                    .unwrap(),
-            );
-        }
-        quote! {
-            impl let_engine::camera::Camera for #name {
-                fn settings(&self) -> let_engine::camera::CameraSettings {
-                    self.camera
-                }
-            }
-        }
-    } else {
-        panic!("`object` has to be used with structs.");
-    };
-
-    quote! {
-        #[let_engine::object]
-        #ast
-        #implements
     }
     .into()
 }
@@ -186,6 +120,9 @@ pub fn object(_args: TokenStream, input: TokenStream) -> TokenStream {
             }
             fn as_any(&self) -> &dyn std::any::Any {
                 self
+            }
+            fn as_node(&self) -> let_engine::NObject {
+                self.reference.as_ref().unwrap().upgrade().unwrap()
             }
             fn rigidbody_handle(&self) -> Option<let_engine::rapier2d::dynamics::RigidBodyHandle> {
                 self.physics.rigid_body_handle

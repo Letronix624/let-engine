@@ -1,6 +1,6 @@
 [package]
 name = "engine-macros"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Let"]
 edition = "2021"
 description = "Macros to the Let engine"

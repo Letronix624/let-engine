@@ -10,7 +10,9 @@ use vulkano::{library::VulkanLibrary, Version};
 
 /// Initializes a new Vulkan instance.
 pub fn create_instance() -> Arc<Instance> {
-    let library = VulkanLibrary::new().expect("Your Devices hardware does not fulfill the minimum requirements to run this program.\n");
+    let library = VulkanLibrary::new().expect(
+        "Your Devices hardware does not fulfill the minimum requirements to run this program.\n",
+    );
 
     let required_extensions = vulkano_win::required_extensions(&library);
 
@@ -64,7 +66,6 @@ pub fn create_physical_device(
                 .position(|(i, q)| {
                     q.queue_flags.intersects(QueueFlags::GRAPHICS)
                         && p.surface_support(i as u32, surface).unwrap_or(false)
-                    //q.queue_flags.graphics && p.surface_support(i as u32, surface).unwrap_or(false)
                 })
                 .map(|i| (p, i as u32))
         })

@@ -1,7 +1,5 @@
 //! Camera and vision related settings.
 
-use crate::objects::GameObject;
-
 /// The 4 Camera scaling modes determine how far you can see when the window changes scale.
 /// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it's not on stretch mode.
 /// Those are the options in this game engine:
@@ -26,10 +24,6 @@ impl Default for CameraScaling {
     }
 }
 
-pub trait Camera: GameObject {
-    fn settings(&self) -> CameraSettings;
-}
-
 /// Settings that determine your camera vision.
 #[derive(Clone, Copy)]
 pub struct CameraSettings {
@@ -45,10 +39,14 @@ impl Default for CameraSettings {
     }
 }
 impl CameraSettings {
+    /// Returns the zoom.
+    #[inline]
     pub fn zoom(mut self, zoom: f32) -> Self {
         self.zoom = zoom;
         self
     }
+    /// Returns the camera mode.
+    #[inline]
     pub fn mode(mut self, mode: CameraScaling) -> Self {
         self.mode = mode;
         self

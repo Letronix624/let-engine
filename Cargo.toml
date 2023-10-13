@@ -3,6 +3,7 @@ members = [
     "engine",
     "engine-macros",
 ]
+resolver = "1"
 [profile.release]
 strip = "symbols"
 opt-level = 3

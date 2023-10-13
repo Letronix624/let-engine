@@ -15,7 +15,7 @@ use vulkano::{
         ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
     },
     memory::allocator::StandardMemoryAllocator,
-    pipeline::Pipeline,
+    pipeline::{cache::PipelineCache, Pipeline},
     render_pass::Subpass,
     sampler::Sampler,
 };
@@ -30,6 +30,7 @@ pub(crate) struct Loader {
     pub object_buffer_allocator: SubbufferAllocator,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub command_buffer_allocator: StandardCommandBufferAllocator,
+    pub pipeline_cache: Arc<PipelineCache>,
 }
 
 impl Loader {
@@ -67,6 +68,8 @@ impl Loader {
         let command_buffer_allocator =
             StandardCommandBufferAllocator::new(vulkan.device.clone(), Default::default());
 
+        let pipeline_cache = PipelineCache::empty(vulkan.device.clone()).unwrap();
+
         Self {
             memory_allocator,
             vertex_buffer_allocator,
@@ -74,12 +77,13 @@ impl Loader {
             object_buffer_allocator,
             descriptor_set_allocator,
             command_buffer_allocator,
+            pipeline_cache,
         }
     }
 
     /// Loads a material to the gpu.
     pub fn load_material(
-        &mut self,
+        &self,
         vulkan: &Vulkan,
         shaders: &materials::Shaders,
         settings: materials::MaterialSettings,
@@ -91,6 +95,7 @@ impl Loader {
             shaders,
             descriptor_bindings,
             vulkan,
+            self.pipeline_cache.clone(),
             subpass,
             &self.descriptor_set_allocator,
         )
@@ -98,7 +103,7 @@ impl Loader {
 
     /// Loads a texture to the GPU.
     pub fn load_texture(
-        &mut self,
+        &self,
         vulkan: &Vulkan,
         data: &[u8],
         dimensions: (u32, u32),

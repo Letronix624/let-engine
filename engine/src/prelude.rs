@@ -5,16 +5,21 @@
 //! - imports everything this engine has to offer.
 
 pub use crate::{
-    data::*, directions::*, materials::*, objects::*, resources::*, camera::*, *
+    camera::*, data::*, directions::*, events::*, materials::*, objects::*, resources::*,
+    window::*, *,
 };
+pub use dpi::*;
+#[cfg(feature = "egui")]
+pub use egui_winit_vulkano::egui;
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
 pub use joints::*;
+pub use labels::*;
 pub use physics::*;
 pub use rapier2d::prelude::CoefficientCombineRule;
+pub use scenes::*;
 pub use textures::*;
-pub use labels::*;
 
 use crate as let_engine;
 //use crate::game::objects::GameObject;
@@ -24,8 +29,3 @@ use crate as let_engine;
 #[object]
 #[derive(Default)]
 pub struct Object {}
-
-/// Default Camera object without any additional fields.
-#[camera]
-#[derive(Default)]
-pub struct Camera {}

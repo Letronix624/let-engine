@@ -1,25 +1,29 @@
 pub mod resources;
-use resources::Resources;
-use resources::Loader;
+use glam::vec2;
+use resources::{vulkan::Vulkan, Loader, Resources};
 pub mod objects;
 use objects::Node;
-pub use objects::{physics, GameObject, Layer, Scene, Transform};
-pub mod camera;
-pub mod vulkan;
-use vulkan::Vulkan;
-use winit::{
-    event::{Event, WindowEvent},
-    event_loop::EventLoop,
-    window::WindowBuilder,
+pub use objects::{
+    physics,
+    scenes::{Layer, Scene},
+    GameObject, Transform,
 };
+pub mod camera;
 mod draw;
-use draw::Draw;
+pub mod window;
+pub use draw::Draw;
 use objects::labels::Labelifier;
+pub use winit::event_loop::ControlFlow;
+use winit::{
+    event::{DeviceEvent, Event, MouseScrollDelta, WindowEvent},
+    event_loop::{EventLoop, EventLoopBuilder},
+};
 pub mod input;
-pub use resources::materials;
 pub use input::Input;
+pub use resources::materials;
 #[cfg(feature = "egui")]
 pub mod egui;
+pub mod events;
 
 use atomic_float::AtomicF64;
 pub use engine_macros;
@@ -30,156 +34,266 @@ use std::{
     time::SystemTime,
 };
 
-pub use objects::data;
-pub use objects::data::{tvert, vert, Vertex};
+pub use resources::data;
+pub use resources::data::{tvert, vert, Vertex};
 
-pub type AObject = Box<dyn GameObject>;
+use self::{
+    events::{InputEvent, ScrollDelta},
+    window::{Window, WindowBuilder},
+};
+
+pub(crate) type AObject = Box<dyn GameObject>;
 pub type NObject = Arc<Mutex<Node<AObject>>>;
 pub type WeakObject = Weak<Mutex<Node<AObject>>>;
 
-/// This is what you create your whole game session with.
-pub struct GameBuilder {
-    window_builder: Option<WindowBuilder>,
-    clear_background_color: [f32; 4],
+/// Initializes the let engine.
+///
+/// Creates 4 static variables that can be accessed everywhere to use.
+///
+/// `INPUT`: a live updated [Input] struct.
+///
+/// `TIME`: a live updated [Time] struct.
+///
+/// `RESOURCES`: The resource manager where you load your assets.
+///
+/// `WINDOW`: A [Window] that you can change the attributes of once you've run the [crate::start_engine] macro.
+#[macro_export]
+macro_rules! let_engine {
+    () => {
+        static INPUT: let_engine::Lazy<let_engine::Input> =
+            let_engine::Lazy::new(let_engine::Input::default);
+        static TIME: let_engine::Lazy<let_engine::Time> =
+            let_engine::Lazy::new(let_engine::Time::default);
+        static _RESOURCES: let_engine::Lazy<let_engine::_Resources> = let_engine::Lazy::new(|| {
+            std::sync::Arc::new(let_engine::Mutex::new(
+                let_engine::resources::Resources::new(),
+            ))
+        });
+        static SCENE: let_engine::Lazy<let_engine::Scene> =
+            let_engine::Lazy::new(let_engine::Scene::default);
+        static RESOURCES: let_engine::Lazy<let_engine::resources::Resources> =
+            let_engine::Lazy::new(|| {
+                let resources = _RESOURCES.lock();
+                resources.clone()
+            });
+        static WINDOW: let_engine::Lazy<let_engine::window::Window> =
+            let_engine::Lazy::new(|| _RESOURCES.lock().get_window());
+    };
 }
 
-impl GameBuilder {
-    pub fn new() -> Self {
-        Self {
-            window_builder: None,
-            clear_background_color: [0.0; 4],
-        }
-    }
-    pub fn with_window_builder(mut self, window_builder: WindowBuilder) -> Self {
-        self.window_builder = Some(window_builder);
-        self
-    }
-    pub fn with_clear_color(mut self, color: [f32; 4]) -> Self {
-        self.clear_background_color = color;
-        self
-    }
-    pub fn build(&mut self) -> (Game, EventLoop<()>) {
-        let window_builder = if let Some(window_builder) = self.window_builder.clone() {
-            window_builder
-        } else {
-            panic!("no window builder");
-        };
-
-        let clear_background_color = self.clear_background_color;
-
-        let (vulkan, event_loop) = Vulkan::init(window_builder);
-        let mut loader = Loader::init(&vulkan);
-        #[cfg(feature = "egui")]
-        let gui = egui::init(&event_loop, &vulkan);
-        let draw = Draw::setup(&vulkan, &loader);
-        let labelifier = Labelifier::new(&vulkan, &mut loader);
-
-        let resources = Resources::new(
-            vulkan,
-            Arc::new(Mutex::new(loader)),
-            Arc::new(Mutex::new(labelifier)),
-        );
-
-        (
-            Game {
-                scene: Scene::default(),
-                resources,
-                draw,
-                input: Input::default(),
-                #[cfg(feature = "egui")]
-                gui,
-                #[cfg(feature = "egui")]
-                gui_updated: false,
-
-                time: Time::default(),
-                clear_background_color,
-            },
-            event_loop,
+/// Starts the engine, enables the window and starts drawing the scene.
+/// Takes a [window::WindowBuilder] for the initial window.
+#[macro_export]
+macro_rules! start_engine {
+    ($window_builder:expr) => {{
+        let_engine::Game::new(
+            $window_builder,
+            _RESOURCES.clone(),
+            SCENE.clone(),
+            INPUT.clone(),
+            TIME.clone(),
         )
-    }
-}
-impl Default for GameBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
+    }};
 }
 
 /// The struct that holds and executes all of the game data.
 pub struct Game {
-    pub scene: Scene,
-    pub resources: Resources,
-    pub time: Time,
-    pub input: Input,
+    resources: Resources,
+    scene: Scene,
+    input: Input,
+    time: Time,
+    window: Window,
+    event_loop: EventLoop<()>,
     #[cfg(feature = "egui")]
     gui: egui_winit_vulkano::Gui,
-    #[cfg(feature = "egui")]
-    gui_updated: bool,
 
     draw: Draw,
-    clear_background_color: [f32; 4],
 }
 
 impl Game {
-    pub fn update<T: 'static>(&mut self, event: &Event<T>) {
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            } => {
-                self.draw.recreate_swapchain = true;
-            }
+    pub fn new(
+        window_builder: WindowBuilder,
+        resources: Arc<Mutex<Resources>>,
+        scene: Scene,
+        input: Input,
+        time: Time,
+    ) -> Self {
+        let event_loop = EventLoopBuilder::new().build();
+        let vulkan = Vulkan::init(&event_loop, window_builder);
+
+        #[cfg(feature = "egui")]
+        let gui = egui::init(&event_loop, &vulkan);
+
+        let mut resources = resources.lock();
+        resources.init(vulkan);
+        let resources = resources.clone();
+
+        let draw = Draw::setup(&resources);
+
+        let window = resources.get_window();
+
+        Self {
+            resources,
+            scene,
+            input,
+            time,
+            window,
+            event_loop,
+
             #[cfg(feature = "egui")]
-            Event::WindowEvent { event, .. } => {
-                self.gui.update(event);
-            }
-            Event::RedrawEventsCleared => {
-                #[cfg(feature = "egui")]
-                {
-                    if !self.gui_updated {
+            gui,
+
+            draw,
+        }
+    }
+
+    /// Runs the main loop updating the window after every iteration.
+    ///
+    /// There is also a provided control flow.
+    ///
+    /// On `Wait` this will update each window event.
+    /// It also allows updating the window using the `request_redraw()` function for the [window::Window]
+    pub fn run_loop<F>(mut self, mut func: F)
+    where
+        F: FnMut(events::Event, &mut ControlFlow) + 'static,
+    {
+        let event_loop = self.event_loop;
+
+        event_loop.run(move |event, _, control_flow| {
+            self.input.update(&event, self.window.inner_size());
+            match event {
+                Event::WindowEvent { event, .. } => {
+                    #[cfg(feature = "egui")]
+                    self.gui.update(&event);
+                    let event = match event {
+                        WindowEvent::Resized(size) => {
+                            self.draw.recreate_swapchain = true;
+                            events::Event::Window(events::WindowEvent::Resized(size))
+                        }
+                        WindowEvent::ReceivedCharacter(char) => {
+                            events::Event::Input(InputEvent::ReceivedCharacter(char))
+                        }
+                        WindowEvent::CloseRequested => {
+                            events::Event::Window(events::WindowEvent::CloseRequested)
+                        }
+                        WindowEvent::CursorEntered { .. } => {
+                            events::Event::Window(events::WindowEvent::CursorEntered)
+                        }
+                        WindowEvent::CursorLeft { .. } => {
+                            events::Event::Window(events::WindowEvent::CursorLeft)
+                        }
+                        WindowEvent::CursorMoved { position, .. } => {
+                            events::Event::Window(events::WindowEvent::CursorMoved(position))
+                        }
+                        WindowEvent::Destroyed => {
+                            events::Event::Window(events::WindowEvent::Destroyed)
+                        }
+                        WindowEvent::HoveredFile(file) => {
+                            events::Event::Window(events::WindowEvent::HoveredFile(file))
+                        }
+                        WindowEvent::DroppedFile(file) => {
+                            events::Event::Window(events::WindowEvent::DroppedFile(file))
+                        }
+                        WindowEvent::HoveredFileCancelled => {
+                            events::Event::Window(events::WindowEvent::HoveredFileCancelled)
+                        }
+                        WindowEvent::Focused(focused) => {
+                            events::Event::Window(events::WindowEvent::Focused(focused))
+                        }
+                        WindowEvent::KeyboardInput { input, .. } => {
+                            events::Event::Input(InputEvent::KeyboardInput {
+                                input: events::KeyboardInput {
+                                    scancode: input.scancode,
+                                    keycode: input.virtual_keycode,
+                                    state: input.state,
+                                },
+                            })
+                        }
+                        WindowEvent::ModifiersChanged(_) => {
+                            events::Event::Input(InputEvent::ModifiersChanged)
+                        }
+                        WindowEvent::MouseInput { state, button, .. } => {
+                            events::Event::Input(InputEvent::MouseInput(button, state))
+                        }
+                        WindowEvent::MouseWheel { delta, .. } => {
+                            events::Event::Window(events::WindowEvent::MouseWheel(match delta {
+                                MouseScrollDelta::LineDelta(x, y) => {
+                                    ScrollDelta::LineDelta(vec2(x, y))
+                                }
+                                MouseScrollDelta::PixelDelta(x) => ScrollDelta::PixelDelta(x),
+                            }))
+                        }
+                        _ => events::Event::Destroyed,
+                    };
+                    // destroy event can't be called here so I did the most lazy approach possible.
+                    if let events::Event::Destroyed = event {
+                    } else {
+                        func(event, control_flow);
+                    }
+                }
+                Event::DeviceEvent { event, .. } => match event {
+                    DeviceEvent::MouseMotion { delta } => {
+                        func(
+                            events::Event::Input(InputEvent::MouseMotion(vec2(
+                                delta.0 as f32,
+                                delta.1 as f32,
+                            ))),
+                            control_flow,
+                        );
+                    }
+                    DeviceEvent::MouseWheel { delta } => {
+                        func(
+                            events::Event::Input(InputEvent::MouseWheel(match delta {
+                                MouseScrollDelta::LineDelta(x, y) => {
+                                    ScrollDelta::LineDelta(vec2(x, y))
+                                }
+                                MouseScrollDelta::PixelDelta(delta) => {
+                                    ScrollDelta::PixelDelta(delta)
+                                }
+                            })),
+                            control_flow,
+                        );
+                    }
+                    _ => (),
+                },
+                Event::MainEventsCleared => {
+                    #[cfg(feature = "egui")]
+                    {
+                        self.gui.immediate_ui(|gui| {
+                            func(events::Event::Egui(gui.context()), control_flow);
+                        });
                         self.gui.immediate_ui(|_gui| {});
                     }
-                    self.gui_updated = false;
+
+                    func(events::Event::Update, control_flow);
                 }
-
-                self.resources.update();
-                self.draw.redrawevent(
-                    &self.resources.vulkan,
-                    &mut self.resources.loader.lock(),
-                    &self.scene,
-                    self.clear_background_color,
-                    #[cfg(feature = "egui")]
-                    &mut self.gui,
-                );
-
-                self.time.update();
+                Event::RedrawEventsCleared => {
+                    self.resources.update();
+                    self.draw.redrawevent(
+                        &self.resources,
+                        &self.scene,
+                        #[cfg(feature = "egui")]
+                        &mut self.gui,
+                    );
+                    self.time.update();
+                    func(events::Event::FrameUpdate, control_flow);
+                }
+                Event::LoopDestroyed => {
+                    func(events::Event::Destroyed, control_flow);
+                }
+                _ => (),
             }
-            _ => (),
-        }
-        self.input
-            .update(event, self.resources.get_window().inner_size());
-    }
-
-    /// Updates the Egui gui.
-    #[cfg(feature = "egui")]
-    pub fn update_gui(&mut self, func: impl FnOnce(egui_winit_vulkano::egui::Context)) {
-        self.gui.immediate_ui(|gui| {
-            func(gui.context());
         });
-        self.gui_updated = true;
-    }
-
-    /// Sets the background color to clear the screen with.
-    pub fn set_clear_background_color(&mut self, color: [f32; 4]) {
-        self.clear_background_color = color;
     }
 }
 
 /// Holds the timings of the engine like runtime and delta time.
 #[derive(Clone)]
 pub struct Time {
+    /// Time since engine start.
     pub time: SystemTime,
     delta_instant: SystemTime,
-    pub delta_time: Arc<AtomicF64>,
+    delta_time: Arc<AtomicF64>,
 }
 
 impl Default for Time {
@@ -193,6 +307,7 @@ impl Default for Time {
 }
 
 impl Time {
+    /// Updates the time data on frame redraw.
     pub(crate) fn update(&mut self) {
         self.delta_time.store(
             self.delta_instant.elapsed().unwrap().as_secs_f64(),

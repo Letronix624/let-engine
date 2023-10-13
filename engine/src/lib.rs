@@ -4,16 +4,18 @@ pub mod prelude;
 pub(crate) mod utils;
 
 pub use game::{
-    camera, data, materials, objects, physics, resources, tvert, vert, Game, GameBuilder, Layer,
-    NObject, Scene, Time, Transform, Vertex, WeakObject,
+    camera, data, events, materials, objects, physics, resources, tvert, vert, window, Game, Input,
+    Layer, NObject, Scene, Time, Transform, Vertex, WeakObject,
 };
 
-//RE EXPORTS
-
+pub use color_art::{color, Color};
 pub use engine_macros::*;
 pub use glam::{vec2, Vec2};
+pub use once_cell::sync::Lazy;
 pub use parking_lot::Mutex;
 pub use rapier2d;
+
+pub type _Resources = std::sync::Arc<Mutex<resources::Resources>>;
 
 /// Cardinal directions
 pub mod directions {

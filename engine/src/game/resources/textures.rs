@@ -1,24 +1,32 @@
 //! Texture related options.
 
+use derive_builder::Builder;
+pub use image::ImageFormat;
 pub use vulkano::sampler::BorderColor;
 use vulkano::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
 
 /// Formats for the texture from raw data.
+#[derive(Clone, Copy, Debug)]
 pub enum Format {
+    /// 8 bits red
     R8,
+    /// 8 bits red green blue alpha
     RGBA8,
+    /// 16 bits red green blue alpha
     RGBA16,
 }
 
 /// Filtering mode
+#[derive(Clone, Copy, Debug)]
 pub enum Filter {
     Nearest,
     Linear,
 }
 
 /// Handling of pixels outside the position range of the texture.
+#[derive(Clone, Copy, Debug)]
 pub enum AddressMode {
     /// Repeats the texture.
     Repeat,
@@ -30,31 +38,29 @@ pub enum AddressMode {
     ClampToBorder,
 }
 
-/// Format of the image.
-pub enum ImageFormat {
-    PNG,
-    JPG,
-    BMP,
-    TIFF,
-    WebP,
-    TGA,
-}
-
 /// The sampler of the texture that determines how the shader should handle textures.
+#[derive(Debug, Builder, Clone)]
+#[builder(setter(into))]
 pub struct Sampler {
     /// Way to filter the texture when the texture is bigger than it's actual resolution.
+    #[builder(setter(into), default = "Filter::Nearest")]
     pub mag_filter: Filter,
     /// Way to filter the texture when it's smaller than the actual texture.
+    #[builder(setter(into), default = "Filter::Linear")]
     pub min_filter: Filter,
     /// How the final sampled value should be calculated from the samples of individual mipmaps.
+    #[builder(setter(into), default = "Filter::Nearest")]
     pub mipmap_mode: Filter,
     /// How out of range texture coordinates should be handled.
+    #[builder(setter(into), default = "[AddressMode::ClampToBorder; 3]")]
     pub address_mode: [AddressMode; 3],
     /// Color for the border when the address mode is on ClampToBorder.
+    #[builder(setter(into), default = "BorderColor::FloatTransparentBlack")]
     pub border_color: BorderColor,
 }
 
 /// The main texture settings.
+#[derive(Clone, Debug)]
 pub struct TextureSettings {
     /// SRGB mode.
     pub srgb: bool,
@@ -68,11 +74,7 @@ impl Default for Sampler {
             mag_filter: Filter::Nearest,
             min_filter: Filter::Linear,
             mipmap_mode: Filter::Nearest,
-            address_mode: [
-                AddressMode::ClampToBorder,
-                AddressMode::ClampToBorder,
-                AddressMode::ClampToBorder,
-            ],
+            address_mode: [AddressMode::ClampToBorder; 3],
             border_color: BorderColor::FloatTransparentBlack,
         }
     }
@@ -93,6 +95,7 @@ impl Sampler {
                 Filter::Nearest => SamplerMipmapMode::Nearest,
                 Filter::Linear => SamplerMipmapMode::Linear,
             },
+            // improvable.
             address_mode: [
                 match self.address_mode[0] {
                     AddressMode::Repeat => SamplerAddressMode::Repeat,
