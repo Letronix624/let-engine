@@ -56,7 +56,7 @@ pub type WeakObject = Weak<Mutex<Node<AObject>>>;
 ///
 /// `RESOURCES`: The resource manager where you load your assets.
 ///
-/// `WINDOW`: A [Window] that you can change the attributes of once you've run the [start_engine] macro.
+/// `WINDOW`: A [Window] that you can change the attributes of once you've run the [crate::start_engine] macro.
 #[macro_export]
 macro_rules! let_engine {
     () => {
