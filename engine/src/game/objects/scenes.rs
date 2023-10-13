@@ -1,5 +1,5 @@
 use crate::{
-    camera::{Camera, CameraScaling},
+    camera::{CameraScaling, CameraSettings},
     error::objects::*,
     utils::scale,
     NObject,
@@ -9,6 +9,7 @@ use super::{
     physics::Shape, physics::*, Appearance, GameObject, Node, ObjectsMap, RigidBodyParent,
     Transform,
 };
+use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
 use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
@@ -97,8 +98,9 @@ impl Default for Scene {
 /// A layer struct holding it's own object hierarchy, camera and physics iteration.
 #[derive(Clone)]
 pub struct Layer {
-    pub root: NObject,
-    pub camera: Arc<Mutex<Option<Box<dyn Camera>>>>,
+    pub(crate) root: NObject,
+    pub(crate) camera: Arc<Mutex<NObject>>,
+    camera_settings: Arc<AtomicCell<CameraSettings>>,
     objects_map: Arc<Mutex<ObjectsMap>>,
     pub(crate) rigid_body_roots: Arc<Mutex<ObjectsMap>>,
     latest_object: Arc<AtomicU64>,
@@ -112,8 +114,9 @@ impl Layer {
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
         Self {
-            root,
-            camera: Arc::new(Mutex::new(None)),
+            root: root.clone(),
+            camera: Arc::new(Mutex::new(root)),
+            camera_settings: Arc::new(AtomicCell::new(CameraSettings::default())),
             objects_map: Arc::new(Mutex::new(objects_map)),
             rigid_body_roots: Arc::new(Mutex::new(HashMap::new())),
             latest_object: Arc::new(AtomicU64::new(1)),
@@ -122,29 +125,36 @@ impl Layer {
         }
     }
     /// Sets the camera of this layer.
-    pub fn set_camera<T: Camera + 'static>(&self, camera: T) {
-        *self.camera.lock() = Some(Box::new(camera));
+    pub fn set_camera(&self, camera: &impl GameObject) {
+        *self.camera.lock() = camera.as_node();
     }
     pub(crate) fn camera_position(&self) -> Vec2 {
-        if let Some(camera) = self.camera.lock().as_ref() {
-            camera.transform().position
-        } else {
-            vec2(0.0, 0.0)
-        }
+        self.camera.lock().lock().object.transform().position
     }
-    pub(crate) fn camera_scaling(&self) -> CameraScaling {
-        if let Some(camera) = self.camera.lock().as_ref() {
-            camera.settings().mode
-        } else {
-            CameraScaling::Stretch
-        }
+
+    /// Returns the scaling of the camera settings.
+    pub fn camera_scaling(&self) -> CameraScaling {
+        self.camera_settings.load().mode
     }
-    pub(crate) fn zoom(&self) -> f32 {
-        if let Some(camera) = self.camera.lock().as_ref() {
-            camera.settings().zoom
-        } else {
-            1.0
-        }
+
+    /// Returns the zoom of the camera settings.
+    pub fn zoom(&self) -> f32 {
+        self.camera_settings.load().zoom
+    }
+
+    pub fn set_zoom(&self, zoom: f32) {
+        let settings = self.camera_settings();
+        self.camera_settings.store(settings.zoom(zoom))
+    }
+
+    /// Sets the camera settings.
+    pub fn set_camera_settings(&self, settings: CameraSettings) {
+        self.camera_settings.store(settings)
+    }
+
+    /// Gets the camera settins.
+    pub fn camera_settings(&self) -> CameraSettings {
+        self.camera_settings.load()
     }
 
     /// Returns the position of a given side with given window dimensions to world space.
@@ -308,7 +318,7 @@ impl Layer {
         Self::add_object_with_optional_parent(self, Some(parent), object)
     }
 
-    /// Removes an object using it's ID.
+    /// Removes an object from the layer.
     pub fn remove_object(&self, object: &mut impl GameObject) -> Result<(), NoObjectError> {
         let mut map = self.objects_map.lock();
         let mut rigid_bodies = self.rigid_body_roots.lock();

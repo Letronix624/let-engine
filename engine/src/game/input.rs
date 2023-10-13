@@ -134,8 +134,10 @@ impl Input {
         self.keyboard_modifiers.lock().alt()
     }
 
-    /// Returns true if the logo key is pressed on the keyboard.
-    pub fn logo(&self) -> bool {
+    /// Returns true if the super key is pressed on the keyboard.
+    ///
+    /// Super key also means "Windows" key on Windows or "Command" key on Mac.
+    pub fn super_key(&self) -> bool {
         self.keyboard_modifiers.lock().logo()
     }
 

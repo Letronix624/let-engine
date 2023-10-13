@@ -26,7 +26,7 @@ use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 
 /// The way in which an object gets drawn using it's vertices and indices.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Topology {
     /// Creates triangles using every 3 vertices for one triangle.
     TriangleList,
@@ -198,7 +198,7 @@ impl Material {
 
 /// Vertex and fragment shaders of a material
 /// as well as the topology and line width, if the topology is set to LineList or LineStrip.
-#[derive(Builder)]
+#[derive(Builder, Clone, Debug)]
 pub struct MaterialSettings {
     #[builder(setter(into), default = "Topology::TriangleList")]
     pub topology: Topology,

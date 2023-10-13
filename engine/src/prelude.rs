@@ -4,7 +4,13 @@
 //! ```
 //! - imports everything this engine has to offer.
 
-pub use crate::{camera::*, data::*, directions::*, materials::*, objects::*, resources::*, *};
+pub use crate::{
+    camera::*, data::*, directions::*, events::*, materials::*, objects::*, resources::*,
+    window::*, *,
+};
+pub use dpi::*;
+#[cfg(feature = "egui")]
+pub use egui_winit_vulkano::egui;
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
@@ -23,8 +29,3 @@ use crate as let_engine;
 #[object]
 #[derive(Default)]
 pub struct Object {}
-
-/// Default Camera object without any additional fields.
-#[camera]
-#[derive(Default)]
-pub struct Camera {}

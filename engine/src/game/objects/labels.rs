@@ -9,7 +9,7 @@ use anyhow::Result;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, Font as RFont, PositionedGlyph, Scale};
 
-use super::super::{vulkan::shaders::*, Loader, Vulkan};
+use super::super::{resources::vulkan::shaders::*, Loader, Vulkan};
 use crate::resources::Model;
 use crate::{
     materials::*,
@@ -173,7 +173,7 @@ impl GameObject for Label {
 impl Label {
     /// Creates a new label with the given settings.
     pub fn new(resources: &Resources, font: &Font, create_info: LabelCreateInfo) -> Self {
-        let labelifier = resources.labelifier.clone();
+        let labelifier = resources.labelifier().clone();
         Self {
             transform: create_info.transform,
             parent_transform: Transform::default(),
@@ -396,8 +396,8 @@ impl Labelifier {
             let model = Model::new(Data::new(vertices, indices), loader);
             label.appearance = label
                 .appearance
-                .model(model)
-                .material(self.material.clone());
+                .model(Some(model))
+                .material(Some(self.material.clone()));
             //label.sync();
             let arc = label.reference.clone().unwrap().upgrade().unwrap();
             let mut object = arc.lock();

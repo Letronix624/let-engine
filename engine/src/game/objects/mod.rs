@@ -4,10 +4,11 @@ pub mod labels;
 pub mod physics;
 pub mod scenes;
 use super::{AObject, NObject};
-use crate::data::Data;
 use crate::error::textures::*;
 use crate::materials;
 use crate::resources::model::Model;
+use crate::{data::Data, utils::color_art_to_array};
+use color_art::{color, Color};
 use scenes::Layer;
 
 use anyhow::Result;
@@ -171,12 +172,47 @@ impl Node<AObject> {
 /// textures, vetex/index data, color and material.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Appearance {
-    pub visible: bool,
-    pub material: Option<materials::Material>,
-    pub model: Option<Model>,
-    pub transform: Transform,
-    pub color: [f32; 4],
+    visible: bool,
+    material: Option<materials::Material>,
+    model: Option<Model>,
+    transform: Transform,
+    color: [f32; 4],
+    color_art: Color,
 }
+
+use paste::paste;
+macro_rules! getters_and_setters {
+    ($field:ident, $title:expr, $type:ty) => {
+        #[doc=concat!("Sets ", $title, " of this appearance and returns self.")]
+        #[inline]
+        pub fn $field(mut self, $field: $type) -> Self {
+            self.$field = $field;
+            self
+        }
+        paste! {
+            #[doc=concat!("Sets ", $title, " of this appearance.")]
+            #[inline]
+            pub fn [<set_ $field>](&mut self, $field: $type) {
+                self.$field = $field;
+            }
+        }
+        paste! {
+            #[doc=concat!("Gets ", $title," of this appearance.")]
+            #[inline]
+            pub fn [<get_ $field>](&self) -> &$type {
+                &self.$field
+            }
+        }
+        paste! {
+            #[doc=concat!("Gets a mutable reference to ", $title," of this appearance.")]
+            #[inline]
+            pub fn [<get_mut_ $field>](&mut self) -> &mut $type {
+                &mut self.$field
+            }
+        }
+    };
+}
+
 impl Appearance {
     /// Makes a default appearance.
     pub fn new() -> Self {
@@ -184,13 +220,7 @@ impl Appearance {
             ..Default::default()
         }
     }
-    /// Makes a new appearance with given color.
-    pub fn new_color(color: [f32; 4]) -> Self {
-        Self {
-            color,
-            ..Default::default()
-        }
-    }
+
     /// Scales the object appearance according to the texture applied. Works best in Expand camera mode for best quality.
     pub fn auto_scale(&mut self) -> Result<(), NoTextureError> {
         let dimensions;
@@ -208,33 +238,34 @@ impl Appearance {
 
         Ok(())
     }
-    /// Sets visibility of this appearance.
+
+    getters_and_setters!(visible, "the visibility", bool);
+    getters_and_setters!(model, "the model", Option<Model>);
+    getters_and_setters!(transform, "the transform", Transform);
+    getters_and_setters!(material, "the material", Option<materials::Material>);
+
+    /// Sets the color of this appearance and returns self.
     #[inline]
-    pub fn visible(mut self, visible: bool) -> Self {
-        self.visible = visible;
+    pub fn color(mut self, color: Color) -> Self {
+        self.color_art = color;
+        self.color = color_art_to_array(color);
         self
     }
-    /// Sets the model data of this appearance.
+    /// Gets the color of this appearance.
     #[inline]
-    pub fn model(mut self, model: Model) -> Self {
-        self.model = Some(model);
-        self
+    pub fn get_color(&self) -> Color {
+        self.color_art
     }
-    /// Sets the transform of this appearance.
+    /// Returns the color as an array of 4 f32s symbolizing rgba going from 0 to 1.
     #[inline]
-    pub fn transform(mut self, transform: Transform) -> Self {
-        self.transform = transform;
-        self
+    pub fn get_color_array(&self) -> [f32; 4] {
+        self.color
     }
     /// Sets the color of this appearance.
-    pub fn color(mut self, color: [f32; 4]) -> Self {
-        self.color = color;
-        self
-    }
-    /// Sets the material of this appearance.
-    pub fn material(mut self, material: materials::Material) -> Self {
-        self.material = Some(material);
-        self
+    #[inline]
+    pub fn set_color(mut self, color: Color) {
+        self.color_art = color;
+        self.color = color_art_to_array(color);
     }
 }
 
@@ -245,7 +276,8 @@ impl default::Default for Appearance {
             material: None,
             model: None,
             transform: Transform::default(),
-            color: [1.0, 1.0, 1.0, 1.0],
+            color_art: color!(rgba(255, 255, 255, 1.0)),
+            color: [1.0; 4],
         }
     }
 }

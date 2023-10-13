@@ -66,7 +66,6 @@ pub fn create_physical_device(
                 .position(|(i, q)| {
                     q.queue_flags.intersects(QueueFlags::GRAPHICS)
                         && p.surface_support(i as u32, surface).unwrap_or(false)
-                    //q.queue_flags.graphics && p.surface_support(i as u32, surface).unwrap_or(false)
                 })
                 .map(|i| (p, i as u32))
         })

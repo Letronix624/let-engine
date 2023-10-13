@@ -63,42 +63,6 @@ pub fn objectinit_without_implements(_args: TokenStream, input: TokenStream) -> 
     .into()
 }
 
-/// Implements GameObject and Camera to an object. Marks an object to be able to be used as a
-/// camera and automatically adds a camera field which holds the mode and zoom.
-#[proc_macro_attribute]
-pub fn camera(_args: TokenStream, input: TokenStream) -> TokenStream {
-    let mut ast = parse_macro_input!(input as DeriveInput);
-    let name = &ast.ident;
-
-    let implements = if let syn::Data::Struct(ref mut struct_data) = ast.data {
-        if let syn::Fields::Named(fields) = &mut struct_data.fields {
-            fields.named.push(
-                syn::Field::parse_named
-                    .parse2(quote! {
-                        pub camera: let_engine::camera::CameraSettings
-                    })
-                    .unwrap(),
-            );
-        }
-        quote! {
-            impl let_engine::camera::Camera for #name {
-                fn settings(&self) -> let_engine::camera::CameraSettings {
-                    self.camera
-                }
-            }
-        }
-    } else {
-        panic!("`object` has to be used with structs.");
-    };
-
-    quote! {
-        #[let_engine::object]
-        #ast
-        #implements
-    }
-    .into()
-}
-
 /// Implements GameObject on a struct and automaically adds the fields transform, appearance, id
 /// and layer to update from and to.
 /// Also adds 2 functions. Update and Sync.

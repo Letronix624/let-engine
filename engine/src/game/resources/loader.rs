@@ -83,7 +83,7 @@ impl Loader {
 
     /// Loads a material to the gpu.
     pub fn load_material(
-        &mut self,
+        &self,
         vulkan: &Vulkan,
         shaders: &materials::Shaders,
         settings: materials::MaterialSettings,
@@ -103,7 +103,7 @@ impl Loader {
 
     /// Loads a texture to the GPU.
     pub fn load_texture(
-        &mut self,
+        &self,
         vulkan: &Vulkan,
         data: &[u8],
         dimensions: (u32, u32),

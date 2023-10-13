@@ -5,6 +5,7 @@ pub use shaders::*;
 pub mod swapchain;
 mod window;
 
+use crate::window::{Window, WindowBuilder};
 use vulkano::{
     device::{Device, Features, Queue},
     image::{view::ImageView, ImageAccess, SwapchainImage},
@@ -12,7 +13,7 @@ use vulkano::{
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::Surface,
 };
-use winit::{event_loop::EventLoop, window::WindowBuilder};
+use winit::event_loop::EventLoop;
 
 use std::sync::Arc;
 
@@ -22,6 +23,7 @@ use super::materials;
 #[derive(Clone)]
 pub(crate) struct Vulkan {
     pub surface: Arc<Surface>,
+    pub window: Window,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
     pub render_pass: Arc<RenderPass>,
@@ -33,9 +35,9 @@ pub(crate) struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn init(window_builder: WindowBuilder) -> (Self, EventLoop<()>) {
+    pub fn init(event_loop: &EventLoop<()>, window_builder: WindowBuilder) -> Self {
         let instance = instance::create_instance();
-        let (event_loop, surface) = window::create_window(&instance, window_builder);
+        let (surface, window) = window::create_window(event_loop, &instance, window_builder);
 
         let device_extensions = instance::create_device_extensions();
         let features = Features {
@@ -106,22 +108,19 @@ impl Vulkan {
             texture: None,
             layer: 0,
         };
-        //
 
-        (
-            Self {
-                surface,
-                device,
-                queue,
-                render_pass,
-                subpass,
-                default_shaders,
-                default_material,
-                textured_material,
-                texture_array_material,
-            },
-            event_loop,
-        )
+        Self {
+            surface,
+            window,
+            device,
+            queue,
+            render_pass,
+            subpass,
+            default_shaders,
+            default_material,
+            textured_material,
+            texture_array_material,
+        }
     }
 }
 
