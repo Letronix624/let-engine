@@ -82,7 +82,7 @@ macro_rules! let_engine {
 }
 
 /// Starts the engine, enables the window and starts drawing the scene.
-/// Takes a [window::WindowBuilder] for the initial window.
+/// Takes a [WindowBuilder] for the initial window.
 #[macro_export]
 macro_rules! start_engine {
     ($window_builder:expr) => {{
@@ -152,7 +152,7 @@ impl Game {
     /// There is also a provided control flow.
     ///
     /// On `Wait` this will update each window event.
-    /// It also allows updating the window using the `request_redraw()` function for the [window::Window]
+    /// It also allows updating the window using the `request_redraw()` function for the [Window]
     pub fn run_loop<F>(mut self, mut func: F)
     where
         F: FnMut(events::Event, &mut ControlFlow) + 'static,

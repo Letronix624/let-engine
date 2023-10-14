@@ -1,3 +1,6 @@
+//! General window stuff.
+//! 
+//! Multiple structs to change the properties of a Window.
 use crossbeam::atomic::AtomicCell;
 use dpi::*;
 use std::sync::Arc;

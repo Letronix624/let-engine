@@ -12,7 +12,7 @@ use vulkano::descriptor_set::WriteDescriptorSet;
 use vulkano::pipeline::cache::PipelineCache;
 
 mod loader;
-pub mod vulkan;
+pub(crate) mod vulkan;
 pub(crate) use loader::Loader;
 use vulkan::Vulkan;
 
@@ -21,7 +21,7 @@ use textures::*;
 
 pub mod data;
 pub mod materials;
-pub mod model;
+mod model;
 pub use model::Model;
 mod macros;
 pub use macros::*;
@@ -96,7 +96,6 @@ impl Resources {
         self.loader().lock().pipeline_cache.get_data().unwrap()
     }
 
-
     /// Loads a new write operation for a shader.
     pub fn new_descriptor_write<T: BufferContents>(&self, buf: T, set: u32) -> WriteDescriptorSet {
         let loader = self.loader().lock();
@@ -134,7 +133,6 @@ impl Texture {
         layers: u32,
         settings: TextureSettings,
         resources: &Resources,
-        
     ) -> Texture {
         let loader = resources.loader().lock();
         let data: Arc<[u8]> = Arc::from(data.to_vec().into_boxed_slice());
@@ -142,7 +140,14 @@ impl Texture {
             data: data.clone(),
             dimensions,
             layers,
-            set: loader.load_texture(resources.vulkan(), data, dimensions, layers, format, settings),
+            set: loader.load_texture(
+                resources.vulkan(),
+                data,
+                dimensions,
+                layers,
+                format,
+                settings,
+            ),
         }
     }
 
@@ -228,10 +233,9 @@ impl Texture {
         dimensions.1 /= layers;
 
         Ok(Self::from_raw(
-            &image, dimensions, format, layers, settings, resources
+            &image, dimensions, format, layers, settings, resources,
         ))
     }
-
 }
 /// Accessing
 impl Texture {

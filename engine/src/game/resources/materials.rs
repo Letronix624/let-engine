@@ -1,18 +1,13 @@
 //! Material related settings that determine the way the scene gets rendered.
 
-use crate::prelude::{
-    Texture, TextureSettings, Format,
-    Vertex as GameVertex,
-};
 use crate::error::textures::*;
+use crate::prelude::{Format, Texture, TextureSettings, Vertex as GameVertex};
 
 use derive_builder::Builder;
 use image::ImageFormat;
 use std::sync::Arc;
 
-use vulkano::descriptor_set::{
-    PersistentDescriptorSet, WriteDescriptorSet,
-};
+use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::pipeline::{
     graphics::{
         color_blend::ColorBlendState,
@@ -87,7 +82,7 @@ impl Material {
         let pipeline_cache = loader.pipeline_cache.clone();
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
         let allocator = &loader.descriptor_set_allocator;
-        
+
         let pipeline: Arc<GraphicsPipeline> = GraphicsPipeline::start()
             .vertex_input_state(GameVertex::per_vertex())
             .input_assembly_state(InputAssemblyState::new().topology(topology))
@@ -133,14 +128,14 @@ impl Material {
         let shaders = &resources.vulkan().default_shaders;
         Self::new_with_shaders(settings, shaders, vec![], resources)
     }
-    
+
     /// Simplification of making a texture and putting it into a material.
     pub fn new_from_texture(
         texture: &[u8],
         format: ImageFormat,
         layers: u32,
         settings: TextureSettings,
-        resources: &Resources
+        resources: &Resources,
     ) -> Result<Material, InvalidFormatError> {
         let texture = Texture::from_bytes(texture, format, layers, settings, resources)?;
 
@@ -154,10 +149,9 @@ impl Material {
         dimensions: (u32, u32),
         layers: u32,
         settings: TextureSettings,
-        resources: &Resources
+        resources: &Resources,
     ) -> Material {
-        let texture =
-            Texture::from_raw(&texture, dimensions, format, layers, settings, resources);
+        let texture = Texture::from_raw(&texture, dimensions, format, layers, settings, resources);
         Self::new_default_textured(&texture, resources)
     }
 
@@ -173,10 +167,8 @@ impl Material {
             ..default
         }
     }
-
 }
 impl Material {
-
     /// Writes to the material changing the variables for the shaders.
     pub fn write(
         &mut self,
@@ -257,12 +249,16 @@ impl Material {
 /// as well as the topology and line width, if the topology is set to LineList or LineStrip.
 #[derive(Builder, Clone, Debug)]
 pub struct MaterialSettings {
+    /// The usage way of the vertices and indices given in the model.
     #[builder(setter(into), default = "Topology::TriangleList")]
     pub topology: Topology,
+    /// The width of the line in case the topology was set to something with lines.
     #[builder(setter(into), default = "1.0")]
     pub line_width: f32,
+    /// The optional texture of the material.
     #[builder(setter(into), default = "None")]
     pub texture: Option<Texture>,
+    /// If the texture has multiple layers this is the layer it starts at.
     #[builder(setter(into), default = "0")]
     pub initial_layer: u32,
 }

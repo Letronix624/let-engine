@@ -6,7 +6,7 @@ pub mod scenes;
 use super::{AObject, NObject};
 use crate::error::textures::*;
 use crate::materials;
-use crate::resources::model::Model;
+use crate::resources::Model;
 use crate::{data::Data, utils::color_art_to_array};
 use color_art::{color, Color};
 use scenes::Layer;

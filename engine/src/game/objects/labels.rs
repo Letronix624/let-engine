@@ -18,10 +18,15 @@ use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 /// Info to create default label objects with.
 #[derive(Clone)]
 pub struct LabelCreateInfo {
+    /// Initial position.
     pub transform: Transform,
+    /// The appearance of the label.
     pub appearance: Appearance,
+    /// Initial text of the label.
     pub text: String,
+    /// The scale of the text area.
     pub scale: Vec2,
+    /// The align of where the text gets rendered. Takes either 0.0 to 1.0 uv coordinates or one of the [direction](crate::directions) presets.
     pub align: [f32; 2],
 }
 impl LabelCreateInfo {
@@ -219,10 +224,20 @@ impl Labelifier {
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
 
         let dimensions = cache.dimensions();
-        let settings = TextureSettings { srgb: false, sampler: Sampler::default() };
+        let settings = TextureSettings {
+            srgb: false,
+            sampler: Sampler::default(),
+        };
 
         // Make the cache a texture.
-        let texture = Texture::from_raw(&cache_pixel_buffer, dimensions, Format::R8, 1, settings, resources);
+        let texture = Texture::from_raw(
+            &cache_pixel_buffer,
+            dimensions,
+            Format::R8,
+            1,
+            settings,
+            resources,
+        );
 
         let vulkan = resources.vulkan();
         let text_shaders = Shaders {
@@ -235,7 +250,8 @@ impl Labelifier {
             .build()
             .unwrap();
 
-        let material = Material::new_with_shaders(material_settings, &text_shaders, vec![], resources);
+        let material =
+            Material::new_with_shaders(material_settings, &text_shaders, vec![], resources);
 
         Self {
             material,
@@ -269,12 +285,22 @@ impl Labelifier {
         })?;
         // Creates a new texture to be inserted into every syncing label.
         // Unsynced label keep holding the old texture.
-        
+
         let dimensions = self.cache.dimensions();
-        let settings = TextureSettings { srgb: false, sampler: Sampler::default() };
+        let settings = TextureSettings {
+            srgb: false,
+            sampler: Sampler::default(),
+        };
 
         // Make the cache a texture.
-        self.material.texture = Some(Texture::from_raw(&self.cache_pixel_buffer, dimensions, Format::R8, 1, settings, resources));
+        self.material.texture = Some(Texture::from_raw(
+            &self.cache_pixel_buffer,
+            dimensions,
+            Format::R8,
+            1,
+            settings,
+            resources,
+        ));
         Ok(())
     }
 

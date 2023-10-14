@@ -386,6 +386,35 @@ impl Layer {
             None
         }
     }
+    /// Returns id of the first collider intersecting with given ray and returns a normal.
+    pub fn cast_ray_and_get_normal(
+        &self,
+        position: Vec2,
+        direction: Vec2,
+        time_of_impact: Real,
+        solid: bool,
+    ) -> Option<(usize, Vec2)> {
+        let mut physics = self.physics.lock();
+        physics.update_query_pipeline();
+
+        let result = physics.query_pipeline.cast_ray_and_get_normal(
+            &physics.rigid_body_set,
+            &physics.collider_set,
+            &Ray::new(position.into(), direction.into()),
+            time_of_impact,
+            solid,
+            QueryFilter::default(),
+        );
+
+        if let Some((handle, intersection)) = result {
+            Some((
+                physics.collider_set.get(handle).unwrap().user_data as usize,
+                intersection.normal.into(),
+            ))
+        } else {
+            None
+        }
+    }
 
     /// Returns id of the first collider intersecting with given ray.
     pub fn intersections_with_ray(
