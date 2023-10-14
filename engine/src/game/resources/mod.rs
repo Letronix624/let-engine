@@ -1,7 +1,6 @@
 //! Resources to be handled by the engine like textures, sounds and fonts.
 
 use super::Labelifier;
-use crate::data::Data;
 use crate::window::Window;
 use crate::{error::textures::*, utils::u16tou8vec};
 use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
@@ -48,8 +47,8 @@ impl Resources {
 
     /// Initialisation
     pub(crate) fn init(&mut self, vulkan: Vulkan) {
-        let mut loader = Loader::init(&vulkan);
-        let labelifier = Some(Arc::new(Mutex::new(Labelifier::new(&vulkan, &mut loader))));
+        let loader = Loader::init(&vulkan);
+        let labelifier = Some(Arc::new(Mutex::new(Labelifier::new(self))));
         *self = Self {
             vulkan: Some(vulkan),
             loader: Some(Arc::new(Mutex::new(loader))),
@@ -69,9 +68,8 @@ impl Resources {
     //redraw
     pub(crate) fn update(&self) {
         // swap with layers
-        let mut loader = self.loader.as_ref().unwrap().lock();
-        let mut labelifier = self.labelifier.as_ref().unwrap().lock();
-        labelifier.update(self.vulkan(), &mut loader);
+        let mut labelifier = self.labelifier().lock();
+        labelifier.update(self);
     }
 
     /// Merges a pipeline cache into the resources potentially making the creation of materials faster.
@@ -98,43 +96,65 @@ impl Resources {
         self.loader().lock().pipeline_cache.get_data().unwrap()
     }
 
-    pub fn load_model(&self, data: Data) -> Model {
-        let mut loader = self.loader().lock();
-        Model::new(data, &mut loader)
+
+    /// Loads a new write operation for a shader.
+    pub fn new_descriptor_write<T: BufferContents>(&self, buf: T, set: u32) -> WriteDescriptorSet {
+        let loader = self.loader().lock();
+        loader.write_descriptor(buf, set)
     }
 
-    /// Loads a font into the game resources.
-    pub fn load_font(&self, data: &[u8]) -> Font {
-        let mut labelifier = self.labelifier().lock();
-        labelifier.load_font(data)
+    /// Returns the window instance from resources.
+    pub fn get_window(&self) -> Window {
+        self.vulkan().window.clone()
     }
+}
 
+impl Default for Resources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A texture to be used with materials.
+#[derive(Clone)]
+pub struct Texture {
+    data: Arc<[u8]>,
+    dimensions: (u32, u32),
+    layers: u32,
+    set: Arc<PersistentDescriptorSet>,
+}
+
+/// Making
+impl Texture {
     /// Loads a texture to the GPU using a raw image.
-    pub fn load_texture_from_raw(
-        &self,
+    pub fn from_raw(
         data: &[u8],
         dimensions: (u32, u32),
         format: Format,
         layers: u32,
         settings: TextureSettings,
+        resources: &Resources,
+        
     ) -> Texture {
-        let loader = self.loader().lock();
+        let loader = resources.loader().lock();
+        let data: Arc<[u8]> = Arc::from(data.to_vec().into_boxed_slice());
         Texture {
-            data: Arc::from(data.to_vec().into_boxed_slice()),
+            data: data.clone(),
             dimensions,
             layers,
-            set: loader.load_texture(self.vulkan(), data, dimensions, layers, format, settings),
+            set: loader.load_texture(resources.vulkan(), data, dimensions, layers, format, settings),
         }
     }
 
     /// Loads a texture to the GPU using the given image format.
-    pub fn load_texture(
-        &self,
+    pub fn from_bytes(
         data: &[u8],
         image_format: ImageFormat,
         layers: u32,
         settings: TextureSettings,
+        resources: &Resources,
     ) -> Result<Texture, InvalidFormatError> {
+        // Turn image to a vector of u8 first.
         let image = match load_from_memory_with_format(data, image_format) {
             Err(_) => return Err(InvalidFormatError),
             Ok(v) => v,
@@ -207,115 +227,64 @@ impl Resources {
 
         dimensions.1 /= layers;
 
-        Ok(Self::load_texture_from_raw(
-            self, &image, dimensions, format, layers, settings,
+        Ok(Self::from_raw(
+            &image, dimensions, format, layers, settings, resources
         ))
     }
-    //shaders
-    /// Loads a shader from spirv bytes.
-    ///
-    /// # Safety
-    ///
-    /// Just crashes the program if the bytes given are not right.
-    pub unsafe fn new_shader_from_raw(
-        // loading things all temporary. Will get sepparated to their own things soon.
-        &self,
-        vertex_data: &[u8],
-        fragment_data: &[u8],
-    ) -> materials::Shaders {
-        unsafe { materials::Shaders::from_bytes(vertex_data, fragment_data, self.vulkan()) }
+
+}
+/// Accessing
+impl Texture {
+    pub fn data(&self) -> &Arc<[u8]> {
+        &self.data
     }
-
-    // fn new_shader ..requires the vulkano_shaders library function load() device
-
-    /// Loads a new write operation for a shader.
-    pub fn new_descriptor_write<T: BufferContents>(&self, buf: T, set: u32) -> WriteDescriptorSet {
-        let loader = self.loader().lock();
-        loader.write_descriptor(buf, set)
+    pub fn dimensions(&self) -> (u32, u32) {
+        self.dimensions
     }
-
-    /// Creates a new material using the given shaders, settings and write operations.
-    pub fn new_material_with_shaders(
-        &self,
-        settings: materials::MaterialSettings,
-        shaders: &materials::Shaders,
-        descriptor_bindings: Vec<WriteDescriptorSet>,
-    ) -> materials::Material {
-        let loader = self.loader().lock();
-        loader.load_material(self.vulkan(), shaders, settings, descriptor_bindings)
+    pub fn layers(&self) -> u32 {
+        self.layers
     }
-    pub fn new_material(&self, settings: materials::MaterialSettings) -> materials::Material {
-        let loader = self.loader().lock();
-        let shaders = self.vulkan().default_shaders.clone();
-        loader.load_material(self.vulkan(), &shaders, settings, vec![])
-    }
-
-    /// Simplification of making a texture and putting it into a material.
-    pub fn new_material_from_texture(
-        &self,
-        texture: &[u8],
-        format: ImageFormat,
-        layers: u32,
-        settings: TextureSettings,
-    ) -> Result<materials::Material, InvalidFormatError> {
-        let texture = Self::load_texture(self, texture, format, layers, settings)?;
-
-        Ok(Self::default_textured_material(self, &texture))
-    }
-
-    /// Simplification of making a texture from raw and putting it into a material.
-    pub fn new_material_from_raw_texture(
-        &self,
-        texture: &[u8],
-        format: Format,
-        dimensions: (u32, u32),
-        layers: u32,
-        settings: TextureSettings,
-    ) -> materials::Material {
-        let texture =
-            Self::load_texture_from_raw(self, texture, dimensions, format, layers, settings);
-        Self::default_textured_material(self, &texture)
-    }
-
-    /// Creates a simple material made just for showing a texture.
-    pub fn default_textured_material(&self, texture: &Texture) -> materials::Material {
-        let default = if texture.layers == 1 {
-            self.vulkan().textured_material.clone()
-        } else {
-            self.vulkan().texture_array_material.clone()
-        };
-        materials::Material {
-            texture: Some(texture.clone()),
-            ..default
-        }
-    }
-
-    /// Returns the window instance from resources.
-    pub fn get_window(&self) -> Window {
-        self.vulkan().window.clone()
+    pub(crate) fn set(&self) -> &Arc<PersistentDescriptorSet> {
+        &self.set
     }
 }
-
-impl Default for Resources {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// A texture to be used with materials.
-#[derive(Clone)]
-pub struct Texture {
-    pub data: Arc<[u8]>,
-    pub dimensions: (u32, u32),
-    pub layers: u32,
-    pub set: Arc<PersistentDescriptorSet>,
-}
-
 /// A font to be used with the default label system.
 #[derive(Clone)]
 pub struct Font {
-    pub font: Arc<rusttype::Font<'static>>,
-    pub fontid: usize,
+    font: Arc<rusttype::Font<'static>>,
+    id: usize,
+}
+
+impl Font {
+    /// Loads a font into the resources.
+    ///
+    /// Makes a new font using the bytes of a truetype or opentype font.
+    /// Returns `None` in case the given bytes don't work.
+    pub fn from_bytes(data: &'static [u8], resources: &Resources) -> Option<Self> {
+        let labelifier = resources.labelifier().lock();
+        let font = Arc::new(rusttype::Font::try_from_bytes(data)?);
+        let id = labelifier.increment_id();
+        Some(Self { font, id })
+    }
+
+    /// Loads a font into the resources.
+    ///
+    /// Makes a new font using the bytes in a vec of a truetype or opentype font.
+    /// Returns `None` in case the given bytes don't work.
+    pub fn from_vec(data: impl Into<Vec<u8>>, resources: &Resources) -> Option<Self> {
+        let labelifier = resources.labelifier().lock();
+        let font = Arc::new(rusttype::Font::try_from_vec(data.into())?);
+        let id = labelifier.increment_id();
+        Some(Self { font, id })
+    }
+    /// Returns the font ID.
+    pub fn id(&self) -> usize {
+        self.id
+    }
+    /// Returns the rusttype font.
+    pub(crate) fn font(&self) -> &Arc<rusttype::Font<'static>> {
+        &self.font
+    }
 }
 
 pub struct Sound {

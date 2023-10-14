@@ -243,7 +243,7 @@ impl Draw {
                     color: appearance.get_color_array(),
                     texture_id: if let Some(material) = appearance.get_material() {
                         if let Some(texture) = &material.texture {
-                            descriptors.push(texture.set.clone());
+                            descriptors.push(texture.set().clone());
                         }
                         if let Some(descriptor) = &material.descriptor {
                             descriptors.push(descriptor.clone());

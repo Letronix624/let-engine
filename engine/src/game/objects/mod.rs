@@ -226,7 +226,7 @@ impl Appearance {
         let dimensions;
         if let Some(material) = &self.material {
             dimensions = if let Some(texture) = &material.texture {
-                texture.dimensions
+                texture.dimensions()
             } else {
                 return Err(NoTextureError);
             };

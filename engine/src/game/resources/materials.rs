@@ -1,18 +1,19 @@
 //! Material related settings that determine the way the scene gets rendered.
 
-use crate::{
-    error::textures::*,
-    resources::{Texture, Vulkan},
+use crate::prelude::{
+    Texture, TextureSettings, Format,
     Vertex as GameVertex,
 };
+use crate::error::textures::*;
+
 use derive_builder::Builder;
+use image::ImageFormat;
 use std::sync::Arc;
 
 use vulkano::descriptor_set::{
-    allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
+    PersistentDescriptorSet, WriteDescriptorSet,
 };
 use vulkano::pipeline::{
-    cache::PipelineCache,
     graphics::{
         color_blend::ColorBlendState,
         input_assembly::{InputAssemblyState, PrimitiveTopology},
@@ -24,6 +25,8 @@ use vulkano::pipeline::{
 };
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
+
+use super::Resources;
 
 /// The way in which an object gets drawn using it's vertices and indices.
 #[derive(Debug, Clone, Copy)]
@@ -42,7 +45,7 @@ pub enum Topology {
 
 /// A material holding the way an object should be drawn.
 ///
-/// Takes some time.
+/// It takes some time to make a new material.
 #[derive(Clone, PartialEq)]
 pub struct Material {
     pub(crate) pipeline: Arc<GraphicsPipeline>,
@@ -59,17 +62,14 @@ impl std::fmt::Debug for Material {
             .finish()
     }
 }
-
+/// Making
 impl Material {
-    /// Makes a new material.
-    pub(crate) fn new(
+    /// Creates a new material using the given shaders, settings and write operations.
+    pub fn new_with_shaders(
         settings: MaterialSettings,
         shaders: &Shaders,
         descriptor: Vec<WriteDescriptorSet>,
-        vulkan: &Vulkan,
-        pipeline_cache: Arc<PipelineCache>,
-        subpass: Subpass,
-        allocator: &StandardDescriptorSetAllocator,
+        resources: &Resources,
     ) -> Self {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
@@ -82,6 +82,12 @@ impl Material {
             Topology::PointList => PrimitiveTopology::PointList,
         };
 
+        let loader = resources.loader().lock();
+        let vulkan = resources.vulkan();
+        let pipeline_cache = loader.pipeline_cache.clone();
+        let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
+        let allocator = &loader.descriptor_set_allocator;
+        
         let pipeline: Arc<GraphicsPipeline> = GraphicsPipeline::start()
             .vertex_input_state(GameVertex::per_vertex())
             .input_assembly_state(InputAssemblyState::new().topology(topology))
@@ -122,15 +128,66 @@ impl Material {
         }
     }
 
+    /// Makes a new default material.
+    pub fn new(&self, settings: MaterialSettings, resources: &Resources) -> Material {
+        let shaders = &resources.vulkan().default_shaders;
+        Self::new_with_shaders(settings, shaders, vec![], resources)
+    }
+    
+    /// Simplification of making a texture and putting it into a material.
+    pub fn new_from_texture(
+        texture: &[u8],
+        format: ImageFormat,
+        layers: u32,
+        settings: TextureSettings,
+        resources: &Resources
+    ) -> Result<Material, InvalidFormatError> {
+        let texture = Texture::from_bytes(texture, format, layers, settings, resources)?;
+
+        Ok(Self::new_default_textured(&texture, resources))
+    }
+
+    /// Simplification of making a texture from raw and putting it into a material.
+    pub fn new_from_raw_texture(
+        texture: Vec<u8>,
+        format: Format,
+        dimensions: (u32, u32),
+        layers: u32,
+        settings: TextureSettings,
+        resources: &Resources
+    ) -> Material {
+        let texture =
+            Texture::from_raw(&texture, dimensions, format, layers, settings, resources);
+        Self::new_default_textured(&texture, resources)
+    }
+
+    /// Creates a simple material made just for showing a texture.
+    pub fn new_default_textured(texture: &Texture, resources: &Resources) -> Material {
+        let default = if texture.layers == 1 {
+            resources.vulkan().textured_material.clone()
+        } else {
+            resources.vulkan().texture_array_material.clone()
+        };
+        Material {
+            texture: Some(texture.clone()),
+            ..default
+        }
+    }
+
+}
+impl Material {
+
     /// Writes to the material changing the variables for the shaders.
     pub fn write(
         &mut self,
         descriptor: Vec<WriteDescriptorSet>,
-        allocator: &StandardDescriptorSetAllocator,
+        resources: &Resources,
+        // allocator: &StandardDescriptorSetAllocator,
     ) {
+        let loader = resources.loader().lock();
         self.descriptor = Some(
             PersistentDescriptorSet::new(
-                allocator,
+                &loader.descriptor_set_allocator,
                 self.pipeline.layout().set_layouts().get(1).unwrap().clone(),
                 descriptor,
             )
@@ -224,15 +281,16 @@ impl Shaders {
     ///
     /// When loading those shaders the engine doesn't know if they are right.
     /// So when they are wrong I'm not sure what will happen. Make it right!
-    pub(crate) unsafe fn from_bytes(
+    pub unsafe fn from_bytes(
         vertex_bytes: &[u8],
         fragment_bytes: &[u8],
-        vulkan: &Vulkan,
+        resources: &Resources,
     ) -> Self {
+        let device = &resources.vulkan().device;
         let vertex: Arc<ShaderModule> =
-            unsafe { ShaderModule::from_bytes(vulkan.device.clone(), vertex_bytes).unwrap() };
+            unsafe { ShaderModule::from_bytes(device.clone(), vertex_bytes).unwrap() };
         let fragment: Arc<ShaderModule> =
-            unsafe { ShaderModule::from_bytes(vulkan.device.clone(), fragment_bytes).unwrap() };
+            unsafe { ShaderModule::from_bytes(device.clone(), fragment_bytes).unwrap() };
         Self { vertex, fragment }
     }
 }

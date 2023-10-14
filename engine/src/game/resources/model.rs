@@ -1,4 +1,4 @@
-use super::Loader;
+use super::Resources;
 use crate::{data::Data, Vertex};
 use vulkano::buffer::Subbuffer;
 
@@ -12,7 +12,8 @@ pub struct Model {
 
 impl Model {
     /// Makes a new model with given data.
-    pub(crate) fn new(data: Data, loader: &mut Loader) -> Self {
+    pub fn new(data: Data, resources: &Resources) -> Self {
+        let loader = resources.loader().lock();
         let vertex_sub_buffer = loader
             .vertex_buffer_allocator
             .allocate_slice(data.vertices.clone().len() as _)

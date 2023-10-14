@@ -9,8 +9,6 @@ pub use crate::{
     window::*, *,
 };
 pub use dpi::*;
-#[cfg(feature = "egui")]
-pub use egui_winit_vulkano::egui;
 pub use engine_macros::*;
 pub use glam;
 pub use glam::{vec2, Vec2};

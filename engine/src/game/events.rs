@@ -1,12 +1,13 @@
-//! Events
+//! Events from the event loop.
 
 use std::path::PathBuf;
 
 use crate::prelude::*;
 #[cfg(feature = "egui")]
 use egui_winit_vulkano::egui::Context;
-pub use winit::event::{ElementState, ModifiersState, MouseButton, VirtualKeyCode};
+pub use winit::event::{ElementState, MouseButton, VirtualKeyCode};
 
+/// Describes an event coming from the event loop.
 #[derive(Debug, Clone)]
 pub enum Event {
     /// The EGUI context.
@@ -25,6 +26,7 @@ pub enum Event {
     Destroyed,
 }
 
+/// An event coming with window context.
 #[derive(Debug, Clone)]
 pub enum WindowEvent {
     /// In case the window has been resized the new size is given here.
@@ -61,6 +63,7 @@ pub enum WindowEvent {
     MouseWheel(ScrollDelta),
 }
 
+/// An event coming from device input.
 #[derive(Debug, Clone)]
 pub enum InputEvent {
     /// Raw mouse motion in delta.
@@ -82,12 +85,15 @@ pub enum InputEvent {
     ModifiersChanged,
 }
 
+/// The delta of a mouse scroll.
 #[derive(Debug, Clone)]
 pub enum ScrollDelta {
     LineDelta(Vec2),
+    /// A scroll with exact pixels to be moved.
     PixelDelta(PhysicalPosition<f64>),
 }
 
+/// Input received from the keyboard.
 #[derive(Debug, Clone)]
 pub struct KeyboardInput {
     /// Hardware dependent scancode.

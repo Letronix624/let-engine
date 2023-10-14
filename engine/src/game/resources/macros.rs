@@ -1,22 +1,26 @@
 //! Macros that make it easier to load resources.
 //!
 //! All require the [crate::start_engine] macro to be executed before usage.
+//! 
+//! All the macros are just a shortening of `any Resource`::new(data, &[Resources](crate::prelude::Resources)).
 
 /// Loads a model to the engine using the vertex and index data of the inserted
 /// [Data](super::Data) and returns a [Model](super::Model).
 #[macro_export]
 macro_rules! model {
     ($data:expr) => {{
-        RESOURCES.load_model($data)
+        let_engine::prelude::Model::new($data, &RESOURCES)
     }};
 }
 
 /// Loads a font to the engine using binary true type font data of the inserted
-/// `&[u8]` and returns a [Font](super::Font).
+/// `&[u8]` and returns an [Option<Font>](super::Font).
+/// 
+/// Returns `None` in case the provided bytes don't work.
 #[macro_export]
 macro_rules! font {
     ($data:expr) => {{
-        RESOURCES.load_font($data)
+        let_engine::prelude::Font::from_bytes($data, &RESOURCES);
     }};
 }
 
@@ -29,7 +33,7 @@ macro_rules! texture {
         $image_format:expr,
         $settings:expr,
     ) => {{
-        RESOURCES.load_texture($data, $image_format, 1, $settings)
+        let_engine::prelude::Texture::from_bytes($data, $image_format, 1, $settings, &RESOURCES)
     }};
     (
         $data:expr,
@@ -37,7 +41,7 @@ macro_rules! texture {
         $layers:expr,
         $settings:expr,
     ) => {{
-        RESOURCES.load_texture($data, $image_format, $layers, $settings)
+        let_engine::prelude::Texture::from_bytes($data, $image_format, $layers, $settings, &RESOURCES)
     }};
 }
 
@@ -50,7 +54,7 @@ macro_rules! texture_from_raw {
         $format:expr,
         $settings:expr,
     ) => {{
-        RESOURCES.load_texture_from_raw($data, $dimensions, $format, 1, $settings)
+        let_engine::prelude::Texture::from_raw($data, $dimensions, $format, 1, $settings, &RESOURCES)
     }};
     (
         $data:expr,
@@ -59,7 +63,7 @@ macro_rules! texture_from_raw {
         $layers:expr,
         $settings:expr,
     ) => {{
-        RESOURCES.load_texture_from_raw($data, $dimensions, $format, $layers, $settings)
+        let_engine::prelude::Texture::from_raw($data, $dimensions, $format, $layers, $settings, &RESOURCES)
     }};
 }
 
@@ -76,7 +80,7 @@ macro_rules! raw_shader {
         $vertex_data:expr,
         $fragment_data:expr,
     ) => {{
-        RESOURCES.new_shader_from_raw($vertex_data, $fragment_data)
+        let_engine::prelude::Shaders::from_bytes($vertex_data, $fragment_data, &RESOURCES);
     }};
 }
 
@@ -86,14 +90,14 @@ macro_rules! material {
     (
         $settings:expr,
     ) => {{
-        RESOURCES.new_material($settings)
+        let_engine::prelude::Material::new($settings, &RESOURCES);
     }};
     (
         $settings:expr,
         $shaders:expr,
         $descriptor_bindings:expr,
     ) => {{
-        RESOURCES.new_material_with_shaders($settings, $shaders, $descriptor_bindings)
+        let_engine::prelude::Material.new_with_shaders($settings, $shaders, $descriptor_bindings, &RESOURCES)
     }};
 }
 
