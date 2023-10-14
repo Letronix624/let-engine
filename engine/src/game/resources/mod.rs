@@ -2,12 +2,9 @@
 
 use super::Labelifier;
 use crate::window::Window;
-use crate::{error::textures::*, utils::u16tou8vec};
-use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
-use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
 use vulkano::descriptor_set::WriteDescriptorSet;
 use vulkano::pipeline::cache::PipelineCache;
 
@@ -17,7 +14,6 @@ pub(crate) use loader::Loader;
 use vulkan::Vulkan;
 
 pub mod textures;
-use textures::*;
 
 pub mod data;
 pub mod materials;
@@ -114,144 +110,6 @@ impl Default for Resources {
     }
 }
 
-/// A texture to be used with materials.
-#[derive(Clone)]
-pub struct Texture {
-    data: Arc<[u8]>,
-    dimensions: (u32, u32),
-    layers: u32,
-    set: Arc<PersistentDescriptorSet>,
-}
-
-/// Making
-impl Texture {
-    /// Loads a texture to the GPU using a raw image.
-    pub fn from_raw(
-        data: &[u8],
-        dimensions: (u32, u32),
-        format: Format,
-        layers: u32,
-        settings: TextureSettings,
-        resources: &Resources,
-    ) -> Texture {
-        let loader = resources.loader().lock();
-        let data: Arc<[u8]> = Arc::from(data.to_vec().into_boxed_slice());
-        Texture {
-            data: data.clone(),
-            dimensions,
-            layers,
-            set: loader.load_texture(
-                resources.vulkan(),
-                data,
-                dimensions,
-                layers,
-                format,
-                settings,
-            ),
-        }
-    }
-
-    /// Loads a texture to the GPU using the given image format.
-    pub fn from_bytes(
-        data: &[u8],
-        image_format: ImageFormat,
-        layers: u32,
-        settings: TextureSettings,
-        resources: &Resources,
-    ) -> Result<Texture, InvalidFormatError> {
-        // Turn image to a vector of u8 first.
-        let image = match load_from_memory_with_format(data, image_format) {
-            Err(_) => return Err(InvalidFormatError),
-            Ok(v) => v,
-        };
-
-        let mut dimensions: (u32, u32);
-
-        let mut format = Format::RGBA8;
-        let image: Vec<u8> = match image {
-            DynamicImage::ImageLuma8(image) => {
-                format = Format::R8;
-                dimensions = image.dimensions();
-                image.into_vec()
-            }
-            DynamicImage::ImageLumaA8(_) => {
-                let image = image.to_rgba8();
-                dimensions = image.dimensions();
-                image.into_vec()
-            }
-            DynamicImage::ImageLuma16(_) => {
-                let image = image.to_luma8();
-                dimensions = image.dimensions();
-                format = Format::R8;
-                image.into_vec()
-            }
-            DynamicImage::ImageLumaA16(_) => {
-                let image = image.to_rgba16();
-                dimensions = image.dimensions();
-                format = Format::RGBA16;
-                u16tou8vec(image.into_vec())
-            }
-            DynamicImage::ImageRgb8(_) => {
-                let image = image.to_rgba8();
-                dimensions = image.dimensions();
-                image.into_vec()
-            }
-            DynamicImage::ImageRgba8(image) => {
-                dimensions = image.dimensions();
-                image.into_vec()
-            }
-            DynamicImage::ImageRgb16(_) => {
-                let image = image.to_rgba16();
-                dimensions = image.dimensions();
-                format = Format::RGBA16;
-                u16tou8vec(image.into_vec())
-            }
-            DynamicImage::ImageRgba16(image) => {
-                format = Format::RGBA16;
-                dimensions = image.dimensions();
-                u16tou8vec(image.into_vec())
-            }
-            DynamicImage::ImageRgb32F(_) => {
-                let image = image.to_rgba16();
-                dimensions = image.dimensions();
-                format = Format::RGBA16;
-                u16tou8vec(image.into_vec())
-            }
-            DynamicImage::ImageRgba32F(_) => {
-                let image = image.to_rgba16();
-                dimensions = image.dimensions();
-                format = Format::RGBA16;
-                u16tou8vec(image.into_vec())
-            }
-            _ => {
-                let image = image.to_rgba8();
-                dimensions = image.dimensions();
-                image.into_vec()
-            }
-        };
-
-        dimensions.1 /= layers;
-
-        Ok(Self::from_raw(
-            &image, dimensions, format, layers, settings, resources,
-        ))
-    }
-}
-/// Accessing
-impl Texture {
-    pub fn data(&self) -> &Arc<[u8]> {
-        &self.data
-    }
-    pub fn dimensions(&self) -> (u32, u32) {
-        self.dimensions
-    }
-    pub fn layers(&self) -> u32 {
-        self.layers
-    }
-    pub(crate) fn set(&self) -> &Arc<PersistentDescriptorSet> {
-        &self.set
-    }
-}
 /// A font to be used with the default label system.
 #[derive(Clone)]
 pub struct Font {
@@ -300,23 +158,5 @@ pub struct Sound {
 pub fn load_sound(sound: &[u8]) -> Sound {
     Sound {
         data: Arc::from(sound.to_vec().into_boxed_slice()),
-    }
-}
-
-impl PartialEq for Texture {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-            && self.dimensions == other.dimensions
-            && Arc::ptr_eq(&self.set, &other.set)
-    }
-}
-
-impl std::fmt::Debug for Texture {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Texture")
-            .field("size", &self.data.len())
-            .field("dimensions", &self.dimensions)
-            .field("frames", &self.layers)
-            .finish()
     }
 }

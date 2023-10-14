@@ -157,7 +157,7 @@ impl Material {
 
     /// Creates a simple material made just for showing a texture.
     pub fn new_default_textured(texture: &Texture, resources: &Resources) -> Material {
-        let default = if texture.layers == 1 {
+        let default = if texture.layers() == 1 {
             resources.vulkan().textured_material.clone()
         } else {
             resources.vulkan().texture_array_material.clone()
@@ -190,7 +190,7 @@ impl Material {
     /// Sets the layer of the texture in case it has a texture with layers.
     pub fn set_layer(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
-            if id > texture.layers - 1 {
+            if id > texture.layers() - 1 {
                 return Err(Box::new(TextureIDError));
             }
         } else {
@@ -209,7 +209,7 @@ impl Material {
     /// Returns an error if it reached the limit.
     pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(texture) = &self.texture {
-            if texture.layers <= self.layer + 1 {
+            if texture.layers() <= self.layer + 1 {
                 return Err(Box::new(TextureIDError));
             }
         } else {
