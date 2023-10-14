@@ -20,7 +20,7 @@ macro_rules! model {
 #[macro_export]
 macro_rules! font {
     ($data:expr) => {{
-        let_engine::prelude::Font::from_bytes($data, &RESOURCES);
+        let_engine::prelude::Font::from_bytes($data, &RESOURCES)
     }};
 }
 
@@ -100,7 +100,7 @@ macro_rules! raw_shader {
         $vertex_data:expr,
         $fragment_data:expr,
     ) => {{
-        let_engine::prelude::Shaders::from_bytes($vertex_data, $fragment_data, &RESOURCES);
+        let_engine::prelude::Shaders::from_bytes($vertex_data, $fragment_data, &RESOURCES)
     }};
 }
 
@@ -110,14 +110,14 @@ macro_rules! material {
     (
         $settings:expr,
     ) => {{
-        let_engine::prelude::Material::new($settings, &RESOURCES);
+        let_engine::prelude::Material::new($settings, &RESOURCES)
     }};
     (
         $settings:expr,
         $shaders:expr,
         $descriptor_bindings:expr,
     ) => {{
-        let_engine::prelude::Material.new_with_shaders(
+        let_engine::prelude::Material::new_with_shaders(
             $settings,
             $shaders,
             $descriptor_bindings,

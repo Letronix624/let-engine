@@ -124,7 +124,7 @@ impl Material {
     }
 
     /// Makes a new default material.
-    pub fn new(&self, settings: MaterialSettings, resources: &Resources) -> Material {
+    pub fn new(settings: MaterialSettings, resources: &Resources) -> Material {
         let shaders = &resources.vulkan().default_shaders;
         Self::new_with_shaders(settings, shaders, vec![], resources)
     }

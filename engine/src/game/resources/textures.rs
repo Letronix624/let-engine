@@ -1,7 +1,8 @@
 //! Texture related options.
 
 use crate::{error::textures::*, utils::u16tou8vec};
-use image::{load_from_memory_with_format, DynamicImage, ImageFormat};
+use image::{load_from_memory_with_format, DynamicImage};
+pub use image::ImageFormat;
 
 use derive_builder::Builder;
 pub use vulkano::sampler::BorderColor;
