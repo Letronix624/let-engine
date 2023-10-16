@@ -134,12 +134,12 @@ impl Paddle {
         object.appearance.set_model(Some(model));
         object.transform = Transform {
             position: vec2(x, 0.0),
-            size: vec2(0.02, 0.2),
+            size: vec2(0.015, 0.05),
             ..Default::default()
         };
 
         // Make a collider that resembles the form of the paddle.
-        object.set_collider(Some(ColliderBuilder::square(0.02, 0.15).build()));
+        object.set_collider(Some(ColliderBuilder::square(0.015, 0.05).build()));
 
         // Initialize the object to the given layer.
         object.init(layer);
@@ -152,7 +152,7 @@ impl Paddle {
         // Shift Y and clamp it between 0.51 so it doesn't go out of bounds.
         let y = &mut self.object.transform.position.y;
         *y -= shift as f32 * TIME.delta_time() as f32 * 1.3;
-        *y = y.clamp(-0.52, 0.52);
+        *y = y.clamp(-0.70, 0.70);
 
         // Updates the object in the game.
         self.object.sync();
@@ -174,7 +174,7 @@ impl Ball {
         let lifetime = SystemTime::now();
         let mut object = Object::new();
         object.appearance.set_model(Some(model));
-        object.transform.size = vec2(0.03, 0.03);
+        object.transform.size = vec2(0.015, 0.015);
         object.init(&layer);
 
         Self {
@@ -193,7 +193,7 @@ impl Ball {
 
             let touching_paddle = self
                 .layer
-                .intersection_with_shape(Shape::square(0.03, 0.03), (position, 0.0))
+                .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
             let touching_floor_or_roof = position.y.abs()
                 > self
@@ -219,7 +219,7 @@ impl Ball {
                 return;
             }
 
-            self.object.transform.position += self.direction * TIME.delta_time() as f32 * 2.0;
+            self.object.transform.position += self.direction * TIME.delta_time() as f32 * 1.8;
             self.object.sync();
         }
     }
