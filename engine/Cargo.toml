@@ -47,3 +47,4 @@ paste = "1.0.14"
 [features]
 default = []
 egui = ["dep:egui_winit_vulkano"]
+vulkan_debug_utils = []

@@ -4,6 +4,8 @@ pub mod shaders;
 pub use shaders::*;
 pub mod swapchain;
 mod window;
+#[cfg(feature = "vulkan_debug_utils")]
+mod debug;
 
 use crate::window::{Window, WindowBuilder};
 use vulkano::{
@@ -13,6 +15,8 @@ use vulkano::{
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::Surface,
 };
+#[cfg(feature = "vulkan_debug_utils")]
+use vulkano::instance::debug::DebugUtilsMessenger;
 use winit::event_loop::EventLoop;
 
 use std::sync::Arc;
@@ -32,18 +36,23 @@ pub(crate) struct Vulkan {
     pub default_material: materials::Material,
     pub textured_material: materials::Material,
     pub texture_array_material: materials::Material,
+
+    #[cfg(feature = "vulkan_debug_utils")]
+    _debug: Arc<DebugUtilsMessenger>,
 }
 
 impl Vulkan {
     pub fn init(event_loop: &EventLoop<()>, window_builder: WindowBuilder) -> Self {
         let instance = instance::create_instance();
+        #[cfg(feature = "vulkan_debug_utils")]
+        let _debug = Arc::new(debug::make_debug(&instance));
         let (surface, window) = window::create_window(event_loop, &instance, window_builder);
 
         let device_extensions = instance::create_device_extensions();
         let features = Features {
             fill_mode_non_solid: true,
             wide_lines: true,
-            stippled_rectangular_lines: true,
+            // stippled_rectangular_lines: true,
             ..Features::empty()
         };
         let (physical_device, queue_family_index) =
@@ -121,6 +130,8 @@ impl Vulkan {
             default_material,
             textured_material,
             texture_array_material,
+            #[cfg(feature = "vulkan_debug_utils")]
+            _debug
         }
     }
 }

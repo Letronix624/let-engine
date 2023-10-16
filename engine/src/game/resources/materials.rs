@@ -22,7 +22,7 @@ use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 
 use super::Resources;
-pub use vulkano::pipeline::graphics::rasterization::LineStipple;
+// pub use vulkano::pipeline::graphics::rasterization::LineStipple;
 
 /// The way in which an object gets drawn using it's vertices and indices.
 #[derive(Debug, Clone, Copy)]
@@ -78,7 +78,7 @@ impl Material {
             Topology::PointList => PrimitiveTopology::PointList,
         };
 
-        let line_stipple = settings.line_stripple.map(StateMode::Fixed);
+        // let line_stipple = settings.line_stripple.map(StateMode::Fixed);
 
         let loader = resources.loader().lock();
         let vulkan = resources.vulkan();
@@ -91,7 +91,7 @@ impl Material {
             .input_assembly_state(InputAssemblyState::new().topology(topology))
             .rasterization_state(RasterizationState {
                 line_width: StateMode::Fixed(settings.line_width),
-                line_stipple,
+                // line_stipple,
                 ..RasterizationState::new()
             })
             .vertex_shader(vs.entry_point("main").unwrap(), ())
@@ -259,9 +259,9 @@ pub struct MaterialSettings {
     /// The width of the line in case the topology was set to something with lines.
     #[builder(setter(into), default = "1.0")]
     pub line_width: f32,
-    /// The stipple of the line.
-    #[builder(setter(into), default = "None")]
-    pub line_stripple: Option<LineStipple>,
+    // /// The stipple of the line.
+    // #[builder(setter(into), default = "None")]
+    // pub line_stripple: Option<LineStipple>,
     /// The optional texture of the material.
     #[builder(setter(into), default = "None")]
     pub texture: Option<Texture>,

@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 use let_engine::prelude::*;
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
@@ -74,17 +74,17 @@ fn main() {
     let mut middle_line = Object::new();
     // A model that is just a stippled line going from 1 to -1.
     middle_line.appearance.set_model(Some(model!(Data {
-        vertices: vec![vert(0.0, 1.0), vert(0.0, -1.0)],
-        indices: vec![0, 1]
+        vertices: vec![vert(0.0, 0.7), vert(0.0, 0.3), vert(0.0, -0.3), vert(0.0, -0.7)],
+        indices: vec![0, 1, 2, 3]
     })));
     // A description of how the line should look like.
     let line_material = MaterialSettingsBuilder::default()
         .line_width(10.0)
         .topology(Topology::LineList)
-        .line_stripple(LineStipple {
-            factor: 3,
-            pattern: 0x00FF,
-        })
+        // .line_stripple(LineStipple {
+        //     factor: 3,
+        //     pattern: 0x00FF,
+        // })
         .build()
         .unwrap();
     let line_material = Material::new(line_material, &RESOURCES);
