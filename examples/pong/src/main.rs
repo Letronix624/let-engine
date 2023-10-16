@@ -2,7 +2,7 @@
 use let_engine::prelude::*;
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
-    time::SystemTime,
+    time::SystemTime
 };
 
 let_engine!();
@@ -98,10 +98,31 @@ fn main() {
             Event::Window(WindowEvent::CloseRequested) => {
                 control_flow.set_exit();
             }
-            // Exit when the escape key is pressed.
             Event::Input(InputEvent::KeyboardInput { input }) => {
-                if input.keycode == Some(VirtualKeyCode::Escape) {
-                    control_flow.set_exit()
+                if input.state == ElementState::Pressed {
+                    match input.keycode {
+                        // Exit when the escape key is pressed.
+                        Some(VirtualKeyCode::Escape) => {
+                            control_flow.set_exit()
+                        }
+                        // Troll the right paddle
+                        Some(VirtualKeyCode::E) => {
+                            paddle2.shrink();
+                        }
+                        // Grow and show the right paddle whos boss.
+                        Some(VirtualKeyCode::Q) => {
+                            paddle1.grow();
+                        }
+                        // Oh, so the left paddle thinks it's funny. I'll show it.
+                        Some(VirtualKeyCode::Left) => {
+                            paddle1.shrink();
+                        }
+                        // I can grow too, noob.
+                        Some(VirtualKeyCode::Right) => {
+                            paddle2.grow();
+                        }
+                        _ => ()
+                    }
                 }
             }
             // Update for the game code.
@@ -121,6 +142,7 @@ fn main() {
 struct Paddle {
     controls: (VirtualKeyCode, VirtualKeyCode), //up/down
     object: Object,
+    height: f32,
 }
 
 impl Paddle {
@@ -130,20 +152,21 @@ impl Paddle {
         controls: (VirtualKeyCode, VirtualKeyCode),
         x: f32,
     ) -> Self {
+        let height = 0.05;
         let mut object = Object::new();
         object.appearance.set_model(Some(model));
         object.transform = Transform {
             position: vec2(x, 0.0),
-            size: vec2(0.015, 0.05),
+            size: vec2(0.015, height),
             ..Default::default()
         };
 
         // Make a collider that resembles the form of the paddle.
-        object.set_collider(Some(ColliderBuilder::square(0.015, 0.05).build()));
+        object.set_collider(Some(ColliderBuilder::square(0.015, height).build()));
 
         // Initialize the object to the given layer.
         object.init(layer);
-        Self { controls, object }
+        Self { controls, object, height }
     }
     pub fn update(&mut self) {
         // Turn the `True` and `False` of the input.key_down() into 1, 0 or -1.
@@ -157,12 +180,28 @@ impl Paddle {
         // Updates the object in the game.
         self.object.sync();
     }
+    /// To troll the opponent.
+    pub fn shrink(&mut self) {
+        self.resize(-0.001);
+    }
+    /// GROW BACK!
+    pub fn grow(&mut self) {
+        self.resize(0.001);
+    }
+    fn resize(&mut self, difference: f32) {
+        self.height += difference;
+        self.height = self.height.clamp(0.001, 0.6);
+        self.object.transform.size.y = self.height;
+        self.object.set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
+        self.object.sync();
+    }
 }
 
 struct Ball {
     object: Object,
     layer: Layer,
     direction: Vec2,
+    speed: f32,
     lifetime: SystemTime,
     new_round: SystemTime,
     pub wins: [u32; 2],
@@ -181,6 +220,7 @@ impl Ball {
             object,
             layer,
             direction: Self::random_direction(lifetime),
+            speed: 1.0,
             lifetime,
             new_round: lifetime,
             wins: [0; 2],
@@ -205,7 +245,9 @@ impl Ball {
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle {
-                self.rebound(position.x as f64)
+                self.rebound(position.x as f64);
+                // It's getting faster with time.
+                self.speed += 0.02;
             } else if touching_floor_or_roof {
                 self.direction.y *= -1.0;
             } else if touching_wall {
@@ -219,7 +261,7 @@ impl Ball {
                 return;
             }
 
-            self.object.transform.position += self.direction * TIME.delta_time() as f32 * 1.8;
+            self.object.transform.position += self.direction * TIME.delta_time() as f32 * self.speed;
             self.object.sync();
         }
     }
@@ -236,7 +278,7 @@ impl Ball {
             .copysign(-x);
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(-x)) - FRAC_PI_2;
 
-        self.direction = Vec2::from_angle(direction as f32);
+        self.direction = Vec2::from_angle(direction as f32).normalize();
     }
     fn random_direction(lifetime: SystemTime) -> Vec2 {
         // Random -1.0 to 1.0 value. Some math that makes a random direction.
