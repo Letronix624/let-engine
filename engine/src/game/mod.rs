@@ -15,7 +15,7 @@ pub use draw::Draw;
 use objects::labels::Labelifier;
 pub use winit::event_loop::ControlFlow;
 use winit::{
-    event::{DeviceEvent, Event, MouseScrollDelta, WindowEvent, StartCause},
+    event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder},
 };
 pub mod input;
@@ -273,20 +273,18 @@ impl Game {
                 Event::LoopDestroyed => {
                     func(events::Event::Destroyed, control_flow);
                 }
-                Event::NewEvents(event) => {
-                    if let StartCause::Init = event {
+                Event::NewEvents(StartCause::Init) => {
+                    #[cfg(feature = "egui")]
+                    self.gui.immediate_ui(|gui| {
+                        func(events::Event::Egui(gui.context()), control_flow);
+                    });
+                    self.draw.redrawevent(
+                        &self.resources,
+                        &self.scene,
                         #[cfg(feature = "egui")]
-                        self.gui.immediate_ui(|gui| {
-                            func(events::Event::Egui(gui.context()), control_flow);
-                        });
-                        self.draw.redrawevent(
-                            &self.resources,
-                            &self.scene,
-                            #[cfg(feature = "egui")]
-                            &mut self.gui,
-                        );
-                        func(events::Event::Ready, control_flow)
-                    }
+                        &mut self.gui,
+                    );
+                    func(events::Event::Ready, control_flow)
                 }
                 _ => (),
             }

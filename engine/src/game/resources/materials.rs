@@ -78,11 +78,7 @@ impl Material {
             Topology::PointList => PrimitiveTopology::PointList,
         };
 
-        let line_stipple = if let Some(stipple) = settings.line_stripple {
-            Some(StateMode::Fixed(stipple))
-        } else {
-            None
-        };
+        let line_stipple = settings.line_stripple.map(StateMode::Fixed);
 
         let loader = resources.loader().lock();
         let vulkan = resources.vulkan();
