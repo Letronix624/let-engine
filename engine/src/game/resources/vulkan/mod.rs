@@ -43,6 +43,7 @@ impl Vulkan {
         let features = Features {
             fill_mode_non_solid: true,
             wide_lines: true,
+            stippled_rectangular_lines: true,
             ..Features::empty()
         };
         let (physical_device, queue_family_index) =

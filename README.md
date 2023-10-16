@@ -61,5 +61,10 @@ sudo apt install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev buil
 ```bash
 sudo pacman -Sy vulkan-devel 
 ```
- 
+## Examples:
+
+Right now there is only a pong example. You can run it by doing
+```bash
+cargo run -p pong
+```
 https://crates.io/crates/let-engine

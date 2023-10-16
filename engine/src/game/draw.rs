@@ -16,15 +16,16 @@ use vulkano::{
 };
 
 use super::{
-    objects::Object,
     resources::vulkan::{
         swapchain::create_swapchain_and_images, window_size_dependent_setup, Vulkan,
     },
-    GameObject, Loader,
+    Loader,
 };
 
-use crate::{camera::CameraSettings, game::Node, resources::data::*};
-use crate::{resources::Resources, utils};
+use crate::{
+    camera::CameraSettings, game::Node, objects::VisualObject, resources::data::*,
+    resources::Resources, utils, Object,
+};
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
 use glam::f32::{Mat4, Quat, Vec3};
@@ -156,9 +157,9 @@ impl Draw {
     }
 
     fn make_mvp_matrix(
-        object: &Object,
+        object: &VisualObject,
         dimensions: [u32; 2],
-        camera: &(impl GameObject + ?Sized),
+        camera: &Object,
         camera_settings: CameraSettings,
     ) -> ModelViewProj {
         let transform = object.transform.combine(*object.appearance.get_transform());
@@ -170,27 +171,27 @@ impl Draw {
         let model = Mat4::from_scale_rotation_translation(scaling, rotation, translation);
 
         // View matrix
-        let rotation = Mat4::from_rotation_z(camera.transform().rotation);
+        let rotation = Mat4::from_rotation_z(camera.transform.rotation);
 
         let zoom = 1.0 / camera_settings.zoom;
 
         // Projection matrix
         let proj = utils::ortho_maker(
             camera_settings.mode,
-            camera.transform().position,
+            camera.transform.position,
             zoom,
             (dimensions[0] as f32, dimensions[1] as f32),
         );
 
         let view = Mat4::look_at_rh(
             Vec3::from([
-                camera.transform().position[0],
-                camera.transform().position[1],
+                camera.transform.position[0],
+                camera.transform.position[1],
                 1.0,
             ]),
             Vec3::from([
-                camera.transform().position[0],
-                camera.transform().position[1],
+                camera.transform.position[0],
+                camera.transform.position[1],
                 0.0,
             ]),
             Vec3::Y,
@@ -206,7 +207,7 @@ impl Draw {
         loader: &Loader,
     ) {
         for layer in scene.get_layers().iter() {
-            let mut order: Vec<Object> = vec![];
+            let mut order: Vec<VisualObject> = vec![];
 
             Node::order_position(&mut order, &layer.root.lock());
 
@@ -236,7 +237,7 @@ impl Draw {
                 *objectvert_sub_buffer.write().unwrap() = Self::make_mvp_matrix(
                     &object,
                     self.dimensions,
-                    layer.camera.lock().lock().object.as_ref(),
+                    &layer.camera.lock().lock().object,
                     layer.camera_settings(),
                 );
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {

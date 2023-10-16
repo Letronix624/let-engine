@@ -7,12 +7,11 @@ pub mod prelude;
 pub(crate) mod utils;
 
 pub use game::{
-    camera, data, events, materials, objects, physics, resources, tvert, vert, window, Game, Input,
-    Layer, NObject, Scene, Time, Transform, Vertex, WeakObject,
+    camera, data, events, materials, objects, objects::Object, physics, resources, tvert, vert,
+    window, Game, Input, Layer, Scene, Time, Transform, Vertex,
 };
 
 pub use color_art::{color, Color};
-pub use engine_macros::*;
 pub use glam::{vec2, Vec2};
 pub use once_cell::sync::Lazy;
 pub use parking_lot::Mutex;
@@ -21,6 +20,7 @@ pub use parking_lot::Mutex;
 #[cfg(feature = "egui")]
 pub use egui_winit_vulkano::egui;
 pub use rapier2d;
+use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 pub type _Resources = std::sync::Arc<Mutex<resources::Resources>>;
 

@@ -1,16 +1,16 @@
 //! Texture related options.
 
 use crate::{error::textures::*, utils::u16tou8vec};
-use image::{load_from_memory_with_format, DynamicImage};
 pub use image::ImageFormat;
+use image::{load_from_memory_with_format, DynamicImage};
 
 use derive_builder::Builder;
+use std::sync::Arc;
+use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
 pub use vulkano::sampler::BorderColor;
 use vulkano::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
-use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
-use std::sync::Arc;
 
 use super::Resources;
 

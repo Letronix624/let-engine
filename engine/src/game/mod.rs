@@ -6,7 +6,7 @@ use objects::Node;
 pub use objects::{
     physics,
     scenes::{Layer, Scene},
-    GameObject, Transform,
+    Transform,
 };
 pub mod camera;
 mod draw;
@@ -15,7 +15,7 @@ pub use draw::Draw;
 use objects::labels::Labelifier;
 pub use winit::event_loop::ControlFlow;
 use winit::{
-    event::{DeviceEvent, Event, MouseScrollDelta, WindowEvent},
+    event::{DeviceEvent, Event, MouseScrollDelta, WindowEvent, StartCause},
     event_loop::{EventLoop, EventLoopBuilder},
 };
 pub mod input;
@@ -26,11 +26,10 @@ pub mod egui;
 pub mod events;
 
 use atomic_float::AtomicF64;
-pub use engine_macros;
 use parking_lot::Mutex;
 
 use std::{
-    sync::{atomic::Ordering, Arc, Weak},
+    sync::{atomic::Ordering, Arc},
     time::SystemTime,
 };
 
@@ -41,10 +40,6 @@ use self::{
     events::{InputEvent, ScrollDelta},
     window::{Window, WindowBuilder},
 };
-
-pub(crate) type AObject = Box<dyn GameObject>;
-pub type NObject = Arc<Mutex<Node<AObject>>>;
-pub type WeakObject = Weak<Mutex<Node<AObject>>>;
 
 /// Initializes the let engine.
 ///
@@ -258,12 +253,9 @@ impl Game {
                 },
                 Event::MainEventsCleared => {
                     #[cfg(feature = "egui")]
-                    {
-                        self.gui.immediate_ui(|gui| {
-                            func(events::Event::Egui(gui.context()), control_flow);
-                        });
-                        self.gui.immediate_ui(|_gui| {});
-                    }
+                    self.gui.immediate_ui(|gui| {
+                        func(events::Event::Egui(gui.context()), control_flow);
+                    });
 
                     func(events::Event::Update, control_flow);
                 }
@@ -280,6 +272,21 @@ impl Game {
                 }
                 Event::LoopDestroyed => {
                     func(events::Event::Destroyed, control_flow);
+                }
+                Event::NewEvents(event) => {
+                    if let StartCause::Init = event {
+                        #[cfg(feature = "egui")]
+                        self.gui.immediate_ui(|gui| {
+                            func(events::Event::Egui(gui.context()), control_flow);
+                        });
+                        self.draw.redrawevent(
+                            &self.resources,
+                            &self.scene,
+                            #[cfg(feature = "egui")]
+                            &mut self.gui,
+                        );
+                        func(events::Event::Ready, control_flow)
+                    }
                 }
                 _ => (),
             }

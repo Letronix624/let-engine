@@ -24,6 +24,8 @@ pub enum Event {
     /// The last event to be called in this loop.
     /// This is the "do on quit" event.
     Destroyed,
+    /// The loop has started.
+    Ready,
 }
 
 /// An event coming with window context.

@@ -42,6 +42,7 @@ pub fn create_instance() -> Arc<Instance> {
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
+        ext_line_rasterization: true,
         ..DeviceExtensions::empty()
     }
 }

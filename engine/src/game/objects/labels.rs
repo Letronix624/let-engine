@@ -13,7 +13,6 @@ use rusttype::{point, PositionedGlyph, Scale};
 use super::super::resources::vulkan::shaders::*;
 use crate::prelude::*;
 use glam::f32::{vec2, Vec2};
-use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 
 /// Info to create default label objects with.
 #[derive(Clone)]
@@ -91,91 +90,22 @@ impl Default for LabelCreateInfo {
 /// to every label produces multiple textures, which take more memory.
 #[derive(Clone)]
 pub struct Label {
-    pub transform: Transform,
-    parent_transform: Transform,
-    pub appearance: Appearance,
-    id: usize,
-    reference: Option<WeakObject>,
+    pub object: Object,
     pub font: Font,
     pub text: String,
     pub scale: Vec2,
     pub align: [f32; 2],
     labelifier: Arc<Mutex<Labelifier>>,
 }
-impl GameObject for Label {
-    /// Returns the transform of the label.
-    #[inline]
-    fn transform(&self) -> Transform {
-        self.transform
-    }
-    /// Sets the position and rotation of the label.
-    #[inline]
-    fn set_isometry(&mut self, position: Vec2, rotation: f32) {
-        self.transform.position = position;
-        self.transform.rotation = rotation;
-    }
-    /// Returns the public position of the label.
-    #[inline]
-    fn public_transform(&self) -> Transform {
-        self.transform.combine(self.parent_transform)
-    }
-    #[inline]
-    fn set_parent_transform(&mut self, transform: Transform) {
-        self.parent_transform = transform;
-    }
-    /// Returns a reference of the appearance of the label.
-    fn appearance(&self) -> &Appearance {
-        &self.appearance
-    }
-    /// Returns the index of the label in the layer it's inside.
-    #[inline]
-    fn id(&self) -> usize {
-        self.id
-    }
-    fn init_to_layer(
-        &mut self,
-        id: usize,
-        parent: &crate::NObject,
-        rigid_body_parent: RigidBodyParent,
-        _layer: &crate::Layer,
-    ) -> crate::NObject {
-        self.id = id;
-        let parent_object = &parent.lock().object;
-        self.parent_transform = parent_object.public_transform();
-        let node: crate::NObject = Arc::new(Mutex::new(crate::objects::Node {
-            object: Box::new(self.clone()),
-            parent: Some(Arc::downgrade(parent)),
-            rigid_body_parent,
-            children: vec![],
-        }));
-        self.reference = Some(Arc::downgrade(&node));
-        self.labelifier.lock().queue(self.clone());
-        node
-    }
-    fn remove_event(&mut self) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_node(&self) -> crate::NObject {
-        self.reference.as_ref().unwrap().upgrade().unwrap()
-    }
-    fn collider_handle(&self) -> Option<ColliderHandle> {
-        None
-    }
-    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {
-        None
-    }
-}
 impl Label {
     /// Creates a new label with the given settings.
     pub fn new(resources: &Resources, font: &Font, create_info: LabelCreateInfo) -> Self {
         let labelifier = resources.labelifier().clone();
+        let mut object = Object::new();
+        object.transform = create_info.transform;
+        object.appearance = create_info.appearance;
         Self {
-            transform: create_info.transform,
-            parent_transform: Transform::default(),
-            appearance: create_info.appearance,
-            id: 0,
-            reference: None,
+            object,
             font: font.clone(),
             text: create_info.text,
             scale: create_info.scale,
@@ -183,17 +113,26 @@ impl Label {
             labelifier,
         }
     }
+    pub fn init(&mut self, layer: &Layer) {
+        self.object.init(layer);
+        self.sync();
+    }
+    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) {
+        self.object.init_with_parent(layer, parent);
+        self.sync();
+    }
+    pub fn init_with_optional_parent(&mut self, layer: &Layer, parent: Option<&Object>) {
+        self.object.init_with_optional_parent(layer, parent);
+        self.sync();
+    }
     /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
     pub fn update(&mut self) {
-        let arc = self.reference.clone().unwrap().upgrade().unwrap();
-        let object = &arc.lock().object;
-        self.transform = object.transform();
-        self.appearance = object.appearance().clone();
+        self.object.update()
     }
     /// Changes the text of the label and updates it on the layer.
-    pub fn update_text(&mut self, text: String) {
-        self.text = text;
-        Self::sync(self);
+    pub fn update_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
+        self.sync();
     }
     /// Syncs the public layer side label to be the same as the current.
     pub fn sync(&self) {
@@ -335,7 +274,7 @@ impl Labelifier {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
-            let size = label.appearance.transform.size;
+            let size = label.object.appearance.transform.size;
 
             let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
@@ -388,14 +327,15 @@ impl Labelifier {
                 })
                 .collect();
             let model = Model::new(Data::new(vertices, indices), resources);
-            label.appearance = label
+            label.object.appearance = label
+                .object
                 .appearance
                 .model(Some(model))
                 .material(Some(self.material.clone()));
             //label.sync();
-            let arc = label.reference.clone().unwrap().upgrade().unwrap();
-            let mut object = arc.lock();
-            object.object = Box::new(label.clone());
+            let node = label.object.as_node().expect("object uninitialized");
+            let mut object = node.lock();
+            object.object = label.object.clone();
         }
     }
 
@@ -415,7 +355,7 @@ impl Labelifier {
     pub fn queue(&mut self, label: Label) {
         self.ready = true;
 
-        let size = label.appearance().transform.size;
+        let size = label.object.appearance.transform.size;
 
         let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 

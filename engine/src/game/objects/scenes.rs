@@ -2,25 +2,18 @@ use crate::{
     camera::{CameraScaling, CameraSettings},
     error::objects::*,
     utils::scale,
-    NObject,
 };
 
-use super::{
-    physics::Shape, physics::*, Appearance, GameObject, Node, ObjectsMap, RigidBodyParent,
-    Transform,
-};
+use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap};
 use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
 use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
 use parking_lot::Mutex;
 use rapier2d::prelude::*;
-use std::{
-    any::Any,
-    sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
 };
 
 /// The whole scene seen with all it's layers.
@@ -43,7 +36,7 @@ impl Scene {
 
     /// Initializes a new layer into the scene.
     pub fn new_layer(&self) -> Layer {
-        let object = Box::<Root>::default();
+        let object = Object::default();
 
         let node = Layer::new(Arc::new(Mutex::new(Node {
             object,
@@ -101,10 +94,10 @@ pub struct Layer {
     pub(crate) root: NObject,
     pub(crate) camera: Arc<Mutex<NObject>>,
     camera_settings: Arc<AtomicCell<CameraSettings>>,
-    objects_map: Arc<Mutex<ObjectsMap>>,
-    pub(crate) rigid_body_roots: Arc<Mutex<ObjectsMap>>,
+    pub(crate) objects_map: Arc<Mutex<ObjectsMap>>,
+    rigid_body_roots: Arc<Mutex<ObjectsMap>>,
     latest_object: Arc<AtomicU64>,
-    pub(crate) physics: Arc<Mutex<Physics>>,
+    physics: Arc<Mutex<Physics>>,
     physics_enabled: Arc<AtomicBool>,
 }
 
@@ -124,12 +117,19 @@ impl Layer {
             physics_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
+    /// Used by the proc macro to initialize the physics for an object.
+    pub(crate) fn physics(&self) -> &Arc<Mutex<Physics>> {
+        &self.physics
+    }
+    pub(crate) fn rigid_body_roots(&self) -> &Arc<Mutex<ObjectsMap>> {
+        &self.rigid_body_roots
+    }
     /// Sets the camera of this layer.
-    pub fn set_camera(&self, camera: &impl GameObject) {
-        *self.camera.lock() = camera.as_node();
+    pub fn set_camera(&self, camera: &Object) {
+        *self.camera.lock() = camera.as_node().expect("camera uninitialized");
     }
     pub(crate) fn camera_position(&self) -> Vec2 {
-        self.camera.lock().lock().object.transform().position
+        self.camera.lock().lock().object.transform.position
     }
 
     /// Returns the scaling of the camera settings.
@@ -223,8 +223,8 @@ impl Layer {
     /// Adds a joint between object 1 and 2.
     pub fn add_joint(
         &self,
-        object1: &impl GameObject,
-        object2: &impl GameObject,
+        object1: &Object,
+        object2: &Object,
         data: impl Into<joints::GenericJoint>,
         wake_up: bool,
     ) -> Result<ImpulseJointHandle, NoRigidBodyError> {
@@ -270,74 +270,13 @@ impl Layer {
             .remove(handle, wake_up);
     }
 
-    /// Adds object with an optional parent.
-    pub fn add_object_with_optional_parent<T: GameObject + Clone + 'static>(
-        &self,
-        parent: Option<&T>,
-        object: &mut T,
-    ) -> Result<(), NoParentError> {
-        let id = self.latest_object.fetch_add(1, Ordering::AcqRel) as usize;
-
-        let rigid_body_parent;
-        let parent: NObject = if let Some(parent) = parent {
-            let map = self.objects_map.lock();
-            if let Some(parent) = map.get(&parent.id()) {
-                rigid_body_parent = parent.lock().rigid_body_parent.clone();
-                parent.clone()
-            } else {
-                return Err(NoParentError);
-            }
-        } else {
-            rigid_body_parent = None;
-            self.root.clone()
-        };
-
-        let node = object.init_to_layer(id, &parent, rigid_body_parent, self);
-
-        let boxed_object: Box<dyn GameObject> = Box::new(object.clone());
-
-        node.lock().object = boxed_object;
-
-        parent.lock().children.push(node.clone());
-
-        self.objects_map.lock().insert(id, node);
-
-        Ok(())
+    /// Increments the object ID counter by one and returns it.
+    pub(crate) fn increment_id(&self) -> usize {
+        self.latest_object.fetch_add(1, Ordering::AcqRel) as usize
     }
 
-    /// Just adds an object without parent.
-    pub fn add_object<T: GameObject + Clone + 'static>(&self, object: &mut T) {
-        Self::add_object_with_optional_parent(self, None, object).unwrap();
-    }
-    /// Adds an object with given parent.
-    pub fn add_object_with_parent<T: GameObject + Clone + 'static>(
-        &self,
-        parent: &T,
-        object: &mut T,
-    ) -> Result<(), NoParentError> {
-        Self::add_object_with_optional_parent(self, Some(parent), object)
-    }
-
-    /// Removes an object from the layer.
-    pub fn remove_object(&self, object: &mut impl GameObject) -> Result<(), NoObjectError> {
-        let mut map = self.objects_map.lock();
-        let mut rigid_bodies = self.rigid_body_roots.lock();
-        let node = if let Some(object) = map.remove(&object.id()) {
-            object
-        } else {
-            return Err(NoObjectError);
-        };
-        rigid_bodies.remove(&object.id());
-        object.remove_event();
-
-        let mut object = node.lock();
-        object.remove_children(&mut map, &mut rigid_bodies);
-
-        let parent = object.parent.clone().unwrap().upgrade().unwrap();
-        let mut parent = parent.lock();
-        parent.remove_child(&node);
-
-        Ok(())
+    pub(crate) fn add_object(&self, id: usize, object: &NObject) {
+        self.objects_map.lock().insert(id, object.clone());
     }
 
     /// Returns the nearest collider id from a specific location.
@@ -496,12 +435,8 @@ impl Layer {
     }
 
     /// Moves an object on the given index in it's parents children order.
-    pub fn move_to(
-        &self,
-        object: &impl GameObject,
-        index: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let node = object.as_node();
+    pub fn move_to(&self, object: &Object, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let node = object.as_node().expect("object uninitialized");
         let count = Self::count_children(&node);
 
         if count > index {
@@ -513,8 +448,8 @@ impl Layer {
     }
 
     /// Moves an object one down in it's parents children order.
-    pub fn move_down(&self, object: &impl GameObject) -> Result<(), Box<dyn std::error::Error>> {
-        let node = object.as_node();
+    pub fn move_down(&self, object: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let node = object.as_node().expect("object uninitialized");
         let parent = Self::get_parent(&node);
         let index = Self::find_child_index(&parent, &node);
         if index == 0 {
@@ -526,8 +461,8 @@ impl Layer {
     }
 
     /// Moves an object one up in it's parents children order.
-    pub fn move_up(&self, object: &impl GameObject) -> Result<(), Box<dyn std::error::Error>> {
-        let node = object.as_node();
+    pub fn move_up(&self, object: &Object) -> Result<(), Box<dyn std::error::Error>> {
+        let node = object.as_node().expect("object uninitialized");
         let parent = Self::get_parent(&node);
         let count = Self::count_children(&node);
         let index = Self::find_child_index(&parent, &node);
@@ -540,15 +475,15 @@ impl Layer {
     }
 
     /// Moves an object all the way to the top of it's parents children list.
-    pub fn move_to_top(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
-        let node = object.as_node();
+    pub fn move_to_top(&self, object: &Object) -> Result<(), NoObjectError> {
+        let node = object.as_node().expect("object uninitialized");
         Self::move_object_to(node, 0);
         Ok(())
     }
 
     /// Moves an object all the way to the bottom of it's parents children list.
-    pub fn move_to_bottom(&self, object: &impl GameObject) -> Result<(), NoObjectError> {
-        let node = object.as_node();
+    pub fn move_to_bottom(&self, object: &Object) -> Result<(), NoObjectError> {
+        let node = object.as_node().expect("object uninitialized");
         let count = Self::count_children(&node) - 1;
         Self::move_object_to(node, count);
         Ok(())
@@ -587,8 +522,8 @@ impl Layer {
         parent.children.swap(index, dst);
     }
 
-    pub fn children_count(&self, parent: &impl GameObject) -> Result<usize, NoObjectError> {
-        let node = parent.as_node();
+    pub fn children_count(&self, parent: &Object) -> Result<usize, NoObjectError> {
+        let node = parent.as_node().expect("object uninitialized");
         Ok(Self::count_children(&node))
     }
 }
@@ -608,61 +543,5 @@ impl std::hash::Hash for Layer {
         Arc::as_ptr(&self.root).hash(state);
         Arc::as_ptr(&self.camera).hash(state);
         Arc::as_ptr(&self.objects_map).hash(state);
-    }
-}
-
-/// Default layer root object.
-struct Root {
-    pub transform: Transform,
-    pub appearance: Appearance,
-    id: usize,
-}
-
-impl Default for Root {
-    fn default() -> Self {
-        Self {
-            transform: Transform::default(),
-            appearance: Appearance::default().visible(false),
-            id: 0,
-        }
-    }
-}
-
-impl GameObject for Root {
-    fn transform(&self) -> Transform {
-        self.transform
-    }
-    fn set_isometry(&mut self, _position: Vec2, _rotation: f32) {}
-    fn public_transform(&self) -> Transform {
-        self.transform
-    }
-    fn set_parent_transform(&mut self, _transform: Transform) {}
-    fn appearance(&self) -> &Appearance {
-        &self.appearance
-    }
-    fn id(&self) -> usize {
-        self.id
-    }
-    fn init_to_layer(
-        &mut self,
-        _id: usize,
-        _parent: &NObject,
-        _rigid_body_parent: RigidBodyParent,
-        _layer: &Layer,
-    ) -> NObject {
-        todo!()
-    }
-    fn remove_event(&mut self) {}
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn as_node(&self) -> NObject {
-        todo!()
-    }
-    fn collider_handle(&self) -> Option<ColliderHandle> {
-        None
-    }
-    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {
-        None
     }
 }

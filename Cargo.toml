@@ -1,11 +1,13 @@
 [workspace]
 members = [
     "engine",
-    "engine-macros",
+    "examples/pong"
 ]
 resolver = "1"
+
 [profile.release]
-strip = "symbols"
+strip = true
 opt-level = 3
 lto = "fat"
 codegen-units = 1
+panic = "abort"
