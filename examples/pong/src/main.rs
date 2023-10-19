@@ -86,10 +86,6 @@ fn main() {
     let line_material = MaterialSettingsBuilder::default()
         .line_width(10.0)
         .topology(Topology::LineList)
-        // .line_stripple(LineStipple {
-        //     factor: 3,
-        //     pattern: 0x00FF,
-        // })
         .build()
         .unwrap();
     let line_material = Material::new(line_material, &RESOURCES);
@@ -197,7 +193,7 @@ impl Paddle {
     }
     fn resize(&mut self, difference: f32) {
         self.height += difference;
-        self.height = self.height.clamp(0.001, 0.6);
+        self.height = self.height.clamp(0.001, 0.7);
         self.object.transform.size.y = self.height;
         self.object
             .set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
@@ -243,21 +239,28 @@ impl Ball {
                 .layer
                 .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
-            let touching_floor_or_roof = position.y.abs()
-                > self
+            let touching_floor = position.y
+                < self
                     .layer
                     .side_to_world(directions::N, (800.0, 600.0))
                     .y
-                    .abs()
+                    + 0.015;
+            let touching_roof = position.y
+                > self
+                    .layer
+                    .side_to_world(directions::S, (800.0, 600.0))
+                    .y
                     - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle {
                 self.rebound(position.x as f64);
                 // It's getting faster with time.
-                self.speed += 0.02;
-            } else if touching_floor_or_roof {
-                self.direction.y *= -1.0;
+                self.speed += 0.005;
+            } else if touching_floor {
+                self.direction.y = self.direction.y.abs();
+            } else if touching_roof {
+                self.direction.y = -self.direction.y.abs();
             } else if touching_wall {
                 // Right wins increase by 1 in case the X is negative.
                 if position.x.is_sign_negative() {
