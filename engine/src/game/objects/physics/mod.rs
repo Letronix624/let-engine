@@ -13,13 +13,11 @@ mod rigid_bodies;
 pub use colliders::{Collider, ColliderBuilder, Shape};
 pub use rigid_bodies::{RigidBody, RigidBodyBuilder};
 
-pub(crate) type APhysics = Arc<Mutex<Physics>>;
-
 pub use rapier2d::dynamics::{
     ImpulseJointHandle, IntegrationParameters, LockedAxes, RigidBodyActivation, RigidBodyType,
 };
 
-/// Main Rapier data holding struct.
+/// Physics stuff.
 pub(crate) struct Physics {
     pub rigid_body_set: RigidBodySet,
     pub collider_set: ColliderSet,
@@ -140,7 +138,7 @@ impl Physics {
 /// It also holds the collider, it's position, rigid body and all it's handles.
 #[derive(Clone, Default)]
 pub(crate) struct ObjectPhysics {
-    pub physics: Option<APhysics>,
+    pub physics: Option<Arc<Mutex<Physics>>>,
     pub collider: Option<colliders::Collider>,
     pub local_collider_position: Vec2,
     pub rigid_body: Option<rigid_bodies::RigidBody>,
@@ -168,7 +166,7 @@ impl ObjectPhysics {
         id: u128,
     ) -> Transform {
         let parent = parent.lock();
-        let parent_transform = parent.object.transform();
+        let parent_transform = parent.object.transform;
         let public_transform = transform.combine(parent_transform);
 
         let mut physics = self.physics.as_ref().unwrap().lock();

@@ -6,7 +6,7 @@ use objects::Node;
 pub use objects::{
     physics,
     scenes::{Layer, Scene},
-    GameObject, Transform,
+    Transform,
 };
 pub mod camera;
 mod draw;
@@ -15,7 +15,7 @@ pub use draw::Draw;
 use objects::labels::Labelifier;
 pub use winit::event_loop::ControlFlow;
 use winit::{
-    event::{DeviceEvent, Event, MouseScrollDelta, WindowEvent},
+    event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder},
 };
 pub mod input;
@@ -26,11 +26,10 @@ pub mod egui;
 pub mod events;
 
 use atomic_float::AtomicF64;
-pub use engine_macros;
 use parking_lot::Mutex;
 
 use std::{
-    sync::{atomic::Ordering, Arc, Weak},
+    sync::{atomic::Ordering, Arc},
     time::SystemTime,
 };
 
@@ -41,10 +40,6 @@ use self::{
     events::{InputEvent, ScrollDelta},
     window::{Window, WindowBuilder},
 };
-
-pub(crate) type AObject = Box<dyn GameObject>;
-pub type NObject = Arc<Mutex<Node<AObject>>>;
-pub type WeakObject = Weak<Mutex<Node<AObject>>>;
 
 /// Initializes the let engine.
 ///
@@ -82,7 +77,7 @@ macro_rules! let_engine {
 }
 
 /// Starts the engine, enables the window and starts drawing the scene.
-/// Takes a [window::WindowBuilder] for the initial window.
+/// Takes a [WindowBuilder] for the initial window.
 #[macro_export]
 macro_rules! start_engine {
     ($window_builder:expr) => {{
@@ -152,7 +147,7 @@ impl Game {
     /// There is also a provided control flow.
     ///
     /// On `Wait` this will update each window event.
-    /// It also allows updating the window using the `request_redraw()` function for the [window::Window]
+    /// It also allows updating the window using the `request_redraw()` function for the [Window]
     pub fn run_loop<F>(mut self, mut func: F)
     where
         F: FnMut(events::Event, &mut ControlFlow) + 'static,
@@ -258,12 +253,9 @@ impl Game {
                 },
                 Event::MainEventsCleared => {
                     #[cfg(feature = "egui")]
-                    {
-                        self.gui.immediate_ui(|gui| {
-                            func(events::Event::Egui(gui.context()), control_flow);
-                        });
-                        self.gui.immediate_ui(|_gui| {});
-                    }
+                    self.gui.immediate_ui(|gui| {
+                        func(events::Event::Egui(gui.context()), control_flow);
+                    });
 
                     func(events::Event::Update, control_flow);
                 }
@@ -280,6 +272,19 @@ impl Game {
                 }
                 Event::LoopDestroyed => {
                     func(events::Event::Destroyed, control_flow);
+                }
+                Event::NewEvents(StartCause::Init) => {
+                    #[cfg(feature = "egui")]
+                    self.gui.immediate_ui(|gui| {
+                        func(events::Event::Egui(gui.context()), control_flow);
+                    });
+                    self.draw.redrawevent(
+                        &self.resources,
+                        &self.scene,
+                        #[cfg(feature = "egui")]
+                        &mut self.gui,
+                    );
+                    func(events::Event::Ready, control_flow)
                 }
                 _ => (),
             }

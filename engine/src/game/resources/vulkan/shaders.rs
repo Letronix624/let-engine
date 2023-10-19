@@ -1,4 +1,4 @@
-// Default shaders.
+//! Default shaders.
 
 pub mod vertexshader {
     vulkano_shaders::shader! {

@@ -21,8 +21,10 @@ pub fn create_instance() -> Arc<Instance> {
         ..required_extensions
     };
 
+    let layers = vec![];
+    #[cfg(feature = "vulkan_debug_utils")]
     let layers = vec![
-        //"VK_LAYER_KHRONOS_validation".to_owned(),
+        "VK_LAYER_KHRONOS_validation".to_owned(),
         //"VK_LAYER_VALVE_steam_overlay_64".to_owned(),
     ];
 
@@ -42,6 +44,7 @@ pub fn create_instance() -> Arc<Instance> {
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
         khr_swapchain: true,
+        // ext_line_rasterization: true,
         ..DeviceExtensions::empty()
     }
 }

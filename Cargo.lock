@@ -198,9 +198,9 @@ checksum = "3c6ed94e98ecff0c12dd1b04c15ec0d7d9458ca8fe806cea6f12954efe74c63b"
 
 [[package]]
 name = "bytemuck"
-version = "1.13.1"
+version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17febce684fd15d89027105661fec94afb475cb995fbc59d2865198446ba2eea"
+checksum = "374d28ec25809ee0e23827c2ab573d729e293f281dfe393500e7ad618baa61c6"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -607,14 +607,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3857d743a6e0741cdd60b622a74c7a36ea75f5f8f11b793b41d905d2c9721a4b"
 
 [[package]]
-name = "engine-macros"
-version = "0.3.0"
-dependencies = [
- "quote",
- "syn 2.0.37",
-]
-
-[[package]]
 name = "epaint"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -955,7 +947,7 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 
 [[package]]
 name = "let-engine"
-version = "0.1.0-alpha"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "atomic_float",
@@ -963,7 +955,6 @@ dependencies = [
  "crossbeam",
  "derive_builder",
  "egui_winit_vulkano",
- "engine-macros",
  "glam",
  "hashbrown 0.14.0",
  "image",
@@ -1493,6 +1484,13 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide 0.7.1",
+]
+
+[[package]]
+name = "pong"
+version = "0.2.0"
+dependencies = [
+ "let-engine",
 ]
 
 [[package]]

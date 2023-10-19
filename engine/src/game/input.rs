@@ -19,8 +19,10 @@ use parking_lot::Mutex;
 /// Updates each frame.
 #[derive(Clone)]
 pub struct Input {
-    //pressed keyboard buttons
+    //pressed keyboard buttons.
     keyboard_down: Arc<Mutex<HashSet<u32>>>,
+    //pressed keyboard keycodes.
+    keys_down: Arc<Mutex<HashSet<VirtualKeyCode>>>,
     //pressed keyboard modifiers
     keyboard_modifiers: Arc<Mutex<ModifiersState>>,
     //pressed mouse buttons
@@ -36,6 +38,7 @@ impl Input {
     pub(crate) fn new() -> Self {
         Self {
             keyboard_down: Arc::new(Mutex::new(HashSet::new())),
+            keys_down: Arc::new(Mutex::new(HashSet::new())),
             keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
             mouse_down: Arc::new(Mutex::new(HashSet::new())),
             cursor_position: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
@@ -52,8 +55,14 @@ impl Input {
                 WindowEvent::KeyboardInput { input, .. } => {
                     if input.state == ElementState::Pressed {
                         self.keyboard_down.lock().insert(input.scancode);
+                        if let Some(code) = input.virtual_keycode {
+                            self.keys_down.lock().insert(code);
+                        }
                     } else {
                         self.keyboard_down.lock().remove(&input.scancode);
+                        if let Some(code) = input.virtual_keycode {
+                            self.keys_down.lock().remove(&code);
+                        }
                     }
                 }
                 WindowEvent::ModifiersChanged(modifiers) => {
@@ -84,8 +93,12 @@ impl Input {
     }
 
     /// Returns true if the given key is pressed on the keyboard.
-    pub fn is_down(&self, key: &u32) -> bool {
-        self.keyboard_down.lock().contains(key)
+    pub fn is_down(&self, key: u32) -> bool {
+        self.keyboard_down.lock().contains(&key)
+    }
+    /// Returns true if the given keycode is pressed on the keyboard.
+    pub fn key_down(&self, key: VirtualKeyCode) -> bool {
+        self.keys_down.lock().contains(&key)
     }
 
     /// Returns true if the given mouse button is pressed.

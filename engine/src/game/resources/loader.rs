@@ -1,4 +1,4 @@
-use super::{materials, Vulkan};
+use super::Vulkan;
 use std::sync::Arc;
 use vulkano::{
     buffer::{allocator::*, BufferContents, BufferUsage},
@@ -16,7 +16,6 @@ use vulkano::{
     },
     memory::allocator::StandardMemoryAllocator,
     pipeline::{cache::PipelineCache, Pipeline},
-    render_pass::Subpass,
     sampler::Sampler,
 };
 
@@ -81,31 +80,11 @@ impl Loader {
         }
     }
 
-    /// Loads a material to the gpu.
-    pub fn load_material(
-        &self,
-        vulkan: &Vulkan,
-        shaders: &materials::Shaders,
-        settings: materials::MaterialSettings,
-        descriptor_bindings: Vec<WriteDescriptorSet>,
-    ) -> materials::Material {
-        let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
-        materials::Material::new(
-            settings,
-            shaders,
-            descriptor_bindings,
-            vulkan,
-            self.pipeline_cache.clone(),
-            subpass,
-            &self.descriptor_set_allocator,
-        )
-    }
-
     /// Loads a texture to the GPU.
     pub fn load_texture(
         &self,
         vulkan: &Vulkan,
-        data: &[u8],
+        data: Arc<[u8]>,
         dimensions: (u32, u32),
         layers: u32,
         format: tFormat,

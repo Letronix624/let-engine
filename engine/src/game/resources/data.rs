@@ -3,6 +3,7 @@
 use glam::f32::{vec2, Mat4, Vec2};
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
+/// A vertex containing it's position (xy) and texture position (uv).
 #[repr(C)]
 #[derive(BufferContents, VTX, Debug, Clone, Copy, PartialEq)]
 pub struct Vertex {
@@ -67,6 +68,13 @@ pub(crate) struct PushConstant {
 /// Has 3 simple presets.
 ///
 /// Empty, Square and Triangle.
+///
+/// Right now it only supports 2d model data.
+///
+/// The models must have vertices and indices.
+///
+/// up is -y, down is +y.
+/// right is +x und left is -x.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Data {
     pub vertices: Vec<Vertex>,
@@ -77,18 +85,14 @@ impl Data {
     pub const fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Self { vertices, indices }
     }
-    pub const fn empty() -> Self {
-        Data {
-            vertices: vec![],
-            indices: vec![],
-        }
-    }
+    /// Returns the data of a square that goes from `-1.0` to `1.0` in both X and Y.
     pub fn square() -> Self {
         Data {
             vertices: SQUARE.into(),
             indices: SQUARE_ID.into(),
         }
     }
+    /// Returns the data of a triangle with the points `[0.0, -1.0], [-1.0, 1.0], [1.0, 1.0]`.
     pub fn triangle() -> Self {
         Data {
             vertices: TRIANGLE.into(),
@@ -100,21 +104,36 @@ impl Data {
 //struct object with position, size, rotation.
 
 #[allow(dead_code)]
-pub const TRIANGLE: [Vertex; 3] = [vert(0.0, -1.0), vert(-1.0, 1.0), vert(1.0, 1.0)];
+const TRIANGLE: [Vertex; 3] = [vert(0.0, -1.0), vert(-1.0, 1.0), vert(1.0, 1.0)];
 #[allow(dead_code)]
-pub const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
+const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
 
 #[allow(dead_code)]
-pub const SQUARE: [Vertex; 4] = [
+const SQUARE: [Vertex; 4] = [
     vert(-1.0, -1.0),
     vert(1.0, -1.0),
     vert(-1.0, 1.0),
     vert(1.0, 1.0),
 ];
 #[allow(dead_code)]
-pub const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
+const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 
 /// A macro that makes it easy to create circles.
+///
+/// Returns [Data] with vertices and indices.
+///
+/// Using this with a `u32` makes a circle fan with as many corners as given.
+///
+/// Using this with a `u32` and a `f64` makes a circle fan that looks like a pie with the given percentage missing.
+///
+/// ## usage:
+/// ```rust
+/// use let_engine::prelude::*;
+///
+/// let hexagon: Data = make_circle!(6); // Makes a hexagon.
+///
+/// let pie: Data = make_circle!(20, 0.75); // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
+/// ```
 #[macro_export]
 macro_rules! make_circle {
     ($corners:expr) => {{ // Make a full circle fan with variable edges.

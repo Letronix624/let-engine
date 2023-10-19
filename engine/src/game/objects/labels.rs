@@ -1,5 +1,6 @@
 //! Default labels given by the engine.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -7,30 +8,24 @@ use parking_lot::Mutex;
 use anyhow::Result;
 
 use rusttype::gpu_cache::Cache;
-use rusttype::{point, Font as RFont, PositionedGlyph, Scale};
+use rusttype::{point, PositionedGlyph, Scale};
 
-use super::super::{resources::vulkan::shaders::*, Loader, Vulkan};
-use crate::resources::Model;
-use crate::{
-    materials::*,
-    objects::Appearance,
-    objects::Data,
-    objects::GameObject,
-    objects::RigidBodyParent,
-    resources::textures::*,
-    resources::{Font, Resources, Texture},
-    Transform, Vertex, WeakObject,
-};
+use super::super::resources::vulkan::shaders::*;
+use crate::prelude::*;
 use glam::f32::{vec2, Vec2};
-use rapier2d::{dynamics::RigidBodyHandle, geometry::ColliderHandle};
 
 /// Info to create default label objects with.
 #[derive(Clone)]
 pub struct LabelCreateInfo {
+    /// Initial position.
     pub transform: Transform,
+    /// The appearance of the label.
     pub appearance: Appearance,
+    /// Initial text of the label.
     pub text: String,
+    /// The scale of the text area.
     pub scale: Vec2,
+    /// The align of where the text gets rendered. Takes either 0.0 to 1.0 uv coordinates or one of the [direction](crate::directions) presets.
     pub align: [f32; 2],
 }
 impl LabelCreateInfo {
@@ -95,91 +90,22 @@ impl Default for LabelCreateInfo {
 /// to every label produces multiple textures, which take more memory.
 #[derive(Clone)]
 pub struct Label {
-    pub transform: Transform,
-    parent_transform: Transform,
-    pub appearance: Appearance,
-    id: usize,
-    reference: Option<WeakObject>,
+    pub object: Object,
     pub font: Font,
     pub text: String,
     pub scale: Vec2,
     pub align: [f32; 2],
     labelifier: Arc<Mutex<Labelifier>>,
 }
-impl GameObject for Label {
-    /// Returns the transform of the label.
-    #[inline]
-    fn transform(&self) -> Transform {
-        self.transform
-    }
-    /// Sets the position and rotation of the label.
-    #[inline]
-    fn set_isometry(&mut self, position: Vec2, rotation: f32) {
-        self.transform.position = position;
-        self.transform.rotation = rotation;
-    }
-    /// Returns the public position of the label.
-    #[inline]
-    fn public_transform(&self) -> Transform {
-        self.transform.combine(self.parent_transform)
-    }
-    #[inline]
-    fn set_parent_transform(&mut self, transform: Transform) {
-        self.parent_transform = transform;
-    }
-    /// Returns a reference of the appearance of the label.
-    fn appearance(&self) -> &Appearance {
-        &self.appearance
-    }
-    /// Returns the index of the label in the layer it's inside.
-    #[inline]
-    fn id(&self) -> usize {
-        self.id
-    }
-    fn init_to_layer(
-        &mut self,
-        id: usize,
-        parent: &crate::NObject,
-        rigid_body_parent: RigidBodyParent,
-        _layer: &crate::Layer,
-    ) -> crate::NObject {
-        self.id = id;
-        let parent_object = &parent.lock().object;
-        self.parent_transform = parent_object.public_transform();
-        let node: crate::NObject = Arc::new(Mutex::new(crate::objects::Node {
-            object: Box::new(self.clone()),
-            parent: Some(Arc::downgrade(parent)),
-            rigid_body_parent,
-            children: vec![],
-        }));
-        self.reference = Some(Arc::downgrade(&node));
-        self.labelifier.lock().queue(self.clone());
-        node
-    }
-    fn remove_event(&mut self) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_node(&self) -> crate::NObject {
-        self.reference.as_ref().unwrap().upgrade().unwrap()
-    }
-    fn collider_handle(&self) -> Option<ColliderHandle> {
-        None
-    }
-    fn rigidbody_handle(&self) -> Option<RigidBodyHandle> {
-        None
-    }
-}
 impl Label {
     /// Creates a new label with the given settings.
     pub fn new(resources: &Resources, font: &Font, create_info: LabelCreateInfo) -> Self {
         let labelifier = resources.labelifier().clone();
+        let mut object = Object::new();
+        object.transform = create_info.transform;
+        object.appearance = create_info.appearance;
         Self {
-            transform: create_info.transform,
-            parent_transform: Transform::default(),
-            appearance: create_info.appearance,
-            id: 0,
-            reference: None,
+            object,
             font: font.clone(),
             text: create_info.text,
             scale: create_info.scale,
@@ -187,17 +113,26 @@ impl Label {
             labelifier,
         }
     }
+    pub fn init(&mut self, layer: &Layer) {
+        self.object.init(layer);
+        self.sync();
+    }
+    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) {
+        self.object.init_with_parent(layer, parent);
+        self.sync();
+    }
+    pub fn init_with_optional_parent(&mut self, layer: &Layer, parent: Option<&Object>) {
+        self.object.init_with_optional_parent(layer, parent);
+        self.sync();
+    }
     /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
     pub fn update(&mut self) {
-        let arc = self.reference.clone().unwrap().upgrade().unwrap();
-        let object = &arc.lock().object;
-        self.transform = object.transform();
-        self.appearance = object.appearance().clone();
+        self.object.update()
     }
     /// Changes the text of the label and updates it on the layer.
-    pub fn update_text(&mut self, text: String) {
-        self.text = text;
-        Self::sync(self);
+    pub fn update_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
+        self.sync();
     }
     /// Syncs the public layer side label to be the same as the current.
     pub fn sync(&self) {
@@ -216,35 +151,34 @@ pub(crate) struct Labelifier {
     /// yasks to be executed on next update,
     queued: Vec<DrawTask<'static>>,
     /// the index of the latest added font resource to be incremented by 1 every new font
-    font_id: usize,
+    font_id: Arc<AtomicUsize>,
     /// and the boolean if it should update.
     ready: bool,
 }
 
 impl Labelifier {
     /// Makes a new label maker.
-    pub fn new(vulkan: &Vulkan, loader: &mut Loader) -> Self {
+    pub fn new(resources: &Resources) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
 
-        // Make the cache a texture.
-        let texture = Texture {
-            data: Arc::from(cache_pixel_buffer.clone().into_boxed_slice()),
-            dimensions: cache.dimensions(),
-            layers: 1,
-            set: loader.load_texture(
-                vulkan,
-                &cache_pixel_buffer,
-                cache.dimensions(),
-                1,
-                Format::R8,
-                TextureSettings {
-                    srgb: false,
-                    sampler: Sampler::default(),
-                },
-            ),
+        let dimensions = cache.dimensions();
+        let settings = TextureSettings {
+            srgb: false,
+            sampler: Sampler::default(),
         };
 
+        // Make the cache a texture.
+        let texture = Texture::from_raw(
+            &cache_pixel_buffer,
+            dimensions,
+            Format::R8,
+            1,
+            settings,
+            resources,
+        );
+
+        let vulkan = resources.vulkan();
         let text_shaders = Shaders {
             vertex: vertexshader::load(vulkan.device.clone()).unwrap(),
             fragment: text_fragmentshader::load(vulkan.device.clone()).unwrap(),
@@ -255,22 +189,22 @@ impl Labelifier {
             .build()
             .unwrap();
 
-        let material = loader.load_material(vulkan, &text_shaders, material_settings, vec![]);
+        let material =
+            Material::new_with_shaders(material_settings, &text_shaders, vec![], resources);
 
         Self {
             material,
             cache,
             cache_pixel_buffer,
             queued: vec![],
-            font_id: 0,
+            font_id: Arc::new(AtomicUsize::new(0)),
             ready: false,
         }
     }
     /// Updates the cache in case a label was changed or added.
     fn update_cache(
         &mut self,
-        vulkan: &Vulkan,
-        loader: &mut Loader,
+        resources: &Resources,
     ) -> Result<(), rusttype::gpu_cache::CacheWriteErr> {
         let dimensions = self.cache.dimensions().0 as usize;
 
@@ -290,36 +224,35 @@ impl Labelifier {
         })?;
         // Creates a new texture to be inserted into every syncing label.
         // Unsynced label keep holding the old texture.
-        self.material.texture = Some(Texture {
-            data: Arc::from(self.cache_pixel_buffer.clone().into_boxed_slice()),
-            dimensions: self.cache.dimensions(),
-            layers: 1,
-            set: loader.load_texture(
-                vulkan,
-                &self.cache_pixel_buffer,
-                self.cache.dimensions(),
-                1,
-                Format::R8,
-                TextureSettings {
-                    srgb: false,
-                    sampler: Sampler::default(),
-                },
-            ),
-        });
+
+        let dimensions = self.cache.dimensions();
+        let settings = TextureSettings {
+            srgb: false,
+            sampler: Sampler::default(),
+        };
+
+        // Make the cache a texture.
+        self.material.texture = Some(Texture::from_raw(
+            &self.cache_pixel_buffer,
+            dimensions,
+            Format::R8,
+            1,
+            settings,
+            resources,
+        ));
         Ok(())
     }
 
     /// Updates the cache and grows it, in case it's too small for everything.
-    fn update_and_resize_cache(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
+    fn update_and_resize_cache(&mut self, resources: &Resources) {
         loop {
             // Adds every queued task to the cache
             for task in self.queued.iter() {
                 for glyph in task.glyphs.clone() {
-                    self.cache.queue_glyph(task.label.font.fontid, glyph);
+                    self.cache.queue_glyph(task.label.font.id(), glyph);
                 }
             }
-
-            match self.update_cache(vulkan, loader) {
+            match self.update_cache(resources) {
                 // Success
                 Ok(_) => (),
                 // Grows the cache buffer by 2x for the rest of the runtime in case too many characters were queued for the cache to handle.
@@ -337,11 +270,11 @@ impl Labelifier {
         }
     }
 
-    fn update_each_object(&self, loader: &mut Loader) {
+    fn update_each_object(&self, resources: &Resources) {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
-            let size = label.appearance.transform.size;
+            let size = label.object.appearance.transform.size;
 
             let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
@@ -355,7 +288,7 @@ impl Labelifier {
                 .iter()
                 .flat_map(|g| {
                     if let Ok(Some((uv_rect, screen_rect))) =
-                        self.cache.rect_for(label.font.fontid, g)
+                        self.cache.rect_for(label.font.id(), g)
                     {
                         let gl_rect = rusttype::Rect {
                             min: point(
@@ -393,27 +326,28 @@ impl Labelifier {
                     }
                 })
                 .collect();
-            let model = Model::new(Data::new(vertices, indices), loader);
-            label.appearance = label
+            let model = Model::new(Data::new(vertices, indices), resources);
+            label.object.appearance = label
+                .object
                 .appearance
                 .model(Some(model))
                 .material(Some(self.material.clone()));
             //label.sync();
-            let arc = label.reference.clone().unwrap().upgrade().unwrap();
-            let mut object = arc.lock();
-            object.object = Box::new(label.clone());
+            let node = label.object.as_node().expect("object uninitialized");
+            let mut object = node.lock();
+            object.object = label.object.clone();
         }
     }
 
     /// Updates everything.
-    pub fn update(&mut self, vulkan: &Vulkan, loader: &mut Loader) {
+    pub fn update(&mut self, resources: &Resources) {
         if !self.ready {
             return;
         }
 
-        Self::update_and_resize_cache(self, vulkan, loader);
+        Self::update_and_resize_cache(self, resources);
 
-        Self::update_each_object(self, loader);
+        Self::update_each_object(self, resources);
 
         self.queued = vec![];
         self.ready = false;
@@ -421,7 +355,7 @@ impl Labelifier {
     pub fn queue(&mut self, label: Label) {
         self.ready = true;
 
-        let size = label.appearance().transform.size;
+        let size = label.object.appearance.transform.size;
 
         let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
@@ -429,14 +363,9 @@ impl Labelifier {
 
         self.queued.push(DrawTask { label, glyphs });
     }
-    /// Loads a font ready to get layed out and rendered.
-    pub fn load_font(&mut self, font: &[u8]) -> Font {
-        let font = Font {
-            font: Arc::new(RFont::try_from_vec(font.to_vec()).unwrap()),
-            fontid: self.font_id,
-        };
-        self.font_id += 1;
-        font
+    /// Increments the fontID number by one incase a new font was made.
+    pub fn increment_id(&self) -> usize {
+        self.font_id.fetch_add(1, Ordering::AcqRel)
     }
 }
 
@@ -454,7 +383,7 @@ fn layout_paragraph<'a>(label: &Label, dimensions: [f32; 2]) -> Vec<PositionedGl
         x: label.scale[0],
         y: label.scale[1],
     };
-    let v_metrics = label.font.font.v_metrics(scale);
+    let v_metrics = label.font.font().v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
     let mut caret = point(0.0, v_metrics.ascent);
     let mut last_glyph_id = None;
@@ -470,9 +399,9 @@ fn layout_paragraph<'a>(label: &Label, dimensions: [f32; 2]) -> Vec<PositionedGl
             }
             continue;
         }
-        let base_glyph = label.font.font.glyph(c);
+        let base_glyph = label.font.font().glyph(c);
         if let Some(id) = last_glyph_id.take() {
-            caret.x += label.font.font.pair_kerning(scale, id, base_glyph.id());
+            caret.x += label.font.font().pair_kerning(scale, id, base_glyph.id());
         }
         last_glyph_id = Some(base_glyph.id());
         let mut glyph = base_glyph.scaled(scale).positioned(caret);
