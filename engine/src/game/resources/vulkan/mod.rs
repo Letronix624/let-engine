@@ -2,12 +2,14 @@ mod instance;
 mod pipeline;
 pub mod shaders;
 pub use shaders::*;
-pub mod swapchain;
-mod window;
 #[cfg(feature = "vulkan_debug_utils")]
 mod debug;
+pub mod swapchain;
+mod window;
 
 use crate::window::{Window, WindowBuilder};
+#[cfg(feature = "vulkan_debug_utils")]
+use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
     device::{Device, Features, Queue},
     image::{view::ImageView, ImageAccess, SwapchainImage},
@@ -15,8 +17,6 @@ use vulkano::{
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::Surface,
 };
-#[cfg(feature = "vulkan_debug_utils")]
-use vulkano::instance::debug::DebugUtilsMessenger;
 use winit::event_loop::EventLoop;
 
 use std::sync::Arc;
@@ -131,7 +131,7 @@ impl Vulkan {
             textured_material,
             texture_array_material,
             #[cfg(feature = "vulkan_debug_utils")]
-            _debug
+            _debug,
         }
     }
 }

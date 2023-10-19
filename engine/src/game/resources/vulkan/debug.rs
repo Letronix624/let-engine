@@ -1,5 +1,5 @@
-use vulkano::instance::{debug::*, Instance};
 use std::sync::Arc;
+use vulkano::instance::{debug::*, Instance};
 
 pub fn make_debug(instance: &Arc<Instance>) -> DebugUtilsMessenger {
     unsafe {
@@ -47,5 +47,6 @@ pub fn make_debug(instance: &Arc<Instance>) -> DebugUtilsMessenger {
             },
         )
         .ok()
-    }.unwrap()
+    }
+    .unwrap()
 }

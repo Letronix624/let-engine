@@ -2,7 +2,7 @@
 use let_engine::prelude::*;
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
-    time::SystemTime
+    time::SystemTime,
 };
 
 let_engine!();
@@ -74,7 +74,12 @@ fn main() {
     let mut middle_line = Object::new();
     // A model that is just a stippled line going from 1 to -1.
     middle_line.appearance.set_model(Some(model!(Data {
-        vertices: vec![vert(0.0, 0.7), vert(0.0, 0.3), vert(0.0, -0.3), vert(0.0, -0.7)],
+        vertices: vec![
+            vert(0.0, 0.7),
+            vert(0.0, 0.3),
+            vert(0.0, -0.3),
+            vert(0.0, -0.7)
+        ],
         indices: vec![0, 1, 2, 3]
     })));
     // A description of how the line should look like.
@@ -102,9 +107,7 @@ fn main() {
                 if input.state == ElementState::Pressed {
                     match input.keycode {
                         // Exit when the escape key is pressed.
-                        Some(VirtualKeyCode::Escape) => {
-                            control_flow.set_exit()
-                        }
+                        Some(VirtualKeyCode::Escape) => control_flow.set_exit(),
                         // Troll the right paddle
                         Some(VirtualKeyCode::E) => {
                             paddle2.shrink();
@@ -121,7 +124,7 @@ fn main() {
                         Some(VirtualKeyCode::Right) => {
                             paddle2.grow();
                         }
-                        _ => ()
+                        _ => (),
                     }
                 }
             }
@@ -166,7 +169,11 @@ impl Paddle {
 
         // Initialize the object to the given layer.
         object.init(layer);
-        Self { controls, object, height }
+        Self {
+            controls,
+            object,
+            height,
+        }
     }
     pub fn update(&mut self) {
         // Turn the `True` and `False` of the input.key_down() into 1, 0 or -1.
@@ -192,7 +199,8 @@ impl Paddle {
         self.height += difference;
         self.height = self.height.clamp(0.001, 0.6);
         self.object.transform.size.y = self.height;
-        self.object.set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
+        self.object
+            .set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
         self.object.sync();
     }
 }
@@ -261,7 +269,8 @@ impl Ball {
                 return;
             }
 
-            self.object.transform.position += self.direction * TIME.delta_time() as f32 * self.speed;
+            self.object.transform.position +=
+                self.direction * TIME.delta_time() as f32 * self.speed;
             self.object.sync();
         }
     }
