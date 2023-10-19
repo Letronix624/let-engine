@@ -25,7 +25,7 @@ macro_rules! font {
 }
 
 /// Loads a texture to the engine using one of
-/// the supported file formats and returns a [Texture](super::Texture).
+/// the supported file formats and returns a [Texture](crate::prelude::Texture).
 #[macro_export]
 macro_rules! texture {
     (
@@ -51,7 +51,7 @@ macro_rules! texture {
     }};
 }
 
-/// Loads a texture to the engine using raw image bytes and context and returns a [Texture](super::Texture).
+/// Loads a texture to the engine using raw image bytes and context and returns a [Texture](crate::prelude::Texture).
 #[macro_export]
 macro_rules! texture_from_raw {
     (
