@@ -11,7 +11,6 @@ pub use game::{
     window, Game, Input, Layer, Scene, Time, Transform, Vertex,
 };
 
-pub use color_art::{color, Color};
 pub use glam::{vec2, Vec2};
 pub use once_cell::sync::Lazy;
 pub use parking_lot::Mutex;

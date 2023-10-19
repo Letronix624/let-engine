@@ -1,7 +1,6 @@
 //! General utitities used throughout the engine.
 
 use crate::camera::CameraScaling;
-use color_art::Color;
 use core::f32::consts::FRAC_1_SQRT_2;
 use glam::{Mat4, Vec2};
 
@@ -48,13 +47,4 @@ pub fn scale(mode: CameraScaling, dimensions: (f32, f32)) -> (f32, f32) {
         ),
         CameraScaling::Expand => (dimensions.0 * 0.001, dimensions.1 * 0.001),
     }
-}
-
-pub fn color_art_to_array(color: Color) -> [f32; 4] {
-    [
-        color.red() as f32 / 255.0,
-        color.green() as f32 / 255.0,
-        color.blue() as f32 / 255.0,
-        color.alpha() as f32,
-    ]
 }

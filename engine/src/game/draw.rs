@@ -241,7 +241,7 @@ impl Draw {
                     layer.camera_settings(),
                 );
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
-                    color: appearance.get_color_array(),
+                    color: *appearance.get_color(),
                     texture_id: if let Some(material) = appearance.get_material() {
                         if let Some(texture) = &material.texture {
                             descriptors.push(texture.set().clone());
