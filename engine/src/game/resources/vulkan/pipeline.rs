@@ -1,12 +1,20 @@
 use crate::data::Vertex as GameVertex;
 use std::sync::Arc;
 use vulkano::device::Device;
-use vulkano::pipeline::graphics::color_blend::ColorBlendState;
+use vulkano::pipeline::graphics::color_blend::{
+    AttachmentBlend, ColorBlendAttachmentState, ColorBlendState,
+};
+use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
+use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
 use vulkano::pipeline::graphics::{
     input_assembly::InputAssemblyState, vertex_input::Vertex, viewport::ViewportState,
 };
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
+use vulkano::pipeline::{
+    DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+};
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 
@@ -17,16 +25,50 @@ pub fn create_pipeline(
     fs: &Arc<ShaderModule>,
     subpass: Subpass,
 ) -> Arc<GraphicsPipeline> {
-    GraphicsPipeline::start()
-        .vertex_input_state(GameVertex::per_vertex())
-        .input_assembly_state(InputAssemblyState::new())
-        // Assumes the shader entry points to always be called "main"
-        .vertex_shader(vs.entry_point("main").unwrap(), ())
-        .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
-        .fragment_shader(fs.entry_point("main").unwrap(), ())
-        .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
-        .rasterization_state(RasterizationState::new().polygon_mode(PolygonMode::Fill))
-        .render_pass(subpass)
-        .build(device.clone())
-        .unwrap()
+    let vertex = vs.entry_point("main").unwrap();
+    let fragment = fs.entry_point("main").unwrap();
+    let input_assembly = InputAssemblyState::default();
+    let stages = [
+        PipelineShaderStageCreateInfo::new(vertex.clone()),
+        PipelineShaderStageCreateInfo::new(fragment.clone()),
+    ];
+    let layout = PipelineLayout::new(
+        device.clone(),
+        PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+            .into_pipeline_layout_create_info(device.clone())
+            .unwrap(),
+    )
+    .unwrap();
+
+    GraphicsPipeline::new(
+        device.clone(),
+        None,
+        GraphicsPipelineCreateInfo {
+            stages: stages.into_iter().collect(),
+            vertex_input_state: Some(
+                GameVertex::per_vertex()
+                    .definition(&vertex.info().input_interface)
+                    .unwrap(),
+            ),
+            input_assembly_state: Some(input_assembly),
+            viewport_state: Some(ViewportState::default()),
+            rasterization_state: Some(RasterizationState {
+                polygon_mode: PolygonMode::Fill,
+                // line_stipple,
+                ..RasterizationState::default()
+            }),
+            multisample_state: Some(MultisampleState::default()),
+            color_blend_state: Some(ColorBlendState::with_attachment_states(
+                subpass.num_color_attachments(),
+                ColorBlendAttachmentState {
+                    blend: Some(AttachmentBlend::alpha()),
+                    ..Default::default()
+                },
+            )),
+            dynamic_state: [DynamicState::Viewport].into_iter().collect(),
+            subpass: Some(subpass.into()),
+            ..GraphicsPipelineCreateInfo::layout(layout)
+        },
+    )
+    .unwrap()
 }

@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
 use vulkano::descriptor_set::WriteDescriptorSet;
-use vulkano::pipeline::cache::PipelineCache;
+use vulkano::pipeline::cache::{PipelineCache, PipelineCacheCreateInfo};
 
 mod loader;
 pub(crate) mod vulkan;
@@ -73,11 +73,18 @@ impl Resources {
     ///
     /// The binary given to the function must be made with the same hardware and vulkan driver version.
     pub unsafe fn load_pipeline_cache(&self, data: &[u8]) {
-        let cache = PipelineCache::with_data(self.vulkan().device.clone(), data).unwrap();
+        let cache = PipelineCache::new(
+            self.vulkan().device.clone(),
+            PipelineCacheCreateInfo {
+                initial_data: data.to_vec(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         self.loader()
             .lock()
             .pipeline_cache
-            .merge([&cache].iter())
+            .merge([cache.as_ref()])
             .unwrap();
     }
 

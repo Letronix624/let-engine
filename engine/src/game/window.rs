@@ -4,7 +4,6 @@
 use crossbeam::atomic::AtomicCell;
 use dpi::*;
 use std::sync::Arc;
-use vulkano::swapchain::Surface;
 pub use winit::{
     dpi,
     window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel},
@@ -22,14 +21,9 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(surface: Arc<Surface>, clear_color: [f32; 4]) -> Self {
+    pub fn new(window: Arc<winit::window::Window>, clear_color: [f32; 4]) -> Self {
         Self {
-            window: surface
-                .object()
-                .unwrap()
-                .clone()
-                .downcast::<winit::window::Window>()
-                .unwrap(),
+            window,
             clear_color: Arc::new(AtomicCell::new(clear_color)),
         }
     }

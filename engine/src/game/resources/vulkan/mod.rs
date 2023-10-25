@@ -11,8 +11,8 @@ use crate::window::{Window, WindowBuilder};
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
-    device::{Device, Features, Queue},
-    image::{view::ImageView, ImageAccess, SwapchainImage},
+    device::{physical::PhysicalDevice, Device, Features, Queue},
+    image::{view::ImageView, Image},
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline},
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
     swapchain::Surface,
@@ -28,6 +28,7 @@ use super::materials;
 pub(crate) struct Vulkan {
     pub surface: Arc<Surface>,
     pub window: Window,
+    pub physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
     pub render_pass: Arc<RenderPass>,
@@ -43,7 +44,7 @@ pub(crate) struct Vulkan {
 
 impl Vulkan {
     pub fn init(event_loop: &EventLoop<()>, window_builder: WindowBuilder) -> Self {
-        let instance = instance::create_instance();
+        let instance = instance::create_instance(event_loop);
         #[cfg(feature = "vulkan_debug_utils")]
         let _debug = Arc::new(debug::make_debug(&instance));
         let (surface, window) = window::create_window(event_loop, &instance, window_builder);
@@ -68,10 +69,10 @@ impl Vulkan {
             device.clone(),
             attachments: {
                 color: {
-                    load: Clear,
-                    store: Store,
                     format: device.physical_device().surface_formats(&surface, Default::default()).unwrap()[0].0,
                     samples: 1,
+                    load_op: Clear,
+                    store_op: Store,
                 }
             },
             pass: {
@@ -122,6 +123,7 @@ impl Vulkan {
         Self {
             surface,
             window,
+            physical_device,
             device,
             queue,
             render_pass,
@@ -139,12 +141,12 @@ impl Vulkan {
 /// Sets the dynamic viewport up to work with the newly set resolution of the window.
 //  For games make the viewport less dynamic.
 pub fn window_size_dependent_setup(
-    images: &[Arc<SwapchainImage>],
+    images: &[Arc<Image>],
     render_pass: Arc<RenderPass>,
     viewport: &mut Viewport,
 ) -> Vec<Arc<Framebuffer>> {
-    let dimensions = images[0].dimensions().width_height();
-    viewport.dimensions = [dimensions[0] as f32, dimensions[1] as f32];
+    let dimensions = images[0].extent();
+    viewport.extent = [dimensions[0] as f32, dimensions[1] as f32];
 
     images
         .iter()

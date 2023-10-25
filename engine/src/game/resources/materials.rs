@@ -5,7 +5,14 @@ use crate::prelude::{Format, Texture, TextureSettings, Vertex as GameVertex};
 
 use derive_builder::Builder;
 use image::ImageFormat;
+use vulkano::pipeline::graphics::multisample::MultisampleState;
+use vulkano::shader::spirv::bytes_to_words;
 use std::sync::Arc;
+use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
+use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
+use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
+use vulkano::pipeline::{DynamicState, PipelineLayout, PipelineShaderStageCreateInfo};
 
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::pipeline::{
@@ -16,10 +23,10 @@ use vulkano::pipeline::{
         vertex_input::Vertex,
         viewport::ViewportState,
     },
-    GraphicsPipeline, Pipeline, StateMode,
+    GraphicsPipeline, Pipeline,
 };
 use vulkano::render_pass::Subpass;
-use vulkano::shader::ShaderModule;
+use vulkano::shader::{ShaderModule, ShaderModuleCreateInfo};
 
 use super::Resources;
 // pub use vulkano::pipeline::graphics::rasterization::LineStipple;
@@ -69,6 +76,8 @@ impl Material {
     ) -> Self {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
+        let vertex = vs.entry_point("main").unwrap();
+        let fragment = fs.entry_point("main").unwrap();
 
         let topology: PrimitiveTopology = match settings.topology {
             Topology::TriangleList => PrimitiveTopology::TriangleList,
@@ -86,22 +95,51 @@ impl Material {
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
         let allocator = &loader.descriptor_set_allocator;
 
-        let pipeline: Arc<GraphicsPipeline> = GraphicsPipeline::start()
-            .vertex_input_state(GameVertex::per_vertex())
-            .input_assembly_state(InputAssemblyState::new().topology(topology))
-            .rasterization_state(RasterizationState {
-                line_width: StateMode::Fixed(settings.line_width),
-                // line_stipple,
-                ..RasterizationState::new()
-            })
-            .vertex_shader(vs.entry_point("main").unwrap(), ())
-            .viewport_state(ViewportState::viewport_dynamic_scissor_irrelevant())
-            .fragment_shader(fs.entry_point("main").unwrap(), ())
-            .color_blend_state(ColorBlendState::new(subpass.num_color_attachments()).blend_alpha())
-            .render_pass(subpass)
-            .build_with_cache(pipeline_cache)
-            .build(vulkan.device.clone())
-            .unwrap();
+        let mut input_assembly = InputAssemblyState::default();
+        input_assembly.topology = topology;
+        let stages = [
+            PipelineShaderStageCreateInfo::new(vertex.clone()),
+            PipelineShaderStageCreateInfo::new(fragment.clone()),
+        ];
+        let layout = PipelineLayout::new(
+            vulkan.device.clone(),
+            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+                .into_pipeline_layout_create_info(vulkan.device.clone())
+                .unwrap(),
+        )
+        .unwrap();
+
+        let pipeline = GraphicsPipeline::new(
+            vulkan.device.clone(),
+            Some(pipeline_cache.clone()),
+            GraphicsPipelineCreateInfo {
+                stages: stages.into_iter().collect(),
+                vertex_input_state: Some(
+                    GameVertex::per_vertex()
+                        .definition(&vertex.info().input_interface)
+                        .unwrap(),
+                ),
+                input_assembly_state: Some(input_assembly),
+                viewport_state: Some(ViewportState::default()),
+                rasterization_state: Some(RasterizationState {
+                    line_width: settings.line_width,
+                    // line_stipple,
+                    ..RasterizationState::default()
+                }),
+                multisample_state: Some(MultisampleState::default()),
+                color_blend_state: Some(ColorBlendState::with_attachment_states(
+                    subpass.num_color_attachments(),
+                    ColorBlendAttachmentState {
+                        blend: Some(AttachmentBlend::alpha()),
+                        ..Default::default()
+                    },
+                )),
+                dynamic_state: [DynamicState::Viewport].into_iter().collect(),
+                subpass: Some(subpass.into()),
+                ..GraphicsPipelineCreateInfo::layout(layout)
+            },
+        )
+        .unwrap();
         let descriptor = if !descriptor.is_empty() {
             Some(
                 PersistentDescriptorSet::new(
@@ -113,6 +151,7 @@ impl Material {
                         .unwrap()
                         .clone(),
                     descriptor,
+                    [],
                 )
                 .unwrap(),
             )
@@ -186,6 +225,7 @@ impl Material {
                 &loader.descriptor_set_allocator,
                 self.pipeline.layout().set_layouts().get(1).unwrap().clone(),
                 descriptor,
+                [],
             )
             .unwrap(),
         );
@@ -290,10 +330,12 @@ impl Shaders {
         resources: &Resources,
     ) -> Self {
         let device = &resources.vulkan().device;
+        let vertex_words = bytes_to_words(vertex_bytes).unwrap();
+        let fragment_words = bytes_to_words(fragment_bytes).unwrap();
         let vertex: Arc<ShaderModule> =
-            unsafe { ShaderModule::from_bytes(device.clone(), vertex_bytes).unwrap() };
+            unsafe { ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words)).unwrap() };
         let fragment: Arc<ShaderModule> =
-            unsafe { ShaderModule::from_bytes(device.clone(), fragment_bytes).unwrap() };
+            unsafe { ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&fragment_words)).unwrap() };
         Self { vertex, fragment }
     }
 }

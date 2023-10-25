@@ -222,7 +222,6 @@ impl Appearance {
     getters_and_setters!(transform, "the transform", Transform);
     getters_and_setters!(material, "the material", Option<materials::Material>);
     getters_and_setters!(color, "the color", [f32; 4]);
-
 }
 
 impl default::Default for Appearance {
