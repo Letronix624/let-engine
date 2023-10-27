@@ -5,14 +5,14 @@ use crate::prelude::{Format, Texture, TextureSettings, Vertex as GameVertex};
 
 use derive_builder::Builder;
 use image::ImageFormat;
-use vulkano::pipeline::graphics::multisample::MultisampleState;
-use vulkano::shader::spirv::bytes_to_words;
 use std::sync::Arc;
 use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
+use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
 use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
 use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
 use vulkano::pipeline::{DynamicState, PipelineLayout, PipelineShaderStageCreateInfo};
+use vulkano::shader::spirv::bytes_to_words;
 
 use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
 use vulkano::pipeline::{
@@ -95,8 +95,10 @@ impl Material {
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
         let allocator = &loader.descriptor_set_allocator;
 
-        let mut input_assembly = InputAssemblyState::default();
-        input_assembly.topology = topology;
+        let input_assembly = InputAssemblyState {
+            topology,
+            ..Default::default()
+        };
         let stages = [
             PipelineShaderStageCreateInfo::new(vertex.clone()),
             PipelineShaderStageCreateInfo::new(fragment.clone()),
@@ -332,10 +334,12 @@ impl Shaders {
         let device = &resources.vulkan().device;
         let vertex_words = bytes_to_words(vertex_bytes).unwrap();
         let fragment_words = bytes_to_words(fragment_bytes).unwrap();
-        let vertex: Arc<ShaderModule> =
-            unsafe { ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words)).unwrap() };
-        let fragment: Arc<ShaderModule> =
-            unsafe { ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&fragment_words)).unwrap() };
+        let vertex: Arc<ShaderModule> = unsafe {
+            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words)).unwrap()
+        };
+        let fragment: Arc<ShaderModule> = unsafe {
+            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&fragment_words)).unwrap()
+        };
         Self { vertex, fragment }
     }
 }

@@ -3,8 +3,9 @@ use std::sync::Arc;
 use vulkano::{
     buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, CommandBufferUsage,
-        CopyBufferToImageInfo, PrimaryCommandBufferAbstract,
+        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
+        PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
         allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo},
@@ -75,12 +76,14 @@ impl Loader {
             StandardDescriptorSetAllocatorCreateInfo::default(),
         );
 
-        let command_buffer_allocator =
-            StandardCommandBufferAllocator::new(vulkan.device.clone(), StandardCommandBufferAllocatorCreateInfo {
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(
+            vulkan.device.clone(),
+            StandardCommandBufferAllocatorCreateInfo {
                 primary_buffer_count: 32,
                 secondary_buffer_count: 2,
                 ..Default::default()
-            });
+            },
+        );
 
         let pipeline_cache = unsafe {
             PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default()).unwrap()
