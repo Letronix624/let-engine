@@ -85,15 +85,15 @@ impl Vulkan {
         let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
 
         //Materials
-        let vs = vertexshader::load(device.clone()).unwrap();
-        let fs = fragmentshader::load(device.clone()).unwrap();
+        let vs = vertexshader(device.clone());
+        let fs = fragmentshader(device.clone());
         let default_shaders = materials::Shaders {
             vertex: vs.clone(),
             fragment: fs.clone(),
         };
 
-        let tfs = textured_fragmentshader::load(device.clone()).unwrap();
-        let tafs = texture_array_fragmentshader::load(device.clone()).unwrap();
+        let tfs = textured_fragmentshader(device.clone());
+        let tafs = texture_array_fragmentshader(device.clone());
 
         let pipeline: Arc<GraphicsPipeline> =
             pipeline::create_pipeline(&device, &vs, &fs, subpass.clone());

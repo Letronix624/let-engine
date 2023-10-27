@@ -1,36 +1,32 @@
 //! Default shaders.
 
-pub mod vertexshader {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        path: "src/shaders/default.vert",
+use std::sync::Arc;
+
+use vulkano::{shader::{ShaderModule, spirv::bytes_to_words, ShaderModuleCreateInfo}, device::Device};
+
+fn from_bytes(bytes: &[u8], device: Arc<Device>) -> Arc<ShaderModule> {
+    let code = bytes_to_words(bytes).unwrap();
+    unsafe {
+        ShaderModule::new(device, ShaderModuleCreateInfo::new(&code)).unwrap()
     }
 }
 
-pub mod fragmentshader {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "src/shaders/default.frag"
-    }
+pub fn vertexshader(device: Arc<Device>) -> Arc<ShaderModule> {
+    from_bytes(include_bytes!("shaders/default_vert.spv"), device)
 }
 
-pub mod textured_fragmentshader {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "src/shaders/default_textured.frag"
-    }
+pub fn fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
+    from_bytes(include_bytes!("shaders/default_frag.spv"), device)
 }
 
-pub mod texture_array_fragmentshader {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "src/shaders/default_texture_array.frag"
-    }
+pub fn textured_fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
+    from_bytes(include_bytes!("shaders/default_textured.spv"), device)
 }
 
-pub mod text_fragmentshader {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        path: "src/shaders/text.frag"
-    }
+pub fn texture_array_fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
+    from_bytes(include_bytes!("shaders/default_texture_array.spv"), device)
+}
+
+pub fn text_fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
+    from_bytes(include_bytes!("shaders/text.spv"), device)
 }

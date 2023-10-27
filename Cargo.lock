@@ -947,7 +947,6 @@ dependencies = [
  "rusttype",
  "thiserror",
  "vulkano",
- "vulkano-shaders",
  "winit",
 ]
 

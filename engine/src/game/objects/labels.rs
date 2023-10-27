@@ -180,8 +180,8 @@ impl Labelifier {
 
         let vulkan = resources.vulkan();
         let text_shaders = Shaders {
-            vertex: vertexshader::load(vulkan.device.clone()).unwrap(),
-            fragment: text_fragmentshader::load(vulkan.device.clone()).unwrap(),
+            vertex: vertexshader(vulkan.device.clone()),
+            fragment: text_fragmentshader(vulkan.device.clone()),
         };
 
         let material_settings = MaterialSettingsBuilder::default()
