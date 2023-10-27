@@ -1,22 +1,28 @@
 use super::Vulkan;
 use std::sync::Arc;
 use vulkano::{
-    buffer::{allocator::*, BufferContents, BufferUsage},
+    buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
+        allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
         PrimaryCommandBufferAbstract,
     },
     descriptor_set::{
-        allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
+        allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo},
+        PersistentDescriptorSet, WriteDescriptorSet,
     },
     format::Format,
     image::{
-        view::{ImageView, ImageViewCreateInfo},
-        ImageDimensions, ImageViewType, ImmutableImage, MipmapsCount,
+        sampler::Sampler,
+        view::{ImageView, ImageViewCreateInfo, ImageViewType},
+        Image, ImageCreateInfo, ImageType, ImageUsage,
     },
-    memory::allocator::StandardMemoryAllocator,
-    pipeline::{cache::PipelineCache, Pipeline},
-    sampler::Sampler,
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
+    pipeline::{
+        cache::{PipelineCache, PipelineCacheCreateInfo},
+        Pipeline,
+    },
+    DeviceSize,
 };
 
 use super::textures::{Format as tFormat, TextureSettings};
@@ -42,6 +48,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::VERTEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );
@@ -50,6 +57,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::INDEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );
@@ -58,16 +66,28 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::UNIFORM_BUFFER,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );
 
-        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(vulkan.device.clone());
+        let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
+            vulkan.device.clone(),
+            StandardDescriptorSetAllocatorCreateInfo::default(),
+        );
 
-        let command_buffer_allocator =
-            StandardCommandBufferAllocator::new(vulkan.device.clone(), Default::default());
+        let command_buffer_allocator = StandardCommandBufferAllocator::new(
+            vulkan.device.clone(),
+            StandardCommandBufferAllocatorCreateInfo {
+                primary_buffer_count: 32,
+                secondary_buffer_count: 2,
+                ..Default::default()
+            },
+        );
 
-        let pipeline_cache = PipelineCache::empty(vulkan.device.clone()).unwrap();
+        let pipeline_cache = unsafe {
+            PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default()).unwrap()
+        };
 
         Self {
             memory_allocator,
@@ -111,19 +131,47 @@ impl Loader {
             }
         };
 
-        let image = ImmutableImage::from_iter(
-            &self.memory_allocator,
-            data.to_vec(),
-            ImageDimensions::Dim2d {
-                width: dimensions.0,
-                height: dimensions.1,
-                array_layers: layers,
+        let upload_buffer: Subbuffer<[u8]> = Buffer::new_slice(
+            self.memory_allocator.clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_SRC,
+                ..Default::default()
             },
-            MipmapsCount::One,
-            format,
-            &mut uploads,
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            format.block_size()
+                * [dimensions.0, dimensions.1, 1]
+                    .into_iter()
+                    .map(|e| e as DeviceSize)
+                    .product::<DeviceSize>()
+                * layers as DeviceSize,
         )
         .unwrap();
+        upload_buffer.write().unwrap().copy_from_slice(&data);
+
+        let image = Image::new(
+            self.memory_allocator.clone(),
+            ImageCreateInfo {
+                image_type: ImageType::Dim2d,
+                format,
+                extent: [dimensions.0, dimensions.1, 1],
+                array_layers: layers,
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+                ..Default::default()
+            },
+            AllocationCreateInfo::default(),
+        )
+        .unwrap();
+
+        uploads
+            .copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
+                upload_buffer,
+                image.clone(),
+            ))
+            .unwrap();
 
         let set_layout;
 
@@ -168,6 +216,7 @@ impl Loader {
                 texture_view,
                 sampler,
             )],
+            [],
         )
         .unwrap();
 

@@ -6,9 +6,7 @@ pub mod scenes;
 use crate::{
     error::{objects::NoObjectError, textures::*},
     prelude::*,
-    utils::color_art_to_array,
 };
-use color_art::{color, Color};
 use scenes::Layer;
 
 use anyhow::Result;
@@ -156,7 +154,6 @@ pub struct Appearance {
     model: Option<Model>,
     transform: Transform,
     color: [f32; 4],
-    color_art: Color,
 }
 
 use paste::paste;
@@ -224,30 +221,7 @@ impl Appearance {
     getters_and_setters!(model, "the model", Option<Model>);
     getters_and_setters!(transform, "the transform", Transform);
     getters_and_setters!(material, "the material", Option<materials::Material>);
-
-    /// Sets the color of this appearance and returns self.
-    #[inline]
-    pub fn color(mut self, color: Color) -> Self {
-        self.color_art = color;
-        self.color = color_art_to_array(color);
-        self
-    }
-    /// Gets the color of this appearance.
-    #[inline]
-    pub fn get_color(&self) -> Color {
-        self.color_art
-    }
-    /// Returns the color as an array of 4 f32s symbolizing rgba going from 0 to 1.
-    #[inline]
-    pub fn get_color_array(&self) -> [f32; 4] {
-        self.color
-    }
-    /// Sets the color of this appearance.
-    #[inline]
-    pub fn set_color(mut self, color: Color) {
-        self.color_art = color;
-        self.color = color_art_to_array(color);
-    }
+    getters_and_setters!(color, "the color", [f32; 4]);
 }
 
 impl default::Default for Appearance {
@@ -257,7 +231,6 @@ impl default::Default for Appearance {
             material: None,
             model: None,
             transform: Transform::default(),
-            color_art: color!(rgba(255, 255, 255, 1.0)),
             color: [1.0; 4],
         }
     }

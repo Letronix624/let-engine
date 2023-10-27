@@ -3,16 +3,17 @@ use vulkano::{
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
         PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract, RenderPassBeginInfo,
-        SecondaryAutoCommandBuffer, SubpassContents,
+        SecondaryAutoCommandBuffer, SubpassBeginInfo, SubpassContents,
     },
     descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline, Pipeline},
     render_pass::Framebuffer,
     swapchain::{
-        acquire_next_image, AcquireError, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
-        SwapchainCreationError, SwapchainPresentInfo,
+        acquire_next_image, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        SwapchainPresentInfo,
     },
-    sync::{self, FlushError, GpuFuture},
+    sync::{self, GpuFuture},
+    Validated, VulkanError,
 };
 
 use super::{
@@ -48,12 +49,13 @@ impl Draw {
 
         let recreate_swapchain = false;
 
-        let (swapchain, images) = create_swapchain_and_images(&vulkan.device, &vulkan.surface);
+        let (swapchain, images) =
+            create_swapchain_and_images(&vulkan.physical_device, &vulkan.device, &vulkan.surface);
 
         let mut viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: [0.0, 0.0],
-            depth_range: 0.0..1.0,
+            offset: [0.0, 0.0],
+            extent: [0.0, 0.0],
+            depth_range: 0.0..=1.0,
         };
 
         let framebuffers =
@@ -98,7 +100,6 @@ impl Draw {
                 ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
-                Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
                 Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
             };
 
@@ -137,21 +138,26 @@ impl Draw {
                     clear_values: vec![Some(clear_color.into())],
                     ..RenderPassBeginInfo::framebuffer(self.framebuffers[image_num].clone())
                 },
-                SubpassContents::SecondaryCommandBuffers,
+                SubpassBeginInfo {
+                    contents: SubpassContents::SecondaryCommandBuffers,
+                    ..Default::default()
+                },
             )
             .unwrap();
 
         let mut secondary_builder = AutoCommandBufferBuilder::secondary(
             &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit,
+            CommandBufferUsage::OneTimeSubmit,
             CommandBufferInheritanceInfo {
                 render_pass: Some(vulkan.subpass.clone().into()),
                 ..Default::default()
             },
         )
         .unwrap();
-        secondary_builder.set_viewport(0, [self.viewport.clone()]);
+        secondary_builder
+            .set_viewport(0, [self.viewport.clone()].into_iter().collect())
+            .unwrap();
 
         (builder, secondary_builder)
     }
@@ -241,7 +247,7 @@ impl Draw {
                     layer.camera_settings(),
                 );
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
-                    color: appearance.get_color_array(),
+                    color: *appearance.get_color(),
                     texture_id: if let Some(material) = appearance.get_material() {
                         if let Some(texture) = &material.texture {
                             descriptors.push(texture.set().clone());
@@ -264,6 +270,7 @@ impl Draw {
                             WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
                             WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
                         ],
+                        [],
                     )
                     .unwrap(),
                 );
@@ -272,14 +279,18 @@ impl Draw {
 
                 command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
+                    .unwrap()
                     .bind_descriptor_sets(
                         vulkano::pipeline::PipelineBindPoint::Graphics,
                         pipeline.layout().clone(),
                         0,
                         descriptors,
                     )
+                    .unwrap()
                     .bind_vertex_buffers(0, model.get_vertex_buffer())
+                    .unwrap()
                     .bind_index_buffer(model.get_index_buffer())
+                    .unwrap()
                     .draw_indexed(model.get_size() as u32, 1, 0, 0, 0)
                     .unwrap();
             }
@@ -289,7 +300,7 @@ impl Draw {
     /// Creates and executes a future in which the command buffer gets executed.
     fn execute_command_buffer(
         &mut self,
-        command_buffer: PrimaryAutoCommandBuffer,
+        command_buffer: Arc<PrimaryAutoCommandBuffer>,
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
         vulkan: &Vulkan,
@@ -307,11 +318,11 @@ impl Draw {
             )
             .then_signal_fence_and_flush();
 
-        match future {
+        match future.map_err(Validated::unwrap) {
             Ok(future) => {
                 self.previous_frame_end = Some(future.boxed());
             }
-            Err(FlushError::OutOfDate) => {
+            Err(VulkanError::OutOfDate) => {
                 self.recreate_swapchain = true;
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
             }
@@ -345,9 +356,9 @@ impl Draw {
         Self::recreate_swapchain(self, resources.vulkan());
 
         let (image_num, suboptimal, acquire_future) =
-            match acquire_next_image(self.swapchain.clone(), None) {
+            match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {
                 Ok(r) => r,
-                Err(AcquireError::OutOfDate) => {
+                Err(VulkanError::OutOfDate) => {
                     self.recreate_swapchain = true;
                     return;
                 }
@@ -378,7 +389,7 @@ impl Draw {
             let cb = gui.draw_on_subpass_image(self.dimensions);
             builder.execute_commands(cb).unwrap();
         }
-        builder.end_render_pass().unwrap();
+        builder.end_render_pass(Default::default()).unwrap();
         let command_buffer = builder.build().unwrap();
 
         Self::execute_command_buffer(self, command_buffer, acquire_future, image_num, vulkan);

@@ -10,7 +10,7 @@ pub use winit::event::{ElementState, MouseButton, VirtualKeyCode};
 /// Describes an event coming from the event loop.
 #[derive(Debug, Clone)]
 pub enum Event {
-    /// The EGUI context.
+    /// The EGUI context. This is only available if you enable the egui feature.
     #[cfg(feature = "egui")]
     Egui(Context),
     /// Events that happened to the window.

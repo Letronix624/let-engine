@@ -4,7 +4,6 @@
 use crossbeam::atomic::AtomicCell;
 use dpi::*;
 use std::sync::Arc;
-use vulkano::swapchain::Surface;
 pub use winit::{
     dpi,
     window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel},
@@ -14,8 +13,6 @@ use winit::{
     window::{Fullscreen, WindowButtons},
 };
 
-use crate::utils::color_art_to_array;
-
 /// A struct representing the window.
 #[derive(Clone)]
 pub struct Window {
@@ -24,14 +21,9 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(surface: Arc<Surface>, clear_color: [f32; 4]) -> Self {
+    pub fn new(window: Arc<winit::window::Window>, clear_color: [f32; 4]) -> Self {
         Self {
-            window: surface
-                .object()
-                .unwrap()
-                .clone()
-                .downcast::<winit::window::Window>()
-                .unwrap(),
+            window,
             clear_color: Arc::new(AtomicCell::new(clear_color)),
         }
     }
@@ -280,15 +272,9 @@ impl Window {
     }
 
     /// Sets the clear color of the window.
-    pub fn set_clear_color(&self, color: color_art::Color) {
-        let clear_color = [
-            color.red() as f32 / 255.0,
-            color.green() as f32 / 255.0,
-            color.blue() as f32 / 255.0,
-            color.alpha() as f32,
-        ];
-        self.set_transparent(clear_color[3] != 1.0);
-        self.clear_color.store(clear_color);
+    pub fn set_clear_color(&self, color: [f32; 4]) {
+        self.set_transparent(color[3] != 1.0);
+        self.clear_color.store(color);
     }
 
     pub fn clear_color(&self) -> [f32; 4] {
@@ -412,10 +398,9 @@ impl WindowBuilder {
     }
 
     /// Sets the clear color of the window.
-    pub fn clear_color(mut self, color: color_art::Color) -> Self {
-        let clear_color = color_art_to_array(color);
-        self.attributes = self.attributes.with_transparent(clear_color[3] != 1.0);
-        self.clear_color = clear_color;
+    pub fn clear_color(mut self, color: [f32; 4]) -> Self {
+        self.attributes = self.attributes.with_transparent(color[3] != 1.0);
+        self.clear_color = color;
         self
     }
 

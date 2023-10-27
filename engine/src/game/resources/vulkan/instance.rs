@@ -4,24 +4,26 @@ use vulkano::device::{
     physical::PhysicalDeviceType, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
 };
 use vulkano::device::{Device, Features, Queue, QueueFlags};
-use vulkano::instance::{Instance, InstanceCreateInfo, InstanceExtensions};
+use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
+use winit::event_loop::EventLoop;
 
 /// Initializes a new Vulkan instance.
-pub fn create_instance() -> Arc<Instance> {
+pub fn create_instance(event_loop: &EventLoop<()>) -> Arc<Instance> {
     let library = VulkanLibrary::new().expect(
         "Your Devices hardware does not fulfill the minimum requirements to run this program.\n",
     );
 
-    let required_extensions = vulkano_win::required_extensions(&library);
+    let required_extensions = Surface::required_extensions(event_loop);
 
     let extensions = InstanceExtensions {
         ext_debug_utils: true,
         ..required_extensions
     };
 
-    let layers = vec![];
+    #[cfg(not(feature = "vulkan_debug_utils"))]
+    let layers: Vec<String> = vec![];
     #[cfg(feature = "vulkan_debug_utils")]
     let layers = vec![
         "VK_LAYER_KHRONOS_validation".to_owned(),
@@ -29,6 +31,7 @@ pub fn create_instance() -> Arc<Instance> {
     ];
 
     let game_info = InstanceCreateInfo {
+        flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
         enabled_layers: layers,
         enabled_extensions: extensions,
         engine_name: Some("Let Engine".into()),
