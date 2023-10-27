@@ -47,8 +47,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::VERTEX_BUFFER,
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );
@@ -57,8 +56,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::INDEX_BUFFER,
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );
@@ -67,8 +65,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::UNIFORM_BUFFER,
-                memory_type_filter: MemoryTypeFilter::PREFER_HOST
-                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
         );

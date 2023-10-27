@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "engine",
-    "examples/pong"
 ]
 resolver = "1"
 
@@ -10,3 +9,4 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "unwind"
+
