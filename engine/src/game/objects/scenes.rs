@@ -160,14 +160,14 @@ impl Layer {
     /// Returns the position of a given side with given window dimensions to world space.
     ///
     /// Be careful! Don't use this when the camera is locked.
-    pub fn side_to_world(&self, direction: [f32; 2], dimensions: (f32, f32)) -> Vec2 {
+    pub fn side_to_world(&self, direction: [f32; 2], dimensions: Vec2) -> Vec2 { // Change this to remove dimensions.
         let camera = Self::camera_position(self);
         let direction = [direction[0] * 2.0 - 1.0, direction[1] * 2.0 - 1.0];
-        let (width, height) = scale(Self::camera_scaling(self), dimensions);
+        let dimensions = scale(Self::camera_scaling(self), dimensions);
         let zoom = 1.0 / Self::zoom(self);
         vec2(
-            direction[0] * (width * zoom) + camera.x * 2.0,
-            direction[1] * (height * zoom) + camera.y * 2.0,
+            direction[0] * (dimensions.x * zoom) + camera.x * 2.0,
+            direction[1] * (dimensions.y * zoom) + camera.y * 2.0,
         )
     }
 

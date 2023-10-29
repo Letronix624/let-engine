@@ -29,7 +29,7 @@ use crate::{
 };
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
-use glam::f32::{Mat4, Quat, Vec3};
+use glam::{f32::{Mat4, Quat, Vec3}, vec2};
 
 /// Responsible for drawing on the surface.
 pub struct Draw {
@@ -186,7 +186,7 @@ impl Draw {
             camera_settings.mode,
             camera.transform.position,
             zoom,
-            (dimensions[0] as f32, dimensions[1] as f32),
+            vec2(dimensions[0] as f32, dimensions[1] as f32),
         );
 
         let view = Mat4::look_at_rh(
@@ -345,7 +345,8 @@ impl Draw {
 
         let window = &vulkan.window;
 
-        self.dimensions = window.inner_size().into();
+        let dimensions = window.inner_size();
+        self.dimensions = [dimensions.x as u32, dimensions.y as u32];
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 

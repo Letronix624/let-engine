@@ -48,7 +48,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::VERTEX_BUFFER,
-                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE | MemoryTypeFilter::PREFER_DEVICE,
                 ..Default::default()
             },
         );
@@ -57,7 +57,7 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::INDEX_BUFFER,
-                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE | MemoryTypeFilter::PREFER_DEVICE,
                 ..Default::default()
             },
         );
@@ -79,7 +79,6 @@ impl Loader {
         let command_buffer_allocator = StandardCommandBufferAllocator::new(
             vulkan.device.clone(),
             StandardCommandBufferAllocatorCreateInfo {
-                primary_buffer_count: 32,
                 secondary_buffer_count: 2,
                 ..Default::default()
             },

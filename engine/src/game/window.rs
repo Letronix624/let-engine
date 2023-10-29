@@ -2,16 +2,14 @@
 //!
 //! Multiple structs to change the properties of a Window.
 use crossbeam::atomic::AtomicCell;
-use dpi::*;
 use std::sync::Arc;
-pub use winit::{
-    dpi,
-    window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel},
-};
+pub use winit::window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel};
 use winit::{
+    dpi::*,
     error::ExternalError,
     window::{Fullscreen, WindowButtons},
 };
+use glam::{Vec2, vec2};
 
 /// A struct representing the window.
 #[derive(Clone)]
@@ -34,46 +32,46 @@ impl Window {
         self.window.request_redraw();
     }
 
-    /// Returns the inner size of the window.
+    /// Returns the inner size of the window in pixels.
     #[inline]
-    pub fn inner_size(&self) -> PhysicalSize<u32> {
-        self.window.inner_size()
+    pub fn inner_size(&self) -> Vec2 {
+        Size(self.window.inner_size().into()).into()
     }
 
-    /// Sets the size of the window. This unmaximizes the window in case it is.
+    /// Sets the size of the window in pixels. This unmaximizes the window in case it is.
     #[inline]
-    pub fn set_inner_size(&self, size: impl Into<Size>) {
-        self.window.set_inner_size(size);
+    pub fn set_inner_size(&self, size: Vec2) {
+        self.window.set_inner_size(Size::from_vec2(size));
     }
 
-    /// Returns the outer size of the window.
+    /// Returns the outer size of the window in pixels.
     #[inline]
-    pub fn outer_size(&self) -> PhysicalSize<u32> {
-        self.window.outer_size()
+    pub fn outer_size(&self) -> Vec2 {
+        Size(self.window.outer_size().into()).into()
     }
 
-    /// Restricts the window to not go smaller than the given size.
+    /// Restricts the window to not go smaller than the given size in pixels.
     #[inline]
-    pub fn set_min_inner_size(&self, size: Option<impl Into<Size>>) {
-        self.window.set_min_inner_size(size);
+    pub fn set_min_inner_size(&self, size: Option<Vec2>) {
+        self.window.set_min_inner_size(size.map(Size::from_vec2));
     }
 
-    /// Restricts the window to not go bigger than the given size.
+    /// Restricts the window to not go bigger than the given size in pixels.
     #[inline]
-    pub fn set_max_inner_size(&self, size: Option<impl Into<Size>>) {
-        self.window.set_max_inner_size(size);
+    pub fn set_max_inner_size(&self, size: Option<Vec2>) {
+        self.window.set_max_inner_size(size.map(Size::from_vec2));
     }
 
-    /// Returns the increments in which the window gets resized.
+    /// Returns the increments in which the window gets resized in pixels.
     #[inline]
-    pub fn resize_increments(&self) -> Option<PhysicalSize<u32>> {
-        self.window.resize_increments()
+    pub fn resize_increments(&self) -> Option<Vec2> {
+        self.window.resize_increments().map(|x| Size(x.into()).into())
     }
 
-    /// Returns the increments in which the window gets resized.
+    /// Sets the increments in which the window gets resized in pixels.
     #[inline]
-    pub fn set_resize_increments(&self, increments: Option<impl Into<Size>>) {
-        self.window.set_resize_increments(increments);
+    pub fn set_resize_increments(&self, increments: Option<Vec2>) {
+        self.window.set_resize_increments(increments.map(Size::from_vec2));
     }
 
     /// Returns the title of the window.
@@ -309,32 +307,33 @@ impl WindowBuilder {
         }
     }
 
-    /// Sets the inner size of the window.
+    /// Sets the inner size of the window in pixels.
     #[inline]
-    pub fn inner_size(mut self, size: impl Into<Size>) -> Self {
-        self.attributes = self.attributes.with_inner_size(size);
+    pub fn inner_size(mut self, size: Vec2) -> Self {
+        self.attributes = self.attributes.with_inner_size(Size::from(size));
         self
     }
 
-    /// Restricts the inner size of the window to not go past the given size.
+    /// Restricts the inner size of the window to not go past the given size in pixels.
     #[inline]
-    pub fn max_inner_size(mut self, size: impl Into<Size>) -> Self {
-        self.attributes = self.attributes.with_max_inner_size(size);
+    pub fn max_inner_size(mut self, size: Vec2) -> Self {
+        self.attributes = self.attributes.with_max_inner_size(Size::from(size));
         self
     }
 
-    /// Restricts the inner size of the window to not go below the given size.
+    /// Restricts the inner size of the window to not go below the given size in pixels.
     #[inline]
-    pub fn min_inner_size(mut self, size: impl Into<Size>) -> Self {
-        self.attributes = self.attributes.with_min_inner_size(size);
+    pub fn min_inner_size(mut self, size: Vec2) -> Self {
+        self.attributes = self.attributes.with_min_inner_size(Size::from(size));
         self
     }
 
-    /// Moves the window to the given position.
+    /// Moves the window to the given position in pixels.
     ///
-    /// Works on windows, mac and x11 but not wayland.
+    /// Works on windows, mac and x11 but not on others.
     #[inline]
-    pub fn position(mut self, position: impl Into<Position>) -> Self {
+    pub fn position(mut self, position: Vec2) -> Self {
+        let position = Position::Physical(PhysicalPosition { x: position.x as i32, y: position.y as i32 });
         self.attributes = self.attributes.with_position(position);
         self
     }
@@ -425,10 +424,10 @@ impl WindowBuilder {
         self
     }
 
-    /// Build window with resize increments hint.
+    /// Build window with resize increments hint in pixels.
     #[inline]
-    pub fn resize_increments(mut self, increments: impl Into<Size>) -> Self {
-        self.attributes = self.attributes.with_resize_increments(increments);
+    pub fn resize_increments(mut self, increments: Vec2) -> Self {
+        self.attributes = self.attributes.with_resize_increments(Size::from(increments));
         self
     }
 
@@ -449,5 +448,34 @@ impl From<WindowBuilder> for winit::window::WindowBuilder {
 impl Default for WindowBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+struct Size(winit::dpi::Size);
+
+impl Size {
+    fn from_vec2(vec2: Vec2) -> Self {
+        vec2.into()
+    }
+}
+
+impl From<Vec2> for Size {
+    fn from(value: Vec2) -> Self {
+        Size(winit::dpi::Size::Physical(PhysicalSize { width: value.x as u32, height: value.y as u32 }))
+    }
+}
+
+impl Into<Vec2> for Size {
+    fn into(self) -> Vec2 {
+        vec2(
+            self.0.to_physical(1.0).width,
+            self.0.to_physical(1.0).height,
+        )
+    }
+}
+
+impl Into<winit::dpi::Size> for Size {
+    fn into(self) -> winit::dpi::Size {
+        self.0
     }
 }

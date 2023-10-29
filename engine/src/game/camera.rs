@@ -8,13 +8,13 @@
 pub enum CameraScaling {
     /// Goes from -1 to 1 in both x and y. So the camera view stretches when the window is not square.
     Stretch = 1,
-    /// Tries to be fair with window scaling and tries to have the same width\*height surface all the time. But when Making the window really thin or something like that you can still see the same height\*width so you could see really far.
+    /// Tries to have the same width\*height surface area all the time. When Making the window really thin you can see the same surface area, so you could see really far.
     Linear = 2,
-    /// Imagine a rope tied to itself to make a circle and imagine trying to fit 4 corners of a rectangle as far away from each other. It's similar to Linear but you can't look that far the tighter the window is.
+    /// It's similar to Linear but you can't look that far the tighter the window is.
     Circle = 3,
     /// The biggest side is always -1 to 1. Simple and more unfair the tighter your window is.
     Limited = 4,
-    /// The bigger the window is the more you can see. Good for HUDs, fonts and textures.
+    /// The bigger the window is the more you can see. Good for HUDs, text and textures.
     Expand = 5,
 }
 

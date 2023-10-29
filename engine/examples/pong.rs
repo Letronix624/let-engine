@@ -10,7 +10,7 @@ fn main() {
     // Describing the window.
     let window_builder = WindowBuilder::default()
         .resizable(false)
-        .inner_size(PhysicalSize::new(800, 600))
+        .inner_size(vec2(800.0, 600.0))
         .title("Pong 2");
     let engine = start_engine!(window_builder);
 
@@ -240,9 +240,9 @@ impl Ball {
                 .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
             let touching_floor =
-                position.y < self.layer.side_to_world(directions::N, (800.0, 600.0)).y + 0.015;
+                position.y < self.layer.side_to_world(directions::N, vec2(800.0, 600.0)).y + 0.015;
             let touching_roof =
-                position.y > self.layer.side_to_world(directions::S, (800.0, 600.0)).y - 0.015;
+                position.y > self.layer.side_to_world(directions::S, vec2(800.0, 600.0)).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle {
