@@ -465,17 +465,17 @@ impl From<Vec2> for Size {
     }
 }
 
-impl Into<Vec2> for Size {
-    fn into(self) -> Vec2 {
+impl From<Size> for Vec2 {
+    fn from(value: Size) -> Self {
         vec2(
-            self.0.to_physical(1.0).width,
-            self.0.to_physical(1.0).height,
+            value.0.to_physical(1.0).width,
+            value.0.to_physical(1.0).height,
         )
     }
 }
 
-impl Into<winit::dpi::Size> for Size {
-    fn into(self) -> winit::dpi::Size {
-        self.0
+impl From<Size> for winit::dpi::Size {
+    fn from(value: Size) -> winit::dpi::Size {
+        value.0
     }
 }
