@@ -29,7 +29,10 @@ use crate::{
 };
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
-use glam::{f32::{Mat4, Quat, Vec3}, vec2};
+use glam::{
+    f32::{Mat4, Quat, Vec3},
+    vec2,
+};
 
 /// Responsible for drawing on the surface.
 pub struct Draw {
@@ -247,7 +250,7 @@ impl Draw {
                     layer.camera_settings(),
                 );
                 *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
-                    color: *appearance.get_color(),
+                    color: (*appearance.get_color()).into(),
                     texture_id: if let Some(material) = appearance.get_material() {
                         if let Some(texture) = &material.texture {
                             descriptors.push(texture.set().clone());

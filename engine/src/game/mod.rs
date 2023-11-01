@@ -258,8 +258,9 @@ impl Game {
                     });
 
                     func(events::Event::Update, control_flow);
+                    self.window.request_redraw();
                 }
-                Event::RedrawEventsCleared => {
+                Event::RedrawRequested(_) => {
                     self.resources.update();
                     self.draw.redrawevent(
                         &self.resources,
@@ -267,6 +268,8 @@ impl Game {
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     );
+                }
+                Event::RedrawEventsCleared => {
                     self.time.update();
                     func(events::Event::FrameUpdate, control_flow);
                 }
