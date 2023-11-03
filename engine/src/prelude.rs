@@ -8,6 +8,7 @@ pub use crate::{
     camera::*, data::*, directions::*, events::*, materials::*, objects::*, resources::*,
     window::*, *,
 };
+pub use color::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
 pub use joints::*;

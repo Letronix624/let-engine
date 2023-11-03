@@ -378,7 +378,7 @@ impl Draw {
             vulkan,
             &loader,
             image_num as usize,
-            window.clear_color(),
+            window.clear_color().rgba(),
         );
 
         Self::write_secondary_command_buffer(self, scene, &mut secondary_builder, &loader);

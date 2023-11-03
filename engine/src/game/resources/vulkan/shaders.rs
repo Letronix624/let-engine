@@ -2,13 +2,14 @@
 
 use std::sync::Arc;
 
-use vulkano::{shader::{ShaderModule, spirv::bytes_to_words, ShaderModuleCreateInfo}, device::Device};
+use vulkano::{
+    device::Device,
+    shader::{spirv::bytes_to_words, ShaderModule, ShaderModuleCreateInfo},
+};
 
 fn from_bytes(bytes: &[u8], device: Arc<Device>) -> Arc<ShaderModule> {
     let code = bytes_to_words(bytes).unwrap();
-    unsafe {
-        ShaderModule::new(device, ShaderModuleCreateInfo::new(&code)).unwrap()
-    }
+    unsafe { ShaderModule::new(device, ShaderModuleCreateInfo::new(&code)).unwrap() }
 }
 
 pub fn vertexshader(device: Arc<Device>) -> Arc<ShaderModule> {

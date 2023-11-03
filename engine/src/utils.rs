@@ -2,7 +2,7 @@
 
 use crate::camera::CameraScaling;
 use core::f32::consts::FRAC_1_SQRT_2;
-use glam::{Mat4, Vec2, vec2};
+use glam::{vec2, Mat4, Vec2};
 
 /// Makes an orthographic projection matrix with the given information.
 pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: Vec2) -> Mat4 {

@@ -1,7 +1,9 @@
 //! General window stuff.
 //!
 //! Multiple structs to change the properties of a Window.
+use crate::prelude::Color;
 use crossbeam::atomic::AtomicCell;
+use glam::{vec2, Vec2};
 use std::sync::Arc;
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel};
 use winit::{
@@ -9,23 +11,15 @@ use winit::{
     error::ExternalError,
     window::{Fullscreen, WindowButtons},
 };
-use glam::{Vec2, vec2};
 
 /// A struct representing the window.
 #[derive(Clone)]
 pub struct Window {
     window: Arc<winit::window::Window>,
-    clear_color: Arc<AtomicCell<[f32; 4]>>,
+    clear_color: Arc<AtomicCell<Color>>,
 }
 
 impl Window {
-    pub fn new(window: Arc<winit::window::Window>, clear_color: [f32; 4]) -> Self {
-        Self {
-            window,
-            clear_color: Arc::new(AtomicCell::new(clear_color)),
-        }
-    }
-
     /// Requests the window to be redrawn.
     #[inline]
     pub fn request_redraw(&self) {
@@ -65,13 +59,16 @@ impl Window {
     /// Returns the increments in which the window gets resized in pixels.
     #[inline]
     pub fn resize_increments(&self) -> Option<Vec2> {
-        self.window.resize_increments().map(|x| Size(x.into()).into())
+        self.window
+            .resize_increments()
+            .map(|x| Size(x.into()).into())
     }
 
     /// Sets the increments in which the window gets resized in pixels.
     #[inline]
     pub fn set_resize_increments(&self, increments: Option<Vec2>) {
-        self.window.set_resize_increments(increments.map(Size::from_vec2));
+        self.window
+            .set_resize_increments(increments.map(Size::from_vec2));
     }
 
     /// Returns the title of the window.
@@ -84,12 +81,6 @@ impl Window {
     #[inline]
     pub fn set_title(&self, title: &str) {
         self.window.set_title(title)
-    }
-
-    /// Sets whether the window should have an alpha channel.
-    #[inline]
-    fn set_transparent(&self, transparent: bool) {
-        self.window.set_transparent(transparent)
     }
 
     /// Sets whether the window should be visible.
@@ -270,12 +261,13 @@ impl Window {
     }
 
     /// Sets the clear color of the window.
-    pub fn set_clear_color(&self, color: [f32; 4]) {
-        self.set_transparent(color[3] != 1.0);
+    pub fn set_clear_color(&self, color: impl Into<Color>) {
+        let color: Color = color.into();
+        self.window.set_transparent(color.alpha() < 1.0);
         self.clear_color.store(color);
     }
 
-    pub fn clear_color(&self) -> [f32; 4] {
+    pub fn clear_color(&self) -> Color {
         self.clear_color.load()
     }
 }
@@ -285,7 +277,7 @@ impl Window {
 #[must_use]
 pub struct WindowBuilder {
     attributes: winit::window::WindowBuilder,
-    pub(crate) clear_color: [f32; 4],
+    pub(crate) clear_color: Color,
 }
 
 impl WindowBuilder {
@@ -294,7 +286,7 @@ impl WindowBuilder {
         let attributes = winit::window::WindowBuilder::new().with_title("Game");
         Self {
             attributes,
-            clear_color: [0.0, 0.0, 0.0, 1.0],
+            clear_color: Color::BLACK,
         }
     }
 
@@ -303,7 +295,7 @@ impl WindowBuilder {
     pub fn from_winit_builder(builder: winit::window::WindowBuilder) -> Self {
         Self {
             attributes: builder,
-            clear_color: [0.0, 0.0, 0.0, 1.0],
+            clear_color: Color::BLACK,
         }
     }
 
@@ -333,7 +325,10 @@ impl WindowBuilder {
     /// Works on windows, mac and x11 but not on others.
     #[inline]
     pub fn position(mut self, position: Vec2) -> Self {
-        let position = Position::Physical(PhysicalPosition { x: position.x as i32, y: position.y as i32 });
+        let position = Position::Physical(PhysicalPosition {
+            x: position.x as i32,
+            y: position.y as i32,
+        });
         self.attributes = self.attributes.with_position(position);
         self
     }
@@ -397,8 +392,9 @@ impl WindowBuilder {
     }
 
     /// Sets the clear color of the window.
-    pub fn clear_color(mut self, color: [f32; 4]) -> Self {
-        self.attributes = self.attributes.with_transparent(color[3] != 1.0);
+    pub fn clear_color(mut self, color: impl Into<Color>) -> Self {
+        let color: Color = color.into();
+        self.attributes = self.attributes.with_transparent(color.alpha() < 1.0);
         self.clear_color = color;
         self
     }
@@ -427,7 +423,9 @@ impl WindowBuilder {
     /// Build window with resize increments hint in pixels.
     #[inline]
     pub fn resize_increments(mut self, increments: Vec2) -> Self {
-        self.attributes = self.attributes.with_resize_increments(Size::from(increments));
+        self.attributes = self
+            .attributes
+            .with_resize_increments(Size::from(increments));
         self
     }
 
@@ -442,6 +440,14 @@ impl WindowBuilder {
 impl From<WindowBuilder> for winit::window::WindowBuilder {
     fn from(val: WindowBuilder) -> Self {
         val.attributes
+    }
+}
+impl From<Arc<winit::window::Window>> for Window {
+    fn from(value: Arc<winit::window::Window>) -> Self {
+        Self {
+            window: value,
+            clear_color: Arc::new(AtomicCell::new(Color::BLACK)),
+        }
     }
 }
 
@@ -461,7 +467,10 @@ impl Size {
 
 impl From<Vec2> for Size {
     fn from(value: Vec2) -> Self {
-        Size(winit::dpi::Size::Physical(PhysicalSize { width: value.x as u32, height: value.y as u32 }))
+        Size(winit::dpi::Size::Physical(PhysicalSize {
+            width: value.x as u32,
+            height: value.y as u32,
+        }))
     }
 }
 
