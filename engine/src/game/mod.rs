@@ -1,4 +1,5 @@
 pub mod resources;
+use anyhow::Result;
 use glam::vec2;
 use resources::{vulkan::Vulkan, Loader, Resources};
 pub mod objects;
@@ -35,6 +36,8 @@ use std::{
 
 pub use resources::data;
 pub use resources::data::{tvert, vert, Vertex};
+
+use crate::error::draw::RedrawError;
 
 use self::{
     events::{InputEvent, ScrollDelta},
@@ -112,9 +115,9 @@ impl Game {
         scene: Scene,
         input: Input,
         time: Time,
-    ) -> Self {
+    ) -> Result<Self> {
         let event_loop = EventLoopBuilder::new().build();
-        let vulkan = Vulkan::init(&event_loop, window_builder);
+        let vulkan = Vulkan::init(&event_loop, window_builder)?;
 
         #[cfg(feature = "egui")]
         let gui = egui::init(&event_loop, &vulkan);
@@ -127,7 +130,7 @@ impl Game {
 
         let window = resources.get_window();
 
-        Self {
+        Ok(Self {
             resources,
             scene,
             input,
@@ -139,7 +142,7 @@ impl Game {
             gui,
 
             draw,
-        }
+        })
     }
 
     /// Runs the main loop updating the window after every iteration.
@@ -262,12 +265,14 @@ impl Game {
                 }
                 Event::RedrawRequested(_) => {
                     self.resources.update();
-                    self.draw.redrawevent(
+                    if let Err(RedrawError::VulkanError(e)) = self.draw.redrawevent(
                         &self.resources,
                         &self.scene,
                         #[cfg(feature = "egui")]
                         &mut self.gui,
-                    );
+                    ) {
+                        panic!("{e}");
+                    };
                 }
                 Event::RedrawEventsCleared => {
                     self.time.update();
@@ -281,12 +286,14 @@ impl Game {
                     self.gui.immediate_ui(|gui| {
                         func(events::Event::Egui(gui.context()), control_flow);
                     });
-                    self.draw.redrawevent(
+                    if let Err(RedrawError::VulkanError(e)) = self.draw.redrawevent(
                         &self.resources,
                         &self.scene,
                         #[cfg(feature = "egui")]
                         &mut self.gui,
-                    );
+                    ) {
+                        panic!("{e}");
+                    };
                     func(events::Event::Ready, control_flow)
                 }
                 _ => (),

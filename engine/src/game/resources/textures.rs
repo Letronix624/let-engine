@@ -193,10 +193,15 @@ impl Texture {
         layers: u32,
         settings: TextureSettings,
         resources: &Resources,
-    ) -> Result<Texture, InvalidFormatError> {
+    ) -> Result<Texture, TextureError> {
         // Turn image to a vector of u8 first.
         let image = match load_from_memory_with_format(data, image_format) {
-            Err(_) => return Err(InvalidFormatError),
+            Err(_) => {
+                return Err(TextureError::InvalidFormat(format!(
+                    "Faulty format: {:?}",
+                    image_format
+                )))
+            }
             Ok(v) => v,
         };
 

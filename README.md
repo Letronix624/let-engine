@@ -79,4 +79,9 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 ```
+
+## Minimum requirements (Client)
+
+A graphics driver with Vulkan 1.2 support.
+
 https://crates.io/crates/let-engine

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
@@ -24,7 +25,7 @@ use super::{
 };
 
 use crate::{
-    camera::CameraSettings, game::Node, objects::VisualObject, resources::data::*,
+    camera::CameraSettings, error::draw::*, game::Node, objects::VisualObject, resources::data::*,
     resources::Resources, utils, Object,
 };
 
@@ -96,14 +97,19 @@ impl Draw {
     }
 
     /// Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
-    fn recreate_swapchain(&mut self, vulkan: &Vulkan) {
+    fn recreate_swapchain(&mut self, vulkan: &Vulkan) -> Result<(), SwapchainRecreationError> {
         if self.recreate_swapchain {
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: self.dimensions,
                 ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
-                Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
+                Err(e) => {
+                    return Err(SwapchainRecreationError(format!(
+                        "Failed to recreate swapchain: {:?}",
+                        e
+                    )));
+                }
             };
 
             self.swapchain = new_swapchain;
@@ -113,7 +119,8 @@ impl Draw {
                 &mut self.viewport,
             );
             self.recreate_swapchain = false;
-        }
+        };
+        Ok(())
     }
 
     /// Makes a primary and secondary command buffer already inside a render pass.
@@ -123,16 +130,19 @@ impl Draw {
         loader: &Loader,
         image_num: usize,
         clear_color: [f32; 4],
-    ) -> (
-        AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-        AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
-    ) {
+    ) -> Result<
+        (
+            AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+            AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
+        ),
+        RedrawError,
+    > {
         let mut builder = AutoCommandBufferBuilder::primary(
             &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
-        .unwrap();
+        .map_err(|e| RedrawError::VulkanError(e.to_string()))?;
 
         // Makes a commandbuffer that takes multiple secondary buffers.
         builder
@@ -146,7 +156,7 @@ impl Draw {
                     ..Default::default()
                 },
             )
-            .unwrap();
+            .map_err(|e| RedrawError::VulkanError(e.to_string()))?;
 
         let mut secondary_builder = AutoCommandBufferBuilder::secondary(
             &loader.command_buffer_allocator,
@@ -157,12 +167,12 @@ impl Draw {
                 ..Default::default()
             },
         )
-        .unwrap();
+        .map_err(|e| RedrawError::VulkanError(e.to_string()))?;
         secondary_builder
             .set_viewport(0, [self.viewport.clone()].into_iter().collect())
-            .unwrap();
+            .map_err(|e| RedrawError::VulkanError(e.to_string()))?;
 
-        (builder, secondary_builder)
+        Ok((builder, secondary_builder))
     }
 
     fn make_mvp_matrix(
@@ -214,7 +224,7 @@ impl Draw {
         scene: &crate::Scene,
         command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
         loader: &Loader,
-    ) {
+    ) -> Result<(), RedrawError> {
         for layer in scene.get_layers().iter() {
             let mut order: Vec<VisualObject> = vec![];
 
@@ -243,13 +253,23 @@ impl Draw {
                 let objectfrag_sub_buffer =
                     loader.object_buffer_allocator.allocate_sized().unwrap();
 
-                *objectvert_sub_buffer.write().unwrap() = Self::make_mvp_matrix(
+                *objectvert_sub_buffer.write().map_err(|e| {
+                    RedrawError::VulkanError(format!(
+                        "There was an error writing to the subbuffer: {:?}",
+                        e
+                    ))
+                })? = Self::make_mvp_matrix(
                     &object,
                     self.dimensions,
                     &layer.camera.lock().lock().object,
                     layer.camera_settings(),
                 );
-                *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
+                *objectfrag_sub_buffer.write().map_err(|e| {
+                    RedrawError::VulkanError(format!(
+                        "There was an error writing to the subbuffer: {:?}",
+                        e
+                    ))
+                })? = ObjectFrag {
                     color: (*appearance.get_color()).into(),
                     texture_id: if let Some(material) = appearance.get_material() {
                         if let Some(texture) = &material.texture {
@@ -275,7 +295,7 @@ impl Draw {
                         ],
                         [],
                     )
-                    .unwrap(),
+                    .map_err(|e| RedrawError::VulkanError(e.to_string()))?,
                 );
 
                 let model = appearance.get_model().as_ref().unwrap();
@@ -298,6 +318,7 @@ impl Draw {
                     .unwrap();
             }
         }
+        Ok(())
     }
 
     /// Creates and executes a future in which the command buffer gets executed.
@@ -307,14 +328,16 @@ impl Draw {
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
         vulkan: &Vulkan,
-    ) {
+    ) -> Result<(), RedrawError> {
         let future = self
             .previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
             .then_execute(vulkan.queue.clone(), command_buffer)
-            .unwrap()
+            .map_err(|e| {
+                RedrawError::VulkanError(format!("Failed to execute command buffer: {:?}", e))
+            })?
             .then_swapchain_present(
                 vulkan.queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_num),
@@ -330,10 +353,11 @@ impl Draw {
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
             }
             Err(e) => {
-                println!("Failed to flush future: {:?}", e);
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
+                return Err(RedrawError::FlushFutureError(e.to_string()));
             }
         }
+        Ok(())
     }
 
     /// Redraws the scene.
@@ -342,7 +366,7 @@ impl Draw {
         resources: &Resources,
         scene: &crate::Scene,
         #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
-    ) {
+    ) -> Result<(), RedrawError> {
         let vulkan = resources.vulkan();
         let loader = resources.loader().as_ref().lock();
 
@@ -354,19 +378,25 @@ impl Draw {
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
 
         if self.dimensions.contains(&0) {
-            return;
+            return Ok(());
         }
 
-        Self::recreate_swapchain(self, resources.vulkan());
+        Self::recreate_swapchain(self, resources.vulkan())
+            .map_err(|e| RedrawError::VulkanError(e.to_string()))?;
 
         let (image_num, suboptimal, acquire_future) =
             match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {
                 Ok(r) => r,
                 Err(VulkanError::OutOfDate) => {
                     self.recreate_swapchain = true;
-                    return;
+                    return Err(RedrawError::SwapchainOutOfDate);
                 }
-                Err(e) => panic!("Failed to acquire next image: {:?}", e),
+                Err(e) => {
+                    return Err(RedrawError::VulkanError(format!(
+                        "Failed to acquire next image: {:?}",
+                        e
+                    )));
+                }
             };
 
         if suboptimal {
@@ -379,23 +409,30 @@ impl Draw {
             &loader,
             image_num as usize,
             window.clear_color().rgba(),
-        );
+        )?;
 
-        Self::write_secondary_command_buffer(self, scene, &mut secondary_builder, &loader);
+        Self::write_secondary_command_buffer(self, scene, &mut secondary_builder, &loader)?;
 
         builder
             .execute_commands(secondary_builder.build().unwrap())
-            .unwrap();
+            .map_err(|e| {
+                RedrawError::VulkanError(format!("Failed to execute subbuffer: {:?}", e))
+            })?;
 
         #[cfg(feature = "egui")]
         {
             // Creates and draws the second command buffer in case of egui.
             let cb = gui.draw_on_subpass_image(self.dimensions);
-            builder.execute_commands(cb).unwrap();
+            builder.execute_commands(cb).map_err(|e| {
+                RedrawError::VulkanError(format!("Failed to execute egui subbuffer: {:?}", e))
+            })?;
         }
-        builder.end_render_pass(Default::default()).unwrap();
+        builder
+            .end_render_pass(Default::default())
+            .map_err(|e| RedrawError::VulkanError(format!("Failed to end render pass: {:?}", e)))?;
         let command_buffer = builder.build().unwrap();
 
-        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num, vulkan);
+        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num, vulkan)?;
+        Ok(())
     }
 }

@@ -11,6 +11,7 @@ use rusttype::gpu_cache::Cache;
 use rusttype::{point, PositionedGlyph, Scale};
 
 use super::super::resources::vulkan::shaders::*;
+use crate::error::objects::ObjectError;
 use crate::prelude::*;
 use glam::f32::{vec2, Vec2};
 
@@ -117,17 +118,24 @@ impl Label {
         self.object.init(layer);
         self.sync();
     }
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) {
-        self.object.init_with_parent(layer, parent);
+    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
+        self.object.init_with_parent(layer, parent)?;
         self.sync();
+        Ok(())
     }
-    pub fn init_with_optional_parent(&mut self, layer: &Layer, parent: Option<&Object>) {
-        self.object.init_with_optional_parent(layer, parent);
+    pub fn init_with_optional_parent(
+        &mut self,
+        layer: &Layer,
+        parent: Option<&Object>,
+    ) -> Result<(), ObjectError> {
+        self.object.init_with_optional_parent(layer, parent)?;
         self.sync();
+        Ok(())
     }
     /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
-    pub fn update(&mut self) {
-        self.object.update()
+    pub fn update(&mut self) -> Result<(), ObjectError> {
+        self.object.update()?;
+        Ok(())
     }
     /// Changes the text of the label and updates it on the layer.
     pub fn update_text(&mut self, text: impl Into<String>) {
@@ -190,7 +198,8 @@ impl Labelifier {
             .unwrap();
 
         let material =
-            Material::new_with_shaders(material_settings, &text_shaders, vec![], resources);
+            Material::new_with_shaders(material_settings, &text_shaders, vec![], resources)
+                .unwrap();
 
         Self {
             material,
@@ -333,7 +342,7 @@ impl Labelifier {
                 .model(Some(model))
                 .material(Some(self.material.clone()));
             //label.sync();
-            let node = label.object.as_node().expect("object uninitialized");
+            let node = label.object.as_node().expect("object uninitialized"); // change this
             let mut object = node.lock();
             object.object = label.object.clone();
         }

@@ -8,6 +8,7 @@ pub mod swapchain;
 mod window;
 
 use crate::window::{Window, WindowBuilder};
+use anyhow::Result;
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
@@ -43,8 +44,8 @@ pub(crate) struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn init(event_loop: &EventLoop<()>, window_builder: WindowBuilder) -> Self {
-        let instance = instance::create_instance(event_loop);
+    pub fn init(event_loop: &EventLoop<()>, window_builder: WindowBuilder) -> Result<Self> {
+        let instance = instance::create_instance(event_loop)?;
         #[cfg(feature = "vulkan_debug_utils")]
         let _debug = Arc::new(debug::make_debug(&instance));
         let (surface, window) = window::create_window(event_loop, &instance, window_builder);
@@ -57,13 +58,13 @@ impl Vulkan {
             ..Features::empty()
         };
         let (physical_device, queue_family_index) =
-            instance::create_physical_device(&instance, device_extensions, features, &surface);
+            instance::create_physical_device(&instance, device_extensions, features, &surface)?;
         let (device, queue) = instance::create_device_and_queues(
             &physical_device,
             &device_extensions,
             features,
             queue_family_index,
-        );
+        )?;
 
         let render_pass = vulkano::single_pass_renderpass!(
             device.clone(),
@@ -120,7 +121,7 @@ impl Vulkan {
             layer: 0,
         };
 
-        Self {
+        Ok(Self {
             surface,
             window,
             physical_device,
@@ -134,7 +135,7 @@ impl Vulkan {
             texture_array_material,
             #[cfg(feature = "vulkan_debug_utils")]
             _debug,
-        }
+        })
     }
 }
 

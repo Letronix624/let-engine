@@ -50,13 +50,13 @@ impl Scene {
     }
 
     /// Removes a layer from the scene.
-    pub fn remove_layer(&self, layer: &mut Layer) -> Result<(), NoObjectError> {
+    pub fn remove_layer(&self, layer: &mut Layer) -> Result<(), NoLayerError> {
         let node: NObject;
         let mut layers = self.layers.lock();
         if layers.remove(layer) {
             node = layer.root.clone();
         } else {
-            return Err(NoObjectError);
+            return Err(NoLayerError);
         }
         let mut objectguard = node.lock();
 
@@ -125,8 +125,9 @@ impl Layer {
         &self.rigid_body_roots
     }
     /// Sets the camera of this layer.
-    pub fn set_camera(&self, camera: &Object) {
-        *self.camera.lock() = camera.as_node().expect("camera uninitialized");
+    pub fn set_camera(&self, camera: &Object) -> Result<(), ObjectError> {
+        *self.camera.lock() = camera.as_node().ok_or(ObjectError::Uninitialized)?;
+        Ok(())
     }
     pub(crate) fn camera_position(&self) -> Vec2 {
         self.camera.lock().lock().object.transform.position
@@ -436,39 +437,47 @@ impl Layer {
     }
 
     /// Moves an object on the given index in it's parents children order.
-    pub fn move_to(&self, object: &Object, index: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let node = object.as_node().expect("object uninitialized");
+    ///
+    /// Returns
+    pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
+        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
         let count = Self::count_children(&node);
 
-        if count > index {
-            return Err(Box::new(MoveError));
+        if count < index {
+            return Err(ObjectError::Move(format!(
+                "This object can not be moved to {index}.\nYou can not go above {count}"
+            )));
         } else {
             Self::move_object_to(node, index);
         }
         Ok(())
     }
 
-    /// Moves an object one down in it's parents children order.
-    pub fn move_down(&self, object: &Object) -> Result<(), Box<dyn std::error::Error>> {
-        let node = object.as_node().expect("object uninitialized");
+    /// Moves an object one up in it's parents children order.
+    pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
         let parent = Self::get_parent(&node);
         let index = Self::find_child_index(&parent, &node);
         if index == 0 {
-            return Err(Box::new(MoveError));
+            return Err(ObjectError::Move(
+                "Object already on the top of the current layer.".to_string(),
+            ));
         } else {
             Self::move_object_to(node, index - 1);
         }
         Ok(())
     }
 
-    /// Moves an object one up in it's parents children order.
-    pub fn move_up(&self, object: &Object) -> Result<(), Box<dyn std::error::Error>> {
-        let node = object.as_node().expect("object uninitialized");
+    /// Moves an object one down in it's parents children order.
+    pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
         let parent = Self::get_parent(&node);
         let count = Self::count_children(&node);
         let index = Self::find_child_index(&parent, &node);
         if count == index {
-            return Err(Box::new(MoveError));
+            return Err(ObjectError::Move(format!(
+                "Object already at the bottom of the layer: {index}"
+            )));
         } else {
             Self::move_object_to(node, count + 1);
         }
@@ -476,15 +485,15 @@ impl Layer {
     }
 
     /// Moves an object all the way to the top of it's parents children list.
-    pub fn move_to_top(&self, object: &Object) -> Result<(), NoObjectError> {
-        let node = object.as_node().expect("object uninitialized");
+    pub fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
         Self::move_object_to(node, 0);
         Ok(())
     }
 
     /// Moves an object all the way to the bottom of it's parents children list.
-    pub fn move_to_bottom(&self, object: &Object) -> Result<(), NoObjectError> {
-        let node = object.as_node().expect("object uninitialized");
+    pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
         let count = Self::count_children(&node) - 1;
         Self::move_object_to(node, count);
         Ok(())
@@ -523,8 +532,8 @@ impl Layer {
         parent.children.swap(index, dst);
     }
 
-    pub fn children_count(&self, parent: &Object) -> Result<usize, NoObjectError> {
-        let node = parent.as_node().expect("object uninitialized");
+    pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
+        let node = parent.as_node().ok_or(ObjectError::Uninitialized)?;
         Ok(Self::count_children(&node))
     }
 }

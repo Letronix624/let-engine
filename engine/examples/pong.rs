@@ -12,7 +12,7 @@ fn main() {
         .resizable(false)
         .inner_size(vec2(800.0, 600.0))
         .title("Pong 2");
-    let engine = start_engine!(window_builder);
+    let engine = start_engine!(window_builder).unwrap();
 
     // Creating a layer to put the objects into.
     let layer = SCENE.new_layer();
@@ -88,7 +88,7 @@ fn main() {
         .topology(Topology::LineList)
         .build()
         .unwrap();
-    let line_material = Material::new(line_material, &RESOURCES);
+    let line_material = Material::new(line_material, &RESOURCES).unwrap();
     middle_line.appearance.set_material(Some(line_material));
     middle_line.init(&layer);
 

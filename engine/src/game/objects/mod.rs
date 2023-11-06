@@ -5,7 +5,7 @@ pub mod labels;
 pub mod physics;
 pub mod scenes;
 use crate::{
-    error::{objects::NoObjectError, textures::*},
+    error::{objects::ObjectError, textures::*},
     prelude::*,
 };
 use scenes::Layer;
@@ -201,16 +201,16 @@ impl Appearance {
     }
 
     /// Scales the object appearance according to the texture applied. Works best in Expand camera mode for best quality.
-    pub fn auto_scale(&mut self) -> Result<(), NoTextureError> {
+    pub fn auto_scale(&mut self) -> Result<(), TextureError> {
         let dimensions;
         if let Some(material) = &self.material {
             dimensions = if let Some(texture) = &material.texture {
                 texture.dimensions()
             } else {
-                return Err(NoTextureError);
+                return Err(TextureError::NoTexture);
             };
         } else {
-            return Err(NoTextureError);
+            return Err(TextureError::NoTexture);
         };
 
         self.transform.size = vec2(dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0);
@@ -257,14 +257,19 @@ impl Object {
     }
     /// Initializes the object into a layer.
     pub fn init(&mut self, layer: &Layer) {
-        self.init_with_optional_parent(layer, None);
+        self.init_with_optional_parent(layer, None).unwrap();
     }
     /// Initializes the object into a layer with a parent object.
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) {
-        self.init_with_optional_parent(layer, Some(parent));
+    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
+        self.init_with_optional_parent(layer, Some(parent))?;
+        Ok(())
     }
     /// Initializes the object into a layer with an optional parent object.
-    pub fn init_with_optional_parent(&mut self, layer: &Layer, parent: Option<&Object>) {
+    pub fn init_with_optional_parent(
+        &mut self,
+        layer: &Layer,
+        parent: Option<&Object>,
+    ) -> Result<(), ObjectError> {
         self.layer = Some(layer.clone());
         // Init ID of this object.
         self.id = layer.increment_id();
@@ -273,7 +278,7 @@ impl Object {
 
         let mut rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
-            let parent = parent.as_node().unwrap(); // Uninitialized parent error.
+            let parent = parent.as_node().ok_or(ObjectError::UninitializedParent)?;
             rigid_body_parent = parent.lock().rigid_body_parent.clone();
             parent.clone()
         } else {
@@ -314,21 +319,22 @@ impl Object {
 
         // Add yourself to the list of children of the parent.
         parent.lock().children.push(node.clone());
+        Ok(())
     }
 
     /// Removes the object from it's layer.
-    pub fn remove(&mut self) -> Result<(), NoObjectError> {
+    pub fn remove(&mut self) -> Result<(), ObjectError> {
         let mut map = self
             .layer
             .as_ref()
-            .expect("uninitialized")
+            .ok_or(ObjectError::Uninitialized)?
             .objects_map
-            .lock(); // uninitialized error
+            .lock();
         let mut rigid_bodies = self.layer.as_ref().unwrap().rigid_body_roots().lock();
         let node = if let Some(object) = map.remove(&self.id) {
             object
         } else {
-            return Err(NoObjectError);
+            return Err(ObjectError::Uninitialized);
         };
         rigid_bodies.remove(&self.id);
         // Remove self from the physics side.
@@ -365,7 +371,9 @@ impl Object {
         &self.appearance
     }
 
-    /// Returns the identification number of the object specific the layer it's inside right now.
+    /// Returns the identification number of the object specific the layer it is inside right now.
+    ///
+    /// Returns 0 in case it is not initialized to a layer yet.
     pub fn id(&self) -> usize {
         self.id
     }
@@ -376,21 +384,27 @@ impl Object {
         self.physics.rigid_body_handle
     }
     /// Updates the object to match the object information located inside the system of the layer. Useful when having physics.
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<(), ObjectError> {
         // receive
-        if let Some(arc) = self.reference.clone().unwrap().upgrade() {
+        if let Some(arc) = self
+            .reference
+            .clone()
+            .ok_or(ObjectError::Uninitialized)?
+            .upgrade()
+        {
             let object = &arc.lock().object;
             self.transform = object.transform;
             self.appearance = object.appearance().clone();
         } else {
             self.physics.remove();
-        }
+        };
+        Ok(())
     }
     /// Updates the object inside the layer system to match with this one. Useful when doing anything to the object and submitting it with this function.
-    pub fn sync(&mut self) {
+    pub fn sync(&mut self) -> Result<(), ObjectError> {
         // send
         // update public position of all children recursively
-        let node = self.as_node().expect("uninitialized"); // Return error in the future.
+        let node = self.as_node().ok_or(ObjectError::Uninitialized)?;
         {
             let mut node = node.lock();
             self.parent_transform = self.physics.update(
@@ -405,6 +419,7 @@ impl Object {
         let arc = self.reference.clone().unwrap().upgrade().unwrap();
         let mut object = arc.lock();
         object.object = self.clone();
+        Ok(())
     }
     /// Returns the collider of the object in case it has one.
     pub fn collider(&self) -> Option<&Collider> {

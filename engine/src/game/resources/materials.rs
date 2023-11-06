@@ -1,8 +1,9 @@
 //! Material related settings that determine the way the scene gets rendered.
 
-use crate::error::textures::*;
+use crate::error::{textures::*, ShaderError};
 use crate::prelude::{Format, Texture, TextureSettings, Vertex as GameVertex};
 
+use anyhow::Result;
 use derive_builder::Builder;
 use image::ImageFormat;
 use std::sync::Arc;
@@ -73,11 +74,11 @@ impl Material {
         shaders: &Shaders,
         descriptor: Vec<WriteDescriptorSet>,
         resources: &Resources,
-    ) -> Self {
+    ) -> Result<Self> {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
-        let vertex = vs.entry_point("main").unwrap();
-        let fragment = fs.entry_point("main").unwrap();
+        let vertex = vs.entry_point("main").ok_or(ShaderError::EntryPoint)?;
+        let fragment = fs.entry_point("main").ok_or(ShaderError::EntryPoint)?;
 
         let topology: PrimitiveTopology = match settings.topology {
             Topology::TriangleList => PrimitiveTopology::TriangleList,
@@ -106,10 +107,8 @@ impl Material {
         let layout = PipelineLayout::new(
             vulkan.device.clone(),
             PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                .into_pipeline_layout_create_info(vulkan.device.clone())
-                .unwrap(),
-        )
-        .unwrap();
+                .into_pipeline_layout_create_info(vulkan.device.clone())?,
+        )?;
 
         let pipeline = GraphicsPipeline::new(
             vulkan.device.clone(),
@@ -117,9 +116,7 @@ impl Material {
             GraphicsPipelineCreateInfo {
                 stages: stages.into_iter().collect(),
                 vertex_input_state: Some(
-                    GameVertex::per_vertex()
-                        .definition(&vertex.info().input_interface)
-                        .unwrap(),
+                    GameVertex::per_vertex().definition(&vertex.info().input_interface)?,
                 ),
                 input_assembly_state: Some(input_assembly),
                 viewport_state: Some(ViewportState::default()),
@@ -140,8 +137,7 @@ impl Material {
                 subpass: Some(subpass.into()),
                 ..GraphicsPipelineCreateInfo::layout(layout)
             },
-        )
-        .unwrap();
+        )?;
         let descriptor = if !descriptor.is_empty() {
             Some(
                 PersistentDescriptorSet::new(
@@ -160,16 +156,16 @@ impl Material {
         } else {
             None
         };
-        Self {
+        Ok(Self {
             pipeline,
             descriptor,
             layer: settings.initial_layer,
             texture: settings.texture,
-        }
+        })
     }
 
     /// Makes a new default material.
-    pub fn new(settings: MaterialSettings, resources: &Resources) -> Material {
+    pub fn new(settings: MaterialSettings, resources: &Resources) -> Result<Material> {
         let shaders = &resources.vulkan().default_shaders;
         Self::new_with_shaders(settings, shaders, vec![], resources)
     }
@@ -181,7 +177,7 @@ impl Material {
         layers: u32,
         settings: TextureSettings,
         resources: &Resources,
-    ) -> Result<Material, InvalidFormatError> {
+    ) -> Result<Material> {
         let texture = Texture::from_bytes(texture, format, layers, settings, resources)?;
 
         Ok(Self::new_default_textured(&texture, resources))
@@ -234,13 +230,18 @@ impl Material {
     }
 
     /// Sets the layer of the texture in case it has a texture with layers.
-    pub fn set_layer(&mut self, id: u32) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn set_layer(&mut self, id: u32) -> Result<()> {
         if let Some(texture) = &self.texture {
             if id > texture.layers() - 1 {
-                return Err(Box::new(TextureIDError));
+                return Err(TextureError::Layer(format!(
+                    "Given: {}, Highest: {}",
+                    id,
+                    texture.layers() - 1
+                ))
+                .into());
             }
         } else {
-            return Err(Box::new(NoTextureError));
+            return Err(TextureError::NoTexture.into());
         }
         self.layer = id;
         Ok(())
@@ -250,31 +251,35 @@ impl Material {
         self.layer
     }
 
-    /// Goes to the next frame of the layer.
+    /// Goes to the next frame of the texture.
     ///
     /// Returns an error if it reached the limit.
-    pub fn next_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn next_frame(&mut self) -> Result<()> {
         if let Some(texture) = &self.texture {
             if texture.layers() <= self.layer + 1 {
-                return Err(Box::new(TextureIDError));
+                return Err(
+                    TextureError::Layer("You are already at the last frame.".to_string()).into(),
+                );
             }
         } else {
-            return Err(Box::new(NoTextureError));
+            return Err(TextureError::NoTexture.into());
         }
         self.layer += 1;
         Ok(())
     }
 
-    /// Goes to the last frame of the layer.
+    /// Goes back a frame of the texture.
     ///
-    /// Returns an error if the layer is 0.
-    pub fn last_frame(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    /// Returns an error if the layer is already on 0.
+    pub fn last_frame(&mut self) -> Result<()> {
         if self.texture.is_some() {
             if self.layer == 0 {
-                return Err(Box::new(TextureIDError));
+                return Err(
+                    TextureError::Layer("You are already on the first frame".to_string()).into(),
+                );
             }
         } else {
-            return Err(Box::new(NoTextureError));
+            return Err(TextureError::NoTexture.into());
         }
         self.layer -= 1;
         Ok(())
@@ -330,16 +335,16 @@ impl Shaders {
         vertex_bytes: &[u8],
         fragment_bytes: &[u8],
         resources: &Resources,
-    ) -> Self {
+    ) -> Result<Self> {
         let device = &resources.vulkan().device;
-        let vertex_words = bytes_to_words(vertex_bytes).unwrap();
-        let fragment_words = bytes_to_words(fragment_bytes).unwrap();
+        let vertex_words = bytes_to_words(vertex_bytes)?;
+        let fragment_words = bytes_to_words(fragment_bytes)?;
         let vertex: Arc<ShaderModule> = unsafe {
-            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words)).unwrap()
+            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words))?
         };
         let fragment: Arc<ShaderModule> = unsafe {
-            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&fragment_words)).unwrap()
+            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&fragment_words))?
         };
-        Self { vertex, fragment }
+        Ok(Self { vertex, fragment })
     }
 }

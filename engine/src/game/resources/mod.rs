@@ -43,7 +43,7 @@ impl Resources {
 
     /// Initialisation
     pub(crate) fn init(&mut self, vulkan: Vulkan) {
-        self.loader = Some(Arc::new(Mutex::new(Loader::init(&vulkan))));
+        self.loader = Some(Arc::new(Mutex::new(Loader::init(&vulkan).unwrap())));
         self.vulkan = Some(vulkan);
         self.labelifier = Some(Arc::new(Mutex::new(Labelifier::new(self))));
     }

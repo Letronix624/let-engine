@@ -9,12 +9,11 @@ use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 use winit::event_loop::EventLoop;
 
-/// Initializes a new Vulkan instance.
-pub fn create_instance(event_loop: &EventLoop<()>) -> Arc<Instance> {
-    let library = VulkanLibrary::new().expect(
-        "Your Devices hardware does not fulfill the minimum requirements to run this program.\n",
-    );
+use crate::error::RequirementError;
 
+/// Initializes a new Vulkan instance.
+pub fn create_instance(event_loop: &EventLoop<()>) -> Result<Arc<Instance>, RequirementError> {
+    let library = VulkanLibrary::new().map_err(|e| RequirementError(e.to_string()))?;
     let required_extensions = Surface::required_extensions(event_loop);
 
     let extensions = InstanceExtensions {
@@ -42,7 +41,7 @@ pub fn create_instance(event_loop: &EventLoop<()>) -> Arc<Instance> {
         },
         ..Default::default()
     };
-    Instance::new(library, game_info).expect("Couldn't start Vulkan.")
+    Instance::new(library, game_info).map_err(|e| RequirementError(e.to_string()))
 }
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
@@ -58,7 +57,7 @@ pub fn create_physical_device(
     device_extensions: DeviceExtensions,
     features: Features,
     surface: &Arc<Surface>,
-) -> (Arc<PhysicalDevice>, u32) {
+) -> Result<(Arc<PhysicalDevice>, u32), RequirementError> {
     // selects the physical device to be used using this order of preferred devices.
     instance
         .enumerate_physical_devices()
@@ -83,7 +82,7 @@ pub fn create_physical_device(
             PhysicalDeviceType::Other => 4,
             _ => 5,
         })
-        .expect("No suitable physical device found")
+        .ok_or(RequirementError("No suitable GPU was found.".to_string()))
 }
 
 /// Makes the device and queues.
@@ -92,7 +91,7 @@ pub fn create_device_and_queues(
     device_extensions: &DeviceExtensions,
     features: Features,
     queue_family_index: u32,
-) -> (Arc<Device>, Arc<Queue>) {
+) -> Result<(Arc<Device>, Arc<Queue>), RequirementError> {
     let (device, mut queues) = Device::new(
         physical_device.clone(),
         DeviceCreateInfo {
@@ -106,6 +105,6 @@ pub fn create_device_and_queues(
             ..Default::default()
         },
     )
-    .unwrap();
-    (device, queues.next().unwrap())
+    .map_err(|e| RequirementError(e.to_string()))?;
+    Ok((device, queues.next().unwrap()))
 }

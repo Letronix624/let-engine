@@ -1,4 +1,5 @@
 use super::Vulkan;
+use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
     buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -40,7 +41,7 @@ pub(crate) struct Loader {
 
 impl Loader {
     /// Initializes the loader
-    pub fn init(vulkan: &Vulkan) -> Self {
+    pub fn init(vulkan: &Vulkan) -> Result<Self> {
         let memory_allocator =
             Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
 
@@ -87,10 +88,10 @@ impl Loader {
         );
 
         let pipeline_cache = unsafe {
-            PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default()).unwrap()
+            PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default())?
         };
 
-        Self {
+        Ok(Self {
             memory_allocator,
             vertex_buffer_allocator,
             index_buffer_allocator,
@@ -98,7 +99,7 @@ impl Loader {
             descriptor_set_allocator,
             command_buffer_allocator,
             pipeline_cache,
-        }
+        })
     }
 
     /// Loads a texture to the GPU.
