@@ -18,6 +18,7 @@ pub struct RequirementError(pub String);
 #[derive(Debug, Error)]
 pub enum ShaderError {
     // Make the entry point chossable.
+    /// Your shader is missing a function called `main`.
     #[error("The main function was not found in this shader")]
     EntryPoint,
 }

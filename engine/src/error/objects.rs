@@ -21,12 +21,13 @@ pub struct NoJointError;
 /// Errors that happen in object and layer functions.
 #[derive(Error, Debug)]
 pub enum ObjectError {
+    /// The object you are trying to use is not initialized to a layer.
     #[error("This object is not initialized to a layer.")]
     Uninitialized,
+    /// The parent of the object you are trying to use is not initialized to the same layer or not initialized at all.
     #[error("The parent is not initialized to the same layer.")]
     UninitializedParent,
-    #[error("This parent for this object is not added to the objects list.")]
-    NoParent,
+    /// The move operation has failed.
     #[error("This object can not be moved to this position:\n{0}")]
     Move(String),
 }

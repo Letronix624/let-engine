@@ -265,13 +265,15 @@ impl Game {
                 }
                 Event::RedrawRequested(_) => {
                     self.resources.update();
-                    if let Err(RedrawError::VulkanError(e)) = self.draw.redrawevent(
+                    match self.draw.redrawevent(
                         &self.resources,
                         &self.scene,
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     ) {
-                        panic!("{e}");
+                        Err(RedrawError::SwapchainOutOfDate) => self.draw.recreate_swapchain = true,
+                        Err(e) => panic!("{e}"),
+                        _ => (),
                     };
                 }
                 Event::RedrawEventsCleared => {
@@ -286,13 +288,15 @@ impl Game {
                     self.gui.immediate_ui(|gui| {
                         func(events::Event::Egui(gui.context()), control_flow);
                     });
-                    if let Err(RedrawError::VulkanError(e)) = self.draw.redrawevent(
+                    match self.draw.redrawevent(
                         &self.resources,
                         &self.scene,
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     ) {
-                        panic!("{e}");
+                        Err(RedrawError::SwapchainOutOfDate) => self.draw.recreate_swapchain = true,
+                        Err(e) => panic!("{e}"),
+                        _ => (),
                     };
                     func(events::Event::Ready, control_flow)
                 }

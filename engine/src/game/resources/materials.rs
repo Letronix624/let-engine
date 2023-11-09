@@ -67,6 +67,8 @@ impl std::fmt::Debug for Material {
     }
 }
 /// Making
+///
+/// Right now it produces an error when the shaders don't have a main function.
 impl Material {
     /// Creates a new material using the given shaders, settings and write operations.
     pub fn new_with_shaders(

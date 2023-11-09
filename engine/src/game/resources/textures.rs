@@ -187,6 +187,8 @@ impl Texture {
     }
 
     /// Loads a texture to the GPU using the given image format.
+    ///
+    /// Returns an error in case the given format does not work with the given bytes.
     pub fn from_bytes(
         data: &[u8],
         image_format: ImageFormat,
