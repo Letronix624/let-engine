@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
@@ -224,6 +225,7 @@ impl Draw {
         scene: &crate::Scene,
         command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
         loader: &Loader,
+        shapes: &BasicShapes,
     ) -> Result<(), RedrawError> {
         for layer in scene.get_layers().iter() {
             let mut order: Vec<VisualObject> = vec![];
@@ -233,7 +235,7 @@ impl Draw {
             for object in order {
                 let appearance = &object.appearance;
                 // Skip drawing the object if the object is not marked visible or has no vertices.
-                if !appearance.get_visible() || appearance.get_model().is_none() {
+                if !appearance.get_visible() {
                     continue;
                 }
 
@@ -298,7 +300,11 @@ impl Draw {
                     .map_err(|e| RedrawError::VulkanError(e.to_string()))?,
                 );
 
-                let model = appearance.get_model().as_ref().unwrap();
+                let model = match appearance.get_model() {
+                    Model::Custom(data) => data,
+                    Model::Square => &shapes.square,
+                    Model::Triangle => &shapes.triangle,
+                };
 
                 command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
@@ -411,7 +417,13 @@ impl Draw {
             window.clear_color().rgba(),
         )?;
 
-        Self::write_secondary_command_buffer(self, scene, &mut secondary_builder, &loader)?;
+        Self::write_secondary_command_buffer(
+            self,
+            scene,
+            &mut secondary_builder,
+            &loader,
+            resources.shapes(),
+        )?;
 
         builder
             .execute_commands(secondary_builder.build().unwrap())

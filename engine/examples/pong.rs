@@ -5,12 +5,15 @@ use std::{
     time::SystemTime,
 };
 
+// A const that contains the constant window resolution.
+const RESOLUTION: Vec2 = vec2(800.0, 600.0);
+
 let_engine!();
 fn main() {
     // Describing the window.
     let window_builder = WindowBuilder::default()
         .resizable(false)
-        .inner_size(vec2(800.0, 600.0))
+        .inner_size(RESOLUTION)
         .title("Pong 2");
     let engine = start_engine!(window_builder).unwrap();
 
@@ -18,26 +21,13 @@ fn main() {
     let layer = SCENE.new_layer();
     layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Limited));
 
-    // Makes a square model.
-    let square = model!(Data::square());
-
     // Make left paddle controlled with W for up and S for down.
-    let mut paddle1 = Paddle::new(
-        &layer,
-        square.clone(),
-        (VirtualKeyCode::W, VirtualKeyCode::S),
-        -0.95,
-    );
+    let mut paddle1 = Paddle::new(&layer, (VirtualKeyCode::W, VirtualKeyCode::S), -0.95);
     // The right paddle controlled with the arrow up and down keys.
-    let mut paddle2 = Paddle::new(
-        &layer,
-        square.clone(),
-        (VirtualKeyCode::Up, VirtualKeyCode::Down),
-        0.95,
-    );
+    let mut paddle2 = Paddle::new(&layer, (VirtualKeyCode::Up, VirtualKeyCode::Down), 0.95);
 
     // Spawns a ball in the middle.
-    let mut ball = Ball::new(layer.clone(), square);
+    let mut ball = Ball::new(layer.clone());
 
     // Loading the font for the score.
     let font = font!(include_bytes!("Px437_CL_Stingray_8x16.ttf")).expect("Font is invalid.");
@@ -72,16 +62,19 @@ fn main() {
 
     // Just the line in the middle.
     let mut middle_line = Object::new();
-    // A model that is just a stippled line going from 1 to -1.
-    middle_line.appearance.set_model(Some(model!(Data {
-        vertices: vec![
-            vert(0.0, 0.7),
-            vert(0.0, 0.3),
-            vert(0.0, -0.3),
-            vert(0.0, -0.7)
-        ],
-        indices: vec![0, 1, 2, 3]
-    })));
+    // Make a custom model that is just a stippled line going from 1 to -1.
+    middle_line.appearance.set_model(Model::Custom(
+        model!(Data {
+            vertices: vec![
+                vert(0.0, 0.7),
+                vert(0.0, 0.3),
+                vert(0.0, -0.3),
+                vert(0.0, -0.7)
+            ],
+            indices: vec![0, 1, 2, 3]
+        })
+        .unwrap(),
+    ));
     // A description of how the line should look like.
     let line_material = MaterialSettingsBuilder::default()
         .line_width(10.0)
@@ -145,15 +138,9 @@ struct Paddle {
 }
 
 impl Paddle {
-    pub fn new(
-        layer: &Layer,
-        model: Model,
-        controls: (VirtualKeyCode, VirtualKeyCode),
-        x: f32,
-    ) -> Self {
+    pub fn new(layer: &Layer, controls: (VirtualKeyCode, VirtualKeyCode), x: f32) -> Self {
         let height = 0.05;
         let mut object = Object::new();
-        object.appearance.set_model(Some(model));
         object.transform = Transform {
             position: vec2(x, 0.0),
             size: vec2(0.015, height),
@@ -181,7 +168,7 @@ impl Paddle {
         *y = y.clamp(-0.70, 0.70);
 
         // Updates the object in the game.
-        self.object.sync();
+        self.object.sync().unwrap();
     }
     /// To troll the opponent.
     pub fn shrink(&mut self) {
@@ -197,7 +184,7 @@ impl Paddle {
         self.object.transform.size.y = self.height;
         self.object
             .set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
-        self.object.sync();
+        self.object.sync().unwrap();
     }
 }
 
@@ -213,10 +200,9 @@ struct Ball {
 
 /// Ball logic.
 impl Ball {
-    pub fn new(layer: Layer, model: Model) -> Self {
+    pub fn new(layer: Layer) -> Self {
         let lifetime = SystemTime::now();
         let mut object = Object::new();
-        object.appearance.set_model(Some(model));
         object.transform.size = vec2(0.015, 0.015);
         object.init(&layer);
 
@@ -239,18 +225,10 @@ impl Ball {
                 .layer
                 .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
-            let touching_floor = position.y
-                < self
-                    .layer
-                    .side_to_world(directions::N, vec2(800.0, 600.0))
-                    .y
-                    + 0.015;
-            let touching_roof = position.y
-                > self
-                    .layer
-                    .side_to_world(directions::S, vec2(800.0, 600.0))
-                    .y
-                    - 0.015;
+            let touching_floor =
+                position.y < self.layer.side_to_world(directions::N, RESOLUTION).y + 0.015;
+            let touching_roof =
+                position.y > self.layer.side_to_world(directions::S, RESOLUTION).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle {
@@ -274,14 +252,14 @@ impl Ball {
 
             self.object.transform.position +=
                 self.direction * TIME.delta_time() as f32 * self.speed;
-            self.object.sync();
+            self.object.sync().unwrap();
         }
     }
     fn reset(&mut self) {
         self.new_round = SystemTime::now();
         self.object.transform.position = vec2(0.0, 0.0);
         self.direction = Self::random_direction(self.lifetime);
-        self.object.sync();
+        self.object.sync().unwrap();
     }
     fn rebound(&mut self, x: f64) {
         // Random 0.0 to 1.0 value. Some math that makes a random direction.

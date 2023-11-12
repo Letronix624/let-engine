@@ -283,7 +283,7 @@ impl Labelifier {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
-            let size = label.object.appearance.transform.size;
+            let size = label.object.appearance.get_transform().size;
 
             let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
@@ -335,11 +335,11 @@ impl Labelifier {
                     }
                 })
                 .collect();
-            let model = Model::new(Data::new(vertices, indices), resources);
+            let model = ModelData::new(Data::new(vertices, indices), resources).unwrap();
             label.object.appearance = label
                 .object
                 .appearance
-                .model(Some(model))
+                .model(Model::Custom(model))
                 .material(Some(self.material.clone()));
             //label.sync();
             let node = label.object.as_node().expect("object uninitialized"); // change this
@@ -364,7 +364,7 @@ impl Labelifier {
     pub fn queue(&mut self, label: Label) {
         self.ready = true;
 
-        let size = label.object.appearance.transform.size;
+        let size = label.object.appearance.get_transform().size;
 
         let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 

@@ -21,13 +21,16 @@ pub fn fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
 }
 
 pub fn textured_fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
-    from_bytes(include_bytes!("shaders/default_textured.spv"), device)
+    from_bytes(include_bytes!("shaders/default_textured_frag.spv"), device)
 }
 
 pub fn texture_array_fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
-    from_bytes(include_bytes!("shaders/default_texture_array.spv"), device)
+    from_bytes(
+        include_bytes!("shaders/default_texture_array_frag.spv"),
+        device,
+    )
 }
 
 pub fn text_fragmentshader(device: Arc<Device>) -> Arc<ShaderModule> {
-    from_bytes(include_bytes!("shaders/text.spv"), device)
+    from_bytes(include_bytes!("shaders/text_frag.spv"), device)
 }

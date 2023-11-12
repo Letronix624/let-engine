@@ -9,7 +9,7 @@
 #[macro_export]
 macro_rules! model {
     ($data:expr) => {{
-        let_engine::prelude::Model::new($data, &RESOURCES)
+        let_engine::prelude::ModelData::new($data, &RESOURCES)
     }};
 }
 

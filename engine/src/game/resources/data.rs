@@ -3,6 +3,8 @@
 use glam::f32::{vec2, Mat4, Vec2};
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
+use super::{ModelData, Resources};
+
 /// A vertex containing it's position (xy) and texture position (uv).
 #[repr(C)]
 #[derive(BufferContents, VTX, Debug, Clone, Copy, PartialEq)]
@@ -97,6 +99,21 @@ impl Data {
         Data {
             vertices: TRIANGLE.into(),
             indices: TRIANGLE_ID.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BasicShapes {
+    pub square: ModelData,
+    pub triangle: ModelData,
+}
+
+impl BasicShapes {
+    pub fn new(resources: &Resources) -> Self {
+        Self {
+            square: ModelData::new(Data::square(), resources).unwrap(),
+            triangle: ModelData::new(Data::triangle(), resources).unwrap(),
         }
     }
 }

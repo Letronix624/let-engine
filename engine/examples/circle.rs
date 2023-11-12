@@ -14,7 +14,7 @@ fn main() {
     // Makes the view zoomed out and not stretchy.
     layer.set_camera_settings(CameraSettings {
         zoom: 0.5,
-        mode: CameraScaling::Linear,
+        mode: CameraScaling::Stretch,
     });
 
     // Makes the circle in the middle.

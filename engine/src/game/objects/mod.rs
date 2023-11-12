@@ -1,13 +1,12 @@
 //! Objects to be drawn to the screen.
 
+pub mod appearance;
 pub mod color;
 pub mod labels;
 pub mod physics;
 pub mod scenes;
-use crate::{
-    error::{objects::ObjectError, textures::*},
-    prelude::*,
-};
+
+use crate::{error::objects::ObjectError, prelude::*};
 use scenes::Layer;
 
 use anyhow::Result;
@@ -15,10 +14,7 @@ use glam::f32::{vec2, Vec2};
 use hashbrown::HashMap;
 use parking_lot::Mutex;
 
-use std::{
-    default,
-    sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 type RigidBodyParent = Option<Option<Weak<Mutex<Node<Object>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 pub(crate) type NObject = Arc<Mutex<Node<Object>>>;
@@ -142,97 +138,6 @@ impl Node<Object> {
             parent.end_transform().combine(self.object.transform)
         } else {
             self.object.transform
-        }
-    }
-}
-
-/// Holds everything about the appearance of objects like
-/// textures, vetex/index data, color and material.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Appearance {
-    visible: bool,
-    material: Option<materials::Material>,
-    model: Option<Model>,
-    transform: Transform,
-    color: Color,
-}
-
-use paste::paste;
-
-use self::physics::Collider;
-macro_rules! getters_and_setters {
-    ($field:ident, $title:expr, $type:ty) => {
-        #[doc=concat!("Sets ", $title, " of this appearance and returns self.")]
-        #[inline]
-        pub fn $field(mut self, $field: impl Into<$type>) -> Self {
-            self.$field = $field.into();
-            self
-        }
-        paste! {
-            #[doc=concat!("Sets ", $title, " of this appearance.")]
-            #[inline]
-            pub fn [<set_ $field>](&mut self, $field: impl Into<$type>) {
-                self.$field = $field.into();
-            }
-        }
-        paste! {
-            #[doc=concat!("Gets ", $title," of this appearance.")]
-            #[inline]
-            pub fn [<get_ $field>](&self) -> &$type {
-                &self.$field
-            }
-        }
-        paste! {
-            #[doc=concat!("Gets a mutable reference to ", $title," of this appearance.")]
-            #[inline]
-            pub fn [<get_mut_ $field>](&mut self) -> &mut $type {
-                &mut self.$field
-            }
-        }
-    };
-}
-
-impl Appearance {
-    /// Makes a default appearance.
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    /// Scales the object appearance according to the texture applied. Works best in Expand camera mode for best quality.
-    pub fn auto_scale(&mut self) -> Result<(), TextureError> {
-        let dimensions;
-        if let Some(material) = &self.material {
-            dimensions = if let Some(texture) = &material.texture {
-                texture.dimensions()
-            } else {
-                return Err(TextureError::NoTexture);
-            };
-        } else {
-            return Err(TextureError::NoTexture);
-        };
-
-        self.transform.size = vec2(dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0);
-
-        Ok(())
-    }
-
-    getters_and_setters!(visible, "the visibility", bool);
-    getters_and_setters!(model, "the model", Option<Model>);
-    getters_and_setters!(transform, "the transform", Transform);
-    getters_and_setters!(material, "the material", Option<materials::Material>);
-    getters_and_setters!(color, "the color", Color);
-}
-
-impl default::Default for Appearance {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            material: None,
-            model: None,
-            transform: Transform::default(),
-            color: Color::WHITE,
         }
     }
 }
