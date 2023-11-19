@@ -187,10 +187,11 @@ impl Labelifier {
         );
 
         let vulkan = resources.vulkan();
-        let text_shaders = Shaders {
-            vertex: vertexshader(vulkan.device.clone()),
-            fragment: text_fragmentshader(vulkan.device.clone()),
-        };
+        let text_shaders = Shaders::from_modules(
+            vertex_shader(vulkan.device.clone()),
+            text_fragment_shader(vulkan.device.clone()),
+            "main",
+        );
 
         let material_settings = MaterialSettingsBuilder::default()
             .texture(texture)
@@ -198,7 +199,7 @@ impl Labelifier {
             .unwrap();
 
         let material =
-            Material::new_with_shaders(material_settings, &text_shaders, vec![], resources)
+            Material::new_with_shaders(material_settings, &text_shaders, false, vec![], resources)
                 .unwrap();
 
         Self {
@@ -335,14 +336,20 @@ impl Labelifier {
                     }
                 })
                 .collect();
-            let model = ModelData::new(Data::new(vertices, indices), resources).unwrap();
-            label.object.appearance = label
+            let visible = if vertices.is_empty() {
+                false
+            } else {
+                let model = ModelData::new(Data::new(vertices, indices), resources).unwrap();
+                label.object.appearance.set_model(Model::Custom(model));
+                true
+            };
+            label
                 .object
                 .appearance
-                .model(Model::Custom(model))
-                .material(Some(self.material.clone()));
+                .set_material(Some(self.material.clone()));
+            label.object.appearance.set_visible(visible);
             //label.sync();
-            let node = label.object.as_node().expect("object uninitialized"); // change this
+            let node = label.object.as_node().unwrap();
             let mut object = node.lock();
             object.object = label.object.clone();
         }

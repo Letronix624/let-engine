@@ -16,7 +16,7 @@ license = "Apache-2.0"
 
 [dependencies]
 vulkano = "0.34.1"
-winit = "0.28"
+winit = { version = "0.28" }
 image = "0.24"
 
 #rodio = "0.17.1"

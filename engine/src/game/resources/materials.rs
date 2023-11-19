@@ -1,11 +1,11 @@
 //! Material related settings that determine the way the scene gets rendered.
 
-use crate::error::{textures::*, ShaderError};
-use crate::prelude::{Format, Texture, TextureSettings, Vertex as GameVertex};
+use crate::error::draw::ShaderError;
+use crate::error::{draw::VulkanError, textures::*};
+use crate::prelude::{InstanceData, Texture, Vertex as GameVertex};
 
 use anyhow::Result;
 use derive_builder::Builder;
-use image::ImageFormat;
 use std::sync::Arc;
 use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
 use vulkano::pipeline::graphics::multisample::MultisampleState;
@@ -53,6 +53,7 @@ pub enum Topology {
 #[derive(Clone, PartialEq)]
 pub struct Material {
     pub(crate) pipeline: Arc<GraphicsPipeline>,
+    pub(crate) instanced: bool,
     pub(crate) descriptor: Option<Arc<PersistentDescriptorSet>>,
     pub(crate) texture: Option<Texture>,
     pub(crate) layer: u32,
@@ -61,6 +62,7 @@ pub struct Material {
 impl std::fmt::Debug for Material {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Material")
+            .field("instanced", &self.instanced)
             .field("texture", &self.texture)
             .field("layer", &self.layer)
             .finish()
@@ -74,13 +76,14 @@ impl Material {
     pub fn new_with_shaders(
         settings: MaterialSettings,
         shaders: &Shaders,
-        descriptor: Vec<WriteDescriptorSet>,
+        instanced: bool,
+        writes: Vec<WriteDescriptorSet>,
         resources: &Resources,
-    ) -> Result<Self> {
+    ) -> Result<Self, VulkanError> {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
-        let vertex = vs.entry_point("main").ok_or(ShaderError::EntryPoint)?;
-        let fragment = fs.entry_point("main").ok_or(ShaderError::EntryPoint)?;
+        let vertex = vs.entry_point(&shaders.entry_point).unwrap();
+        let fragment = fs.entry_point(&shaders.entry_point).unwrap();
 
         let topology: PrimitiveTopology = match settings.topology {
             Topology::TriangleList => PrimitiveTopology::TriangleList,
@@ -109,17 +112,26 @@ impl Material {
         let layout = PipelineLayout::new(
             vulkan.device.clone(),
             PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                .into_pipeline_layout_create_info(vulkan.device.clone())?,
+                .into_pipeline_layout_create_info(vulkan.device.clone())
+                .unwrap(),
         )?;
+
+        let vertex_input_state = if instanced {
+            [GameVertex::per_vertex(), InstanceData::per_instance()]
+                .definition(&vertex.info().input_interface)
+                .unwrap()
+        } else {
+            GameVertex::per_vertex()
+                .definition(&vertex.info().input_interface)
+                .unwrap()
+        };
 
         let pipeline = GraphicsPipeline::new(
             vulkan.device.clone(),
             Some(pipeline_cache.clone()),
             GraphicsPipelineCreateInfo {
                 stages: stages.into_iter().collect(),
-                vertex_input_state: Some(
-                    GameVertex::per_vertex().definition(&vertex.info().input_interface)?,
-                ),
+                vertex_input_state: Some(vertex_input_state),
                 input_assembly_state: Some(input_assembly),
                 viewport_state: Some(ViewportState::default()),
                 rasterization_state: Some(RasterizationState {
@@ -139,8 +151,9 @@ impl Material {
                 subpass: Some(subpass.into()),
                 ..GraphicsPipelineCreateInfo::layout(layout)
             },
-        )?;
-        let descriptor = if !descriptor.is_empty() {
+        )
+        .map_err(VulkanError::Validated)?;
+        let descriptor = if !writes.is_empty() {
             Some(
                 PersistentDescriptorSet::new(
                     allocator,
@@ -150,7 +163,7 @@ impl Material {
                         .get(2) // on set 2
                         .unwrap()
                         .clone(),
-                    descriptor,
+                    writes,
                     [],
                 )
                 .unwrap(),
@@ -161,41 +174,25 @@ impl Material {
         Ok(Self {
             pipeline,
             descriptor,
+            instanced,
             layer: settings.initial_layer,
             texture: settings.texture,
         })
     }
 
     /// Makes a new default material.
-    pub fn new(settings: MaterialSettings, resources: &Resources) -> Result<Material> {
+    pub fn new(settings: MaterialSettings, resources: &Resources) -> Result<Material, VulkanError> {
         let shaders = &resources.vulkan().default_shaders;
-        Self::new_with_shaders(settings, shaders, vec![], resources)
+        Self::new_with_shaders(settings, shaders, false, vec![], resources)
     }
 
-    /// Simplification of making a texture and putting it into a material.
-    pub fn new_from_texture(
-        texture: &[u8],
-        format: ImageFormat,
-        layers: u32,
-        settings: TextureSettings,
+    /// Makes a new default material.
+    pub fn new_instanced(
+        settings: MaterialSettings,
         resources: &Resources,
-    ) -> Result<Material> {
-        let texture = Texture::from_bytes(texture, format, layers, settings, resources)?;
-
-        Ok(Self::new_default_textured(&texture, resources))
-    }
-
-    /// Simplification of making a texture from raw and putting it into a material.
-    pub fn new_from_raw_texture(
-        texture: Vec<u8>,
-        format: Format,
-        dimensions: (u32, u32),
-        layers: u32,
-        settings: TextureSettings,
-        resources: &Resources,
-    ) -> Material {
-        let texture = Texture::from_raw(&texture, dimensions, format, layers, settings, resources);
-        Self::new_default_textured(&texture, resources)
+    ) -> Result<Material, VulkanError> {
+        let shaders = &resources.vulkan().default_instance_shaders;
+        Self::new_with_shaders(settings, shaders, true, vec![], resources)
     }
 
     /// Creates a simple material made just for showing a texture.
@@ -204,6 +201,17 @@ impl Material {
             resources.vulkan().textured_material.clone()
         } else {
             resources.vulkan().texture_array_material.clone()
+        };
+        Material {
+            texture: Some(texture.clone()),
+            ..default
+        }
+    }
+    pub fn new_default_textured_instance(texture: &Texture, resources: &Resources) -> Material {
+        let default = if texture.layers() == 1 {
+            resources.vulkan().textured_instance_material.clone()
+        } else {
+            resources.vulkan().texture_array_instance_material.clone()
         };
         Material {
             texture: Some(texture.clone()),
@@ -232,23 +240,23 @@ impl Material {
     }
 
     /// Sets the layer of the texture in case it has a texture with layers.
-    pub fn set_layer(&mut self, id: u32) -> Result<()> {
+    pub fn set_layer(&mut self, id: u32) -> Result<(), TextureError> {
         if let Some(texture) = &self.texture {
             if id > texture.layers() - 1 {
                 return Err(TextureError::Layer(format!(
                     "Given: {}, Highest: {}",
                     id,
                     texture.layers() - 1
-                ))
-                .into());
+                )));
             }
         } else {
-            return Err(TextureError::NoTexture.into());
+            return Err(TextureError::NoTexture);
         }
         self.layer = id;
         Ok(())
     }
 
+    /// Returns the layer of the texture in case the material is textured.
     pub fn get_layer(&self) -> u32 {
         self.layer
     }
@@ -256,15 +264,15 @@ impl Material {
     /// Goes to the next frame of the texture.
     ///
     /// Returns an error if it reached the limit.
-    pub fn next_frame(&mut self) -> Result<()> {
+    pub fn next_frame(&mut self) -> Result<(), TextureError> {
         if let Some(texture) = &self.texture {
             if texture.layers() <= self.layer + 1 {
-                return Err(
-                    TextureError::Layer("You are already at the last frame.".to_string()).into(),
-                );
+                return Err(TextureError::Layer(
+                    "You are already at the last frame.".to_string(),
+                ));
             }
         } else {
-            return Err(TextureError::NoTexture.into());
+            return Err(TextureError::NoTexture);
         }
         self.layer += 1;
         Ok(())
@@ -273,15 +281,15 @@ impl Material {
     /// Goes back a frame of the texture.
     ///
     /// Returns an error if the layer is already on 0.
-    pub fn last_frame(&mut self) -> Result<()> {
+    pub fn last_frame(&mut self) -> Result<(), TextureError> {
         if self.texture.is_some() {
             if self.layer == 0 {
-                return Err(
-                    TextureError::Layer("You are already on the first frame".to_string()).into(),
-                );
+                return Err(TextureError::Layer(
+                    "You are already on the first frame".to_string(),
+                ));
             }
         } else {
-            return Err(TextureError::NoTexture.into());
+            return Err(TextureError::NoTexture);
         }
         self.layer -= 1;
         Ok(())
@@ -324,6 +332,7 @@ pub struct MaterialSettings {
 pub struct Shaders {
     pub(crate) vertex: Arc<ShaderModule>,
     pub(crate) fragment: Arc<ShaderModule>,
+    entry_point: Box<str>,
 }
 
 impl Shaders {
@@ -336,8 +345,9 @@ impl Shaders {
     pub unsafe fn from_bytes(
         vertex_bytes: &[u8],
         fragment_bytes: &[u8],
+        entry_point: &str,
         resources: &Resources,
-    ) -> Result<Self> {
+    ) -> Result<Self, ShaderError> {
         let device = &resources.vulkan().device;
         let vertex_words = bytes_to_words(vertex_bytes)?;
         let fragment_words = bytes_to_words(fragment_bytes)?;
@@ -347,6 +357,27 @@ impl Shaders {
         let fragment: Arc<ShaderModule> = unsafe {
             ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&fragment_words))?
         };
-        Ok(Self { vertex, fragment })
+        vertex
+            .entry_point(entry_point)
+            .ok_or(ShaderError::ShaderEntryPoint)?;
+        fragment
+            .entry_point(entry_point)
+            .ok_or(ShaderError::ShaderEntryPoint)?;
+        Ok(Self {
+            vertex,
+            fragment,
+            entry_point: entry_point.into(),
+        })
+    }
+    pub fn from_modules(
+        vertex: Arc<ShaderModule>,
+        fragment: Arc<ShaderModule>,
+        entry_point: impl Into<Box<str>>,
+    ) -> Self {
+        Self {
+            vertex,
+            fragment,
+            entry_point: entry_point.into(),
+        }
     }
 }

@@ -1,4 +1,6 @@
 /// A struct that represents a color to use on objects, the clear color or labels.
+use glam::{vec3, vec4, Vec3, Vec4};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     rgba: [f32; 4],
@@ -170,6 +172,18 @@ impl From<Color> for [f32; 4] {
     #[inline]
     fn from(value: Color) -> [f32; 4] {
         value.rgba()
+    }
+}
+impl From<Color> for Vec3 {
+    #[inline]
+    fn from(value: Color) -> Vec3 {
+        vec3(value.r(), value.g(), value.b())
+    }
+}
+impl From<Color> for Vec4 {
+    #[inline]
+    fn from(value: Color) -> Vec4 {
+        vec4(value.r(), value.g(), value.b(), value.alpha())
     }
 }
 impl std::ops::Add<Color> for Color {

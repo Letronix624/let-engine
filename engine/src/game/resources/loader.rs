@@ -34,6 +34,7 @@ pub(crate) struct Loader {
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,
     pub object_buffer_allocator: SubbufferAllocator,
+    pub instance_buffer_allocator: SubbufferAllocator,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub command_buffer_allocator: StandardCommandBufferAllocator,
     pub pipeline_cache: Arc<PipelineCache>,
@@ -74,6 +75,15 @@ impl Loader {
             },
         );
 
+        let instance_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
+            memory_allocator.clone(),
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
+
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             vulkan.device.clone(),
             StandardDescriptorSetAllocatorCreateInfo::default(),
@@ -96,6 +106,7 @@ impl Loader {
             vertex_buffer_allocator,
             index_buffer_allocator,
             object_buffer_allocator,
+            instance_buffer_allocator,
             descriptor_set_allocator,
             command_buffer_allocator,
             pipeline_cache,

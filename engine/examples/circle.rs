@@ -20,7 +20,9 @@ fn main() {
     // Makes the circle in the middle.
     let mut circle = Object::new();
     // Loads a circle model into the engine and sets the appearance of this object to it.
-    circle.appearance.set_model(Some(model!(make_circle!(30))));
+    circle
+        .appearance
+        .set_model(Model::Custom(model!(make_circle!(30)).unwrap()));
     // Initializes the object to the layer
     circle.init(&layer);
 

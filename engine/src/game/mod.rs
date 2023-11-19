@@ -37,7 +37,7 @@ use std::{
 pub use resources::data;
 pub use resources::data::{tvert, vert, Vertex};
 
-use crate::error::draw::RedrawError;
+use crate::error::draw::VulkanError;
 
 use self::{
     events::{InputEvent, ScrollDelta},
@@ -271,7 +271,7 @@ impl Game {
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     ) {
-                        Err(RedrawError::SwapchainOutOfDate) => self.draw.recreate_swapchain = true,
+                        Err(VulkanError::SwapchainOutOfDate) => self.draw.recreate_swapchain = true,
                         Err(e) => panic!("{e}"),
                         _ => (),
                     };
@@ -294,7 +294,7 @@ impl Game {
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     ) {
-                        Err(RedrawError::SwapchainOutOfDate) => self.draw.recreate_swapchain = true,
+                        Err(VulkanError::SwapchainOutOfDate) => self.draw.recreate_swapchain = true,
                         Err(e) => panic!("{e}"),
                         _ => (),
                     };

@@ -125,15 +125,3 @@ macro_rules! material {
         )
     }};
 }
-
-/// Describes a write operation for a descriptor.
-/// Used with materials to interact with custom shaders inside them.
-#[macro_export]
-macro_rules! write_descriptor {
-    (
-        $buf:expr,
-        $set:expr,
-    ) => {{
-        RESOURCES.new_descriptor_write($buf, $set)
-    }};
-}
