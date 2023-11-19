@@ -11,6 +11,7 @@ use rusttype::gpu_cache::Cache;
 use rusttype::{point, PositionedGlyph, Scale};
 
 use super::super::resources::vulkan::shaders::*;
+use crate::error::objects::ObjectError;
 use crate::prelude::*;
 use glam::f32::{vec2, Vec2};
 
@@ -117,17 +118,24 @@ impl Label {
         self.object.init(layer);
         self.sync();
     }
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) {
-        self.object.init_with_parent(layer, parent);
+    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
+        self.object.init_with_parent(layer, parent)?;
         self.sync();
+        Ok(())
     }
-    pub fn init_with_optional_parent(&mut self, layer: &Layer, parent: Option<&Object>) {
-        self.object.init_with_optional_parent(layer, parent);
+    pub fn init_with_optional_parent(
+        &mut self,
+        layer: &Layer,
+        parent: Option<&Object>,
+    ) -> Result<(), ObjectError> {
+        self.object.init_with_optional_parent(layer, parent)?;
         self.sync();
+        Ok(())
     }
     /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
-    pub fn update(&mut self) {
-        self.object.update()
+    pub fn update(&mut self) -> Result<(), ObjectError> {
+        self.object.update()?;
+        Ok(())
     }
     /// Changes the text of the label and updates it on the layer.
     pub fn update_text(&mut self, text: impl Into<String>) {
@@ -179,10 +187,11 @@ impl Labelifier {
         );
 
         let vulkan = resources.vulkan();
-        let text_shaders = Shaders {
-            vertex: vertexshader(vulkan.device.clone()),
-            fragment: text_fragmentshader(vulkan.device.clone()),
-        };
+        let text_shaders = Shaders::from_modules(
+            vertex_shader(vulkan.device.clone()),
+            text_fragment_shader(vulkan.device.clone()),
+            "main",
+        );
 
         let material_settings = MaterialSettingsBuilder::default()
             .texture(texture)
@@ -190,7 +199,8 @@ impl Labelifier {
             .unwrap();
 
         let material =
-            Material::new_with_shaders(material_settings, &text_shaders, vec![], resources);
+            Material::new_with_shaders(material_settings, &text_shaders, false, vec![], resources)
+                .unwrap();
 
         Self {
             material,
@@ -274,7 +284,7 @@ impl Labelifier {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
-            let size = label.object.appearance.transform.size;
+            let size = label.object.appearance.get_transform().size;
 
             let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 
@@ -326,14 +336,20 @@ impl Labelifier {
                     }
                 })
                 .collect();
-            let model = Model::new(Data::new(vertices, indices), resources);
-            label.object.appearance = label
+            let visible = if vertices.is_empty() {
+                false
+            } else {
+                let model = ModelData::new(Data::new(vertices, indices), resources).unwrap();
+                label.object.appearance.set_model(Model::Custom(model));
+                true
+            };
+            label
                 .object
                 .appearance
-                .model(Some(model))
-                .material(Some(self.material.clone()));
+                .set_material(Some(self.material.clone()));
+            label.object.appearance.set_visible(visible);
             //label.sync();
-            let node = label.object.as_node().expect("object uninitialized");
+            let node = label.object.as_node().unwrap();
             let mut object = node.lock();
             object.object = label.object.clone();
         }
@@ -355,7 +371,7 @@ impl Labelifier {
     pub fn queue(&mut self, label: Label) {
         self.ready = true;
 
-        let size = label.object.appearance.transform.size;
+        let size = label.object.appearance.get_transform().size;
 
         let dimensions: [f32; 2] = [(1000.0 * size[0]), (1000.0 * size[1])];
 

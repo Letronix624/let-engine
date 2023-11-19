@@ -187,16 +187,23 @@ impl Texture {
     }
 
     /// Loads a texture to the GPU using the given image format.
+    ///
+    /// Returns an error in case the given format does not work with the given bytes.
     pub fn from_bytes(
         data: &[u8],
         image_format: ImageFormat,
         layers: u32,
         settings: TextureSettings,
         resources: &Resources,
-    ) -> Result<Texture, InvalidFormatError> {
+    ) -> Result<Texture, TextureError> {
         // Turn image to a vector of u8 first.
         let image = match load_from_memory_with_format(data, image_format) {
-            Err(_) => return Err(InvalidFormatError),
+            Err(_) => {
+                return Err(TextureError::InvalidFormat(format!(
+                    "Faulty format: {:?}",
+                    image_format
+                )))
+            }
             Ok(v) => v,
         };
 

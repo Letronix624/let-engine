@@ -1,12 +1,13 @@
 //! Objects to be drawn to the screen.
 
+pub mod appearance;
+pub mod color;
 pub mod labels;
 pub mod physics;
 pub mod scenes;
-use crate::{
-    error::{objects::NoObjectError, textures::*},
-    prelude::*,
-};
+
+use crate::{error::objects::ObjectError, prelude::*};
+
 use scenes::Layer;
 
 use anyhow::Result;
@@ -14,10 +15,7 @@ use glam::f32::{vec2, Vec2};
 use hashbrown::HashMap;
 use parking_lot::Mutex;
 
-use std::{
-    default,
-    sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 type RigidBodyParent = Option<Option<Weak<Mutex<Node<Object>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 pub(crate) type NObject = Arc<Mutex<Node<Object>>>;
@@ -145,97 +143,6 @@ impl Node<Object> {
     }
 }
 
-/// Holds everything about the appearance of objects like
-/// textures, vetex/index data, color and material.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Appearance {
-    visible: bool,
-    material: Option<materials::Material>,
-    model: Option<Model>,
-    transform: Transform,
-    color: [f32; 4],
-}
-
-use paste::paste;
-
-use self::physics::Collider;
-macro_rules! getters_and_setters {
-    ($field:ident, $title:expr, $type:ty) => {
-        #[doc=concat!("Sets ", $title, " of this appearance and returns self.")]
-        #[inline]
-        pub fn $field(mut self, $field: $type) -> Self {
-            self.$field = $field;
-            self
-        }
-        paste! {
-            #[doc=concat!("Sets ", $title, " of this appearance.")]
-            #[inline]
-            pub fn [<set_ $field>](&mut self, $field: $type) {
-                self.$field = $field;
-            }
-        }
-        paste! {
-            #[doc=concat!("Gets ", $title," of this appearance.")]
-            #[inline]
-            pub fn [<get_ $field>](&self) -> &$type {
-                &self.$field
-            }
-        }
-        paste! {
-            #[doc=concat!("Gets a mutable reference to ", $title," of this appearance.")]
-            #[inline]
-            pub fn [<get_mut_ $field>](&mut self) -> &mut $type {
-                &mut self.$field
-            }
-        }
-    };
-}
-
-impl Appearance {
-    /// Makes a default appearance.
-    pub fn new() -> Self {
-        Self {
-            ..Default::default()
-        }
-    }
-
-    /// Scales the object appearance according to the texture applied. Works best in Expand camera mode for best quality.
-    pub fn auto_scale(&mut self) -> Result<(), NoTextureError> {
-        let dimensions;
-        if let Some(material) = &self.material {
-            dimensions = if let Some(texture) = &material.texture {
-                texture.dimensions()
-            } else {
-                return Err(NoTextureError);
-            };
-        } else {
-            return Err(NoTextureError);
-        };
-
-        self.transform.size = vec2(dimensions.0 as f32 / 1000.0, dimensions.1 as f32 / 1000.0);
-
-        Ok(())
-    }
-
-    getters_and_setters!(visible, "the visibility", bool);
-    getters_and_setters!(model, "the model", Option<Model>);
-    getters_and_setters!(transform, "the transform", Transform);
-    getters_and_setters!(material, "the material", Option<materials::Material>);
-    getters_and_setters!(color, "the color", [f32; 4]);
-}
-
-impl default::Default for Appearance {
-    fn default() -> Self {
-        Self {
-            visible: true,
-            material: None,
-            model: None,
-            transform: Transform::default(),
-            color: [1.0; 4],
-        }
-    }
-}
-
 /// Object to be rendered on the screen and get the physics processed of.
 #[derive(Default, Clone)]
 pub struct Object {
@@ -256,14 +163,19 @@ impl Object {
     }
     /// Initializes the object into a layer.
     pub fn init(&mut self, layer: &Layer) {
-        self.init_with_optional_parent(layer, None);
+        self.init_with_optional_parent(layer, None).unwrap();
     }
     /// Initializes the object into a layer with a parent object.
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) {
-        self.init_with_optional_parent(layer, Some(parent));
+    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
+        self.init_with_optional_parent(layer, Some(parent))?;
+        Ok(())
     }
     /// Initializes the object into a layer with an optional parent object.
-    pub fn init_with_optional_parent(&mut self, layer: &Layer, parent: Option<&Object>) {
+    pub fn init_with_optional_parent(
+        &mut self,
+        layer: &Layer,
+        parent: Option<&Object>,
+    ) -> Result<(), ObjectError> {
         self.layer = Some(layer.clone());
         // Init ID of this object.
         self.id = layer.increment_id();
@@ -272,7 +184,7 @@ impl Object {
 
         let mut rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
-            let parent = parent.as_node().unwrap(); // Uninitialized parent error.
+            let parent = parent.as_node().ok_or(ObjectError::UninitializedParent)?;
             rigid_body_parent = parent.lock().rigid_body_parent.clone();
             parent.clone()
         } else {
@@ -313,21 +225,22 @@ impl Object {
 
         // Add yourself to the list of children of the parent.
         parent.lock().children.push(node.clone());
+        Ok(())
     }
 
     /// Removes the object from it's layer.
-    pub fn remove(&mut self) -> Result<(), NoObjectError> {
+    pub fn remove(&mut self) -> Result<(), ObjectError> {
         let mut map = self
             .layer
             .as_ref()
-            .expect("uninitialized")
+            .ok_or(ObjectError::Uninitialized)?
             .objects_map
-            .lock(); // uninitialized error
+            .lock();
         let mut rigid_bodies = self.layer.as_ref().unwrap().rigid_body_roots().lock();
         let node = if let Some(object) = map.remove(&self.id) {
             object
         } else {
-            return Err(NoObjectError);
+            return Err(ObjectError::Uninitialized);
         };
         rigid_bodies.remove(&self.id);
         // Remove self from the physics side.
@@ -364,7 +277,9 @@ impl Object {
         &self.appearance
     }
 
-    /// Returns the identification number of the object specific the layer it's inside right now.
+    /// Returns the identification number of the object specific the layer it is inside right now.
+    ///
+    /// Returns 0 in case it is not initialized to a layer yet.
     pub fn id(&self) -> usize {
         self.id
     }
@@ -375,21 +290,27 @@ impl Object {
         self.physics.rigid_body_handle
     }
     /// Updates the object to match the object information located inside the system of the layer. Useful when having physics.
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<(), ObjectError> {
         // receive
-        if let Some(arc) = self.reference.clone().unwrap().upgrade() {
+        if let Some(arc) = self
+            .reference
+            .clone()
+            .ok_or(ObjectError::Uninitialized)?
+            .upgrade()
+        {
             let object = &arc.lock().object;
             self.transform = object.transform;
             self.appearance = object.appearance().clone();
         } else {
             self.physics.remove();
-        }
+        };
+        Ok(())
     }
     /// Updates the object inside the layer system to match with this one. Useful when doing anything to the object and submitting it with this function.
-    pub fn sync(&mut self) {
+    pub fn sync(&mut self) -> Result<(), ObjectError> {
         // send
         // update public position of all children recursively
-        let node = self.as_node().expect("uninitialized"); // Return error in the future.
+        let node = self.as_node().ok_or(ObjectError::Uninitialized)?;
         {
             let mut node = node.lock();
             self.parent_transform = self.physics.update(
@@ -404,6 +325,7 @@ impl Object {
         let arc = self.reference.clone().unwrap().upgrade().unwrap();
         let mut object = arc.lock();
         object.object = self.clone();
+        Ok(())
     }
     /// Returns the collider of the object in case it has one.
     pub fn collider(&self) -> Option<&Collider> {

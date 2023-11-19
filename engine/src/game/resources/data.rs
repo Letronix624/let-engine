@@ -1,7 +1,9 @@
 //! Holds model related data structures like Vertices and premade models as well as a circle maker macro.
 
-use glam::f32::{vec2, Mat4, Vec2};
+use glam::f32::{vec2, Mat4, Vec2, Vec4};
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
+
+use super::{ModelData, Resources};
 
 /// A vertex containing it's position (xy) and texture position (uv).
 #[repr(C)]
@@ -36,32 +38,41 @@ pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> Vertex {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
 pub(crate) struct ModelViewProj {
-    //sepparate to vertex and fragment
     pub model: Mat4,
     pub view: Mat4,
+    pub proj: Mat4,
+}
+
+/// Default instance data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, BufferContents, VTX)]
+pub(crate) struct InstanceData {
+    #[format(R32G32B32A32_SFLOAT)]
+    pub color: Vec4,
+    #[format(R32_UINT)]
+    pub layer: u32,
+    #[format(R32G32B32A32_SFLOAT)]
+    pub model: Mat4,
+    #[format(R32G32B32A32_SFLOAT)]
+    pub view: Mat4,
+    #[format(R32G32B32A32_SFLOAT)]
     pub proj: Mat4,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, BufferContents)]
 pub(crate) struct ObjectFrag {
-    pub color: [f32; 4],
+    pub color: Vec4,
     pub texture_id: u32,
 }
 
 impl Default for ObjectFrag {
     fn default() -> Self {
         Self {
-            color: [0.0, 0.0, 0.0, 0.0],
+            color: Vec4::splat(0.0),
             texture_id: 0,
         }
     }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, BufferContents)]
-pub(crate) struct PushConstant {
-    pub resolution: [f32; 2],
 }
 
 /// Vertex and index data for the appearance and shape of objects.
@@ -97,6 +108,25 @@ impl Data {
         Data {
             vertices: TRIANGLE.into(),
             indices: TRIANGLE_ID.into(),
+        }
+    }
+    /// Returns if the data has an empty field.
+    pub fn is_empty(&self) -> bool {
+        self.vertices.is_empty() || self.indices.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BasicShapes {
+    pub square: ModelData,
+    pub triangle: ModelData,
+}
+
+impl BasicShapes {
+    pub fn new(resources: &Resources) -> Self {
+        Self {
+            square: ModelData::new(Data::square(), resources).unwrap(),
+            triangle: ModelData::new(Data::triangle(), resources).unwrap(),
         }
     }
 }

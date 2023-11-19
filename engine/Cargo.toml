@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.7.1"
+version = "0.8.0"
 authors = ["Let"]
 edition = "2021"
 description = "A simple 2d game engine."
@@ -15,12 +15,11 @@ keywords = [
 license = "Apache-2.0"
 
 [dependencies]
-vulkano = "0.34"
-winit = "0.28"
+vulkano = "0.34.1"
+winit = { version = "0.28" }
 image = "0.24"
 
 #rodio = "0.17.1"
-#error-stack = "0.3.1"
 
 anyhow = "1.0"
 thiserror = "1.0"
@@ -37,9 +36,13 @@ glam = { version = "0.24.2", features = [ "bytemuck" ] }
 nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
 
 rusttype = { version = "0.9.3", features = [ "gpu_cache" ] }
-egui_winit_vulkano = { git = "https://github.com/Letronix624/egui_winit_vulkano.git", optional = true }
+egui_winit_vulkano = { version = "0.26", optional = true }
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
 paste = "1.0.14"
+
+[dev-dependencies]
+
+egui_demo_lib = "0.23"
 
 [features]
 default = []

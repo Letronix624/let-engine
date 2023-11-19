@@ -5,7 +5,6 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, Event, ModifiersState, WindowEvent};
 pub use winit::event::{MouseButton, VirtualKeyCode};
 
@@ -31,7 +30,7 @@ pub struct Input {
     cursor_position: Arc<AtomicCell<Vec2>>,
     cursor_inside: Arc<AtomicBool>,
     //dimensions of the window
-    dimensions: Arc<AtomicCell<(f32, f32)>>, // lazylock future
+    dimensions: Arc<AtomicCell<Vec2>>, // lazylock future
 }
 
 impl Input {
@@ -43,13 +42,12 @@ impl Input {
             mouse_down: Arc::new(Mutex::new(HashSet::new())),
             cursor_position: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
             cursor_inside: Arc::new(AtomicBool::new(false)),
-            dimensions: Arc::new(AtomicCell::new((0.0, 0.0))),
+            dimensions: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
         }
     }
     /// Updates the input with the event.
-    pub(crate) fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: PhysicalSize<u32>) {
-        self.dimensions
-            .store((dimensions.width as f32, dimensions.height as f32));
+    pub(crate) fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: Vec2) {
+        self.dimensions.store(dimensions);
         if let Event::WindowEvent { event, .. } = event {
             match event {
                 WindowEvent::KeyboardInput { input, .. } => {
@@ -77,8 +75,8 @@ impl Input {
                 }
                 WindowEvent::CursorMoved { position, .. } => {
                     self.cursor_position.store(vec2(
-                        (position.x as f32 / dimensions.width as f32) * 2.0 - 1.0,
-                        (position.y as f32 / dimensions.height as f32) * 2.0 - 1.0,
+                        (position.x as f32 / dimensions.x) * 2.0 - 1.0,
+                        (position.y as f32 / dimensions.y) * 2.0 - 1.0,
                     ));
                 }
                 WindowEvent::CursorEntered { .. } => {
@@ -114,21 +112,21 @@ impl Input {
 
     /// Returns the cursor position going from -1.0 to 1.0 x and y scaled with the inserted layers scaling properties.
     pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
-        let (width, height) = crate::utils::scale(layer.camera_scaling(), self.dimensions.load());
+        let dimensions = crate::utils::scale(layer.camera_scaling(), self.dimensions.load());
         let cp = self.cursor_position.load();
-        vec2(cp[0] * width, cp[1] * height)
+        vec2(cp[0], cp[1]) * dimensions
     }
 
     /// Returns the cursor position in layer world space.
     pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
         let dims = self.dimensions.load();
-        let (width, height) = crate::utils::scale(layer.camera_scaling(), dims);
+        let dimensions = crate::utils::scale(layer.camera_scaling(), dims);
         let cp = self.cursor_position.load();
         let cam = layer.camera_position();
         let zoom = 1.0 / layer.zoom();
         vec2(
-            cp[0] * (width * zoom) + cam[0] * 2.0,
-            cp[1] * (height * zoom) + cam[1] * 2.0,
+            cp[0] * (dimensions.x * zoom) + cam[0] * 2.0,
+            cp[1] * (dimensions.y * zoom) + cam[1] * 2.0,
         )
     }
 

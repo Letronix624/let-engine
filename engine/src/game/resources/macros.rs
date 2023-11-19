@@ -9,7 +9,7 @@
 #[macro_export]
 macro_rules! model {
     ($data:expr) => {{
-        let_engine::prelude::Model::new($data, &RESOURCES)
+        let_engine::prelude::ModelData::new($data, &RESOURCES)
     }};
 }
 
@@ -123,17 +123,5 @@ macro_rules! material {
             $descriptor_bindings,
             &RESOURCES,
         )
-    }};
-}
-
-/// Describes a write operation for a descriptor.
-/// Used with materials to interact with custom shaders inside them.
-#[macro_export]
-macro_rules! write_descriptor {
-    (
-        $buf:expr,
-        $set:expr,
-    ) => {{
-        RESOURCES.new_descriptor_write($buf, $set)
     }};
 }

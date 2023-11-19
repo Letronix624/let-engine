@@ -1,4 +1,5 @@
 use super::Vulkan;
+use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
     buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -33,6 +34,7 @@ pub(crate) struct Loader {
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,
     pub object_buffer_allocator: SubbufferAllocator,
+    pub instance_buffer_allocator: SubbufferAllocator,
     pub descriptor_set_allocator: StandardDescriptorSetAllocator,
     pub command_buffer_allocator: StandardCommandBufferAllocator,
     pub pipeline_cache: Arc<PipelineCache>,
@@ -40,7 +42,7 @@ pub(crate) struct Loader {
 
 impl Loader {
     /// Initializes the loader
-    pub fn init(vulkan: &Vulkan) -> Self {
+    pub fn init(vulkan: &Vulkan) -> Result<Self> {
         let memory_allocator =
             Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
 
@@ -48,7 +50,8 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::VERTEX_BUFFER,
-                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE
+                    | MemoryTypeFilter::PREFER_DEVICE,
                 ..Default::default()
             },
         );
@@ -57,7 +60,8 @@ impl Loader {
             memory_allocator.clone(),
             SubbufferAllocatorCreateInfo {
                 buffer_usage: BufferUsage::INDEX_BUFFER,
-                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE
+                    | MemoryTypeFilter::PREFER_DEVICE,
                 ..Default::default()
             },
         );
@@ -71,6 +75,15 @@ impl Loader {
             },
         );
 
+        let instance_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
+            memory_allocator.clone(),
+            SubbufferAllocatorCreateInfo {
+                buffer_usage: BufferUsage::VERTEX_BUFFER,
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+        );
+
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             vulkan.device.clone(),
             StandardDescriptorSetAllocatorCreateInfo::default(),
@@ -79,25 +92,25 @@ impl Loader {
         let command_buffer_allocator = StandardCommandBufferAllocator::new(
             vulkan.device.clone(),
             StandardCommandBufferAllocatorCreateInfo {
-                primary_buffer_count: 32,
                 secondary_buffer_count: 2,
                 ..Default::default()
             },
         );
 
         let pipeline_cache = unsafe {
-            PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default()).unwrap()
+            PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default())?
         };
 
-        Self {
+        Ok(Self {
             memory_allocator,
             vertex_buffer_allocator,
             index_buffer_allocator,
             object_buffer_allocator,
+            instance_buffer_allocator,
             descriptor_set_allocator,
             command_buffer_allocator,
             pipeline_cache,
-        }
+        })
     }
 
     /// Loads a texture to the GPU.

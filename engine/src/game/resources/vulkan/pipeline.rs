@@ -1,4 +1,3 @@
-use crate::data::Vertex as GameVertex;
 use std::sync::Arc;
 use vulkano::device::Device;
 use vulkano::pipeline::graphics::color_blend::{
@@ -8,9 +7,7 @@ use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
 use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
 use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
-use vulkano::pipeline::graphics::{
-    input_assembly::InputAssemblyState, vertex_input::Vertex, viewport::ViewportState,
-};
+use vulkano::pipeline::graphics::{input_assembly::InputAssemblyState, viewport::ViewportState};
 use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
 use vulkano::pipeline::{
     DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
@@ -24,6 +21,7 @@ pub fn create_pipeline(
     vs: &Arc<ShaderModule>,
     fs: &Arc<ShaderModule>,
     subpass: Subpass,
+    vertex_buffer_description: impl VertexDefinition,
 ) -> Arc<GraphicsPipeline> {
     let vertex = vs.entry_point("main").unwrap();
     let fragment = fs.entry_point("main").unwrap();
@@ -40,16 +38,15 @@ pub fn create_pipeline(
     )
     .unwrap();
 
+    let vertex_input_state = vertex_buffer_description
+        .definition(&vertex.info().input_interface)
+        .unwrap();
     GraphicsPipeline::new(
         device.clone(),
         None,
         GraphicsPipelineCreateInfo {
             stages: stages.into_iter().collect(),
-            vertex_input_state: Some(
-                GameVertex::per_vertex()
-                    .definition(&vertex.info().input_interface)
-                    .unwrap(),
-            ),
+            vertex_input_state: Some(vertex_input_state),
             input_assembly_state: Some(input_assembly),
             viewport_state: Some(ViewportState::default()),
             rasterization_state: Some(RasterizationState {

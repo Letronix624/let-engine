@@ -1,7 +1,8 @@
 //! Resources to be handled by the engine like textures, sounds and fonts.
 
+use crate::prelude::*;
+
 use super::Labelifier;
-use crate::window::Window;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
@@ -18,9 +19,8 @@ pub mod textures;
 pub mod data;
 pub mod materials;
 mod model;
-pub use model::Model;
+pub use model::*;
 mod macros;
-pub use macros::*;
 
 const NOT_INITIALIZED_MSG: &str = "Resources are not initialized to a game.";
 
@@ -29,6 +29,8 @@ const NOT_INITIALIZED_MSG: &str = "Resources are not initialized to a game.";
 pub struct Resources {
     pub(crate) vulkan: Option<Vulkan>,
     pub(crate) loader: Option<Arc<Mutex<Loader>>>,
+
+    pub(crate) shapes: Option<BasicShapes>,
     pub(crate) labelifier: Option<Arc<Mutex<Labelifier>>>,
 }
 
@@ -37,14 +39,16 @@ impl Resources {
         Self {
             vulkan: None,
             loader: None,
+            shapes: None,
             labelifier: None,
         }
     }
 
     /// Initialisation
     pub(crate) fn init(&mut self, vulkan: Vulkan) {
-        self.loader = Some(Arc::new(Mutex::new(Loader::init(&vulkan))));
+        self.loader = Some(Arc::new(Mutex::new(Loader::init(&vulkan).unwrap())));
         self.vulkan = Some(vulkan);
+        self.shapes = Some(BasicShapes::new(self));
         self.labelifier = Some(Arc::new(Mutex::new(Labelifier::new(self))));
     }
 
@@ -56,6 +60,9 @@ impl Resources {
     }
     pub(crate) fn labelifier(&self) -> &Arc<Mutex<Labelifier>> {
         self.labelifier.as_ref().expect(NOT_INITIALIZED_MSG)
+    }
+    pub(crate) fn shapes(&self) -> &BasicShapes {
+        self.shapes.as_ref().expect(NOT_INITIALIZED_MSG)
     }
     //redraw
     pub(crate) fn update(&self) {
