@@ -36,7 +36,7 @@ glam = { version = "0.24.2", features = [ "bytemuck" ] }
 nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
 
 rusttype = { version = "0.9.3", features = [ "gpu_cache" ] }
-egui_winit_vulkano = { git = "https://github.com/Letronix624/egui_winit_vulkano.git", optional = true }
+egui_winit_vulkano = { version = "0.26", optional = true }
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
 paste = "1.0.14"
 

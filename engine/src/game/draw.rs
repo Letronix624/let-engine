@@ -303,7 +303,7 @@ impl Draw {
                     0,
                     PersistentDescriptorSet::new(
                         &loader.descriptor_set_allocator,
-                        pipeline.layout().set_layouts().get(0).unwrap().clone(),
+                        pipeline.layout().set_layouts().first().unwrap().clone(),
                         [
                             WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
                             WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),

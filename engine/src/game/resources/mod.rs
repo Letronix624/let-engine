@@ -21,7 +21,6 @@ pub mod materials;
 mod model;
 pub use model::*;
 mod macros;
-pub use macros::*;
 
 const NOT_INITIALIZED_MSG: &str = "Resources are not initialized to a game.";
 
