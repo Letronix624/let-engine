@@ -41,7 +41,6 @@ pub fn create_pipeline(
     let vertex_input_state = vertex_buffer_description
         .definition(&vertex.info().input_interface)
         .unwrap();
-
     GraphicsPipeline::new(
         device.clone(),
         None,
