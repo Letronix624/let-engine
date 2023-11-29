@@ -228,7 +228,7 @@ impl Draw {
         shapes: &BasicShapes,
     ) -> Result<(), VulkanError> {
         for layer in scene.get_layers().iter() {
-            let mut order: Vec<VisualObject> = vec![];
+            let mut order: Vec<VisualObject> = Vec::with_capacity(layer.objects_map.lock().len());
             let mut instances: Vec<Instance> = vec![];
 
             Node::order_position(&mut order, &layer.root.lock());

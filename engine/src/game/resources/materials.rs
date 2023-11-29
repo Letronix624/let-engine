@@ -6,7 +6,10 @@ use crate::prelude::{InstanceData, Texture, Vertex as GameVertex};
 
 use anyhow::Result;
 use derive_builder::Builder;
+use smallvec::SmallVec;
+use std::any::Any;
 use std::sync::Arc;
+use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
 use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
@@ -221,11 +224,14 @@ impl Material {
 }
 impl Material {
     /// Writes to the material changing the variables for the shaders.
-    pub fn write(
+    ///
+    /// # Safety
+    /// The program will crash in case in case the data input here is not as the shader wants it.
+    pub unsafe fn write(
+        // this has to be changed
         &mut self,
         descriptor: Vec<WriteDescriptorSet>,
         resources: &Resources,
-        // allocator: &StandardDescriptorSetAllocator,
     ) {
         let loader = resources.loader().lock();
         self.descriptor = Some(
@@ -238,6 +244,7 @@ impl Material {
             .unwrap(),
         );
     }
+    pub fn push_write(op: impl BufferContents) {}
 
     /// Sets the layer of the texture in case it has a texture with layers.
     pub fn set_layer(&mut self, id: u32) -> Result<(), TextureError> {
@@ -333,6 +340,7 @@ pub struct Shaders {
     pub(crate) vertex: Arc<ShaderModule>,
     pub(crate) fragment: Arc<ShaderModule>,
     entry_point: Box<str>,
+    // layout: Arc<Vec<Box<dyn bytemuck::AnyBitPattern>>>,
 }
 
 impl Shaders {
@@ -347,6 +355,7 @@ impl Shaders {
         fragment_bytes: &[u8],
         entry_point: &str,
         resources: &Resources,
+        // layout: &[Box<dyn BufferContents + Any>],
     ) -> Result<Self, ShaderError> {
         let device = &resources.vulkan().device;
         let vertex_words = bytes_to_words(vertex_bytes)?;
