@@ -1,6 +1,6 @@
 //! The default input system by the engine.
 
-use crate::Layer;
+use crate::objects::scenes::Layer;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

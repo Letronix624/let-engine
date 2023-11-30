@@ -87,7 +87,7 @@ macro_rules! texture_from_raw {
     }};
 }
 
-/// Loads a shader from glsl bytes. Takes `&[u8]` and returns [Shaders](crate::materials::Shaders).
+/// Loads a shader from glsl bytes. Takes `&[u8]` and returns [Shaders](crate::prelude::Shaders).
 /// Those shaders can be used when making materials.
 ///
 /// # Safety

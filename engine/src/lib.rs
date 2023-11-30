@@ -4,15 +4,15 @@
 //! [![Website](https://img.shields.io/website?up_message=Up&up_color=f6ffa6&down_message=Down&down_color=lightgrey&url=https%3A%2F%2Flet-server.net%2F&style=for-the-badge&logo=apache&color=f6ffa6&link=https%3A%2F%2Flet-server.net%2F)](https://let-server.net/)
 //!
 //! A Game engine made in Rust.
+pub mod camera;
+pub(crate) mod draw;
 pub mod error;
 mod game;
+pub use game::*;
+pub mod objects;
 pub mod prelude;
+pub mod resources;
 pub(crate) mod utils;
-
-pub use game::{
-    camera, data, events, materials, objects, objects::Object, physics, resources, tvert, vert,
-    window, Game, Input, Layer, Scene, Time, Transform, Vertex,
-};
 
 pub use glam::{vec2, Vec2};
 pub use once_cell::sync::Lazy;
@@ -22,6 +22,7 @@ pub use parking_lot::Mutex;
 #[cfg(feature = "egui")]
 pub use egui_winit_vulkano::egui;
 pub use rapier2d;
+pub use rapier2d::prelude::CoefficientCombineRule;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 pub type _Resources = std::sync::Arc<Mutex<resources::Resources>>;

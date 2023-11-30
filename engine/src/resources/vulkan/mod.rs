@@ -8,7 +8,7 @@ pub mod swapchain;
 mod window;
 
 use crate::prelude::*;
-use crate::Vertex as GameVertex;
+use crate::resources::data::Vertex as GameVertex;
 use anyhow::Result;
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;

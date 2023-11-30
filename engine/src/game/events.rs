@@ -83,7 +83,7 @@ pub enum InputEvent {
     /// The modifiers were changed.
     /// Gets called when either shift, ctrl, alt or the super key get pressed.
     ///
-    /// The changes can be taken from the [INPUT](Input) struct.
+    /// The changes can be taken from the [INPUT](input::Input) struct.
     ModifiersChanged,
 }
 

@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{error::draw::*, prelude::*, resources::Loader};
 use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
@@ -18,16 +18,8 @@ use vulkano::{
     Validated, VulkanError as VulkanoError,
 };
 
-use super::{
-    resources::vulkan::{
-        swapchain::create_swapchain_and_images, window_size_dependent_setup, Vulkan,
-    },
-    Loader,
-};
-
-use crate::{
-    camera::CameraSettings, error::draw::*, game::Node, objects::VisualObject, resources::data::*,
-    resources::Resources, utils, Object,
+use super::resources::vulkan::{
+    swapchain::create_swapchain_and_images, window_size_dependent_setup, Vulkan,
 };
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
@@ -222,7 +214,7 @@ impl Draw {
     /// Draws the Game Scene on the given command buffer.
     fn write_secondary_command_buffer(
         &self,
-        scene: &crate::Scene,
+        scene: &Scene,
         command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
         loader: &Loader,
         shapes: &BasicShapes,
@@ -429,7 +421,7 @@ impl Draw {
     pub(crate) fn redrawevent(
         &mut self,
         resources: &Resources,
-        scene: &crate::Scene,
+        scene: &Scene,
         #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
     ) -> Result<(), VulkanError> {
         let vulkan = resources.vulkan();

@@ -1,29 +1,19 @@
-pub mod resources;
+use super::objects;
+use super::resources::{vulkan::Vulkan, Resources};
 use anyhow::Result;
 use glam::vec2;
-use resources::{vulkan::Vulkan, Loader, Resources};
-pub mod objects;
-use objects::Node;
-pub use objects::{
-    physics,
-    scenes::{Layer, Scene},
-    Transform,
-};
-pub mod camera;
-mod draw;
+use objects::scenes::Scene;
 pub mod window;
-pub use draw::Draw;
-use objects::labels::Labelifier;
+pub(crate) use super::draw::Draw;
 pub use winit::event_loop::ControlFlow;
 use winit::{
     event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder},
 };
 pub mod input;
-pub use input::Input;
-pub use resources::materials;
+use input::Input;
 #[cfg(feature = "egui")]
-pub mod egui;
+mod egui;
 pub mod events;
 
 use atomic_float::AtomicF64;
@@ -33,9 +23,6 @@ use std::{
     sync::{atomic::Ordering, Arc},
     time::SystemTime,
 };
-
-pub use resources::data;
-pub use resources::data::{tvert, vert, Vertex};
 
 use crate::error::draw::VulkanError;
 
@@ -58,8 +45,8 @@ use self::{
 #[macro_export]
 macro_rules! let_engine {
     () => {
-        static INPUT: let_engine::Lazy<let_engine::Input> =
-            let_engine::Lazy::new(let_engine::Input::default);
+        static INPUT: let_engine::Lazy<let_engine::input::Input> =
+            let_engine::Lazy::new(let_engine::input::Input::default);
         static TIME: let_engine::Lazy<let_engine::Time> =
             let_engine::Lazy::new(let_engine::Time::default);
         static _RESOURCES: let_engine::Lazy<let_engine::_Resources> = let_engine::Lazy::new(|| {
@@ -67,8 +54,8 @@ macro_rules! let_engine {
                 let_engine::resources::Resources::new(),
             ))
         });
-        static SCENE: let_engine::Lazy<let_engine::Scene> =
-            let_engine::Lazy::new(let_engine::Scene::default);
+        static SCENE: let_engine::Lazy<let_engine::objects::scenes::Scene> =
+            let_engine::Lazy::new(let_engine::objects::scenes::Scene::default);
         static RESOURCES: let_engine::Lazy<let_engine::resources::Resources> =
             let_engine::Lazy::new(|| {
                 let resources = _RESOURCES.lock();

@@ -1,5 +1,5 @@
 use super::Resources;
-use crate::{data::Data, error::NoDataError, Vertex};
+use crate::{error::NoDataError, prelude::*};
 use anyhow::Result;
 use vulkano::buffer::Subbuffer;
 

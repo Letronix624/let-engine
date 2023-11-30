@@ -1,4 +1,5 @@
 /target
-/src/notes
 /.vscode
 /.obsidian
+/Cargo.lock
+/engine/Cargo.lock

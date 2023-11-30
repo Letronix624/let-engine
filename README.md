@@ -84,6 +84,11 @@ codegen-units = 1
 
 A graphics driver with Vulkan 1.2 support.
 
+# Contribution
+
+feel free to contribute. Go resolve some of the issues I made or take a look at this:
 [![dependency status](https://deps.rs/repo/github/Letronix624/Let-Engine/status.svg)](https://deps.rs/repo/github/Letronix624/Let-Engine)
+
+I would be grateful.
 
 https://crates.io/crates/let-engine

@@ -6,10 +6,7 @@ use crate::prelude::{InstanceData, Texture, Vertex as GameVertex};
 
 use anyhow::Result;
 use derive_builder::Builder;
-use smallvec::SmallVec;
-use std::any::Any;
 use std::sync::Arc;
-use vulkano::buffer::BufferContents;
 use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
 use vulkano::pipeline::graphics::multisample::MultisampleState;
 use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
@@ -244,7 +241,6 @@ impl Material {
             .unwrap(),
         );
     }
-    pub fn push_write(op: impl BufferContents) {}
 
     /// Sets the layer of the texture in case it has a texture with layers.
     pub fn set_layer(&mut self, id: u32) -> Result<(), TextureError> {
@@ -340,7 +336,6 @@ pub struct Shaders {
     pub(crate) vertex: Arc<ShaderModule>,
     pub(crate) fragment: Arc<ShaderModule>,
     entry_point: Box<str>,
-    // layout: Arc<Vec<Box<dyn bytemuck::AnyBitPattern>>>,
 }
 
 impl Shaders {

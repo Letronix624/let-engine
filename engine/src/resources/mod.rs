@@ -2,7 +2,6 @@
 
 use crate::prelude::*;
 
-use super::Labelifier;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;
