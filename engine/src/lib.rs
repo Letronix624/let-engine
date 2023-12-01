@@ -21,7 +21,8 @@ pub use parking_lot::Mutex;
 /// Egui feature on
 #[cfg(feature = "egui")]
 pub use egui_winit_vulkano::egui;
-pub use rapier2d;
+
+use rapier2d;
 pub use rapier2d::prelude::CoefficientCombineRule;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 

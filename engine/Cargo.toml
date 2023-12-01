@@ -6,7 +6,6 @@ edition = "2021"
 description = "A simple 2d game engine."
 readme = "../README.md"
 repository = "https://github.com/Letronix624/Let-Engine"
-documentation = "https://let-server.net/docs/let_engine"
 keywords = [
     "gamedev",
     "graphics",
