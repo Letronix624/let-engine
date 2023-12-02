@@ -167,7 +167,7 @@ const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 #[macro_export]
 macro_rules! make_circle {
     ($corners:expr) => {{ // Make a full circle fan with variable edges.
-        use let_engine::{vec2, Vertex};
+        use let_engine::prelude::{vec2, Vertex};
         let corners = $corners;
         let mut vertices: Vec<Vertex> = vec![];
         let mut indices: Vec<u32> = vec![];
@@ -194,7 +194,7 @@ macro_rules! make_circle {
     }};
     ($corners:expr, $percent:expr) => {{ // Make a pie circle fan with the amount of edges and completeness of the circle.
         use core::f64::consts::TAU;
-        use let_engine::{vec2, Vertex};
+        use let_engine::prelude::{vec2, Vertex};
         let corners = $corners;
         let percent = $percent as f64;
         let percent: f64 = percent.clamp(0.0, 1.0);

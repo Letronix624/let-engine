@@ -2,10 +2,17 @@
 //!
 //! Requires the egui feature to be enabled.
 //! Runnable with `cargo run --features=egui --example egui`
+#![allow(unused_imports)]
 use let_engine::prelude::*;
 
 let_engine::let_engine!();
 
+#[cfg(not(feature = "egui"))]
+fn main() {
+    eprintln!("This example requires you to have the `egui` feature enabled.");
+}
+
+#[cfg(feature = "egui")]
 fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
