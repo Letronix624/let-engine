@@ -4,7 +4,7 @@ use anyhow::Result;
 use derive_builder::Builder;
 use glam::vec2;
 use objects::scenes::Scene;
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 pub mod window;
 pub(crate) use super::draw::Draw;
 pub use winit::event_loop::ControlFlow;
@@ -23,6 +23,7 @@ pub mod events;
 use atomic_float::AtomicF64;
 use crossbeam::atomic::AtomicCell;
 
+use std::time::Duration;
 use std::{
     sync::{atomic::Ordering, Arc},
     time::SystemTime,
@@ -40,7 +41,7 @@ use self::{
 pub struct Components {
     resources: Resources,
     scene: Scene,
-    pub(crate) time: Time,
+    pub(crate) time: Arc<Time>,
     pub(crate) input: Input,
     window: Window,
     tick_settings: Arc<Mutex<TickSettings>>,
@@ -54,10 +55,10 @@ impl Resource for Components {
 }
 
 impl Components {
-    pub fn new(
+    pub(crate) fn new(
         resources: Resources,
         scene: Scene,
-        time: Time,
+        time: Arc<Time>,
         input: Input,
         window: Window,
 
@@ -76,7 +77,7 @@ impl Components {
     pub fn scene(&self) -> &Scene {
         &self.scene
     }
-    pub fn time(&self) -> &Time {
+    pub fn time(&self) -> &Arc<Time> {
         &self.time
     }
     pub fn input(&self) -> &Input {
@@ -148,7 +149,7 @@ impl Engine {
 
         let scene = Scene::default();
         let input = Input::new();
-        let time = Time::default();
+        let time = Arc::new(Time::default());
         let tick_system = TickSystem::new(settings.tick_settings.clone());
 
         let draw = Draw::setup(&resources);
@@ -357,27 +358,30 @@ impl Engine {
 }
 
 /// Holds the timings of the engine like runtime and delta time.
-#[derive(Clone)]
 pub struct Time {
     /// Time since engine start.
-    pub time: SystemTime,
-    delta_instant: Arc<AtomicCell<SystemTime>>,
-    delta_time: Arc<AtomicF64>,
+    time: SystemTime,
+    time_scale: AtomicF64,
+    delta_instant: AtomicCell<SystemTime>,
+    delta_time: AtomicF64,
+    pub(crate) zero_cvar: (Mutex<()>, Condvar),
 }
 
 impl Default for Time {
     fn default() -> Self {
         Self {
             time: SystemTime::now(),
-            delta_instant: Arc::new(AtomicCell::new(SystemTime::now())),
-            delta_time: Arc::new(AtomicF64::new(0.0f64)),
+            time_scale: AtomicF64::new(1.0f64),
+            delta_instant: AtomicCell::new(SystemTime::now()),
+            delta_time: AtomicF64::new(0.0f64),
+            zero_cvar: (Mutex::new(()), Condvar::new()),
         }
     }
 }
 
 impl Time {
     /// Updates the time data on frame redraw.
-    pub(crate) fn update(&mut self) {
+    pub(crate) fn update(&self) {
         self.delta_time.store(
             self.delta_instant.load().elapsed().unwrap().as_secs_f64(),
             Ordering::Release,
@@ -387,6 +391,11 @@ impl Time {
 
     /// Returns the time it took to execute last iteration.
     pub fn delta_time(&self) -> f64 {
+        self.delta_time.load(Ordering::Acquire) * self.scale()
+    }
+
+    /// Returns the delta time of the update iteration that does not scale with the time scale.
+    pub fn unscaled_delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire)
     }
 
@@ -398,5 +407,28 @@ impl Time {
     /// Returns the time since start of the engine game session.
     pub fn time(&self) -> f64 {
         self.time.elapsed().unwrap().as_secs_f64()
+    }
+
+    /// Returns the time scale of the game
+    pub fn scale(&self) -> f64 {
+        self.time_scale.load(Ordering::Acquire)
+    }
+
+    /// Sets the time scale of the game.
+    ///
+    /// Panics if the given time scale is negative.
+    pub fn set_scale(&self, time_scale: f64) {
+        if time_scale.is_sign_negative() {
+            panic!("A negative time scale was given.");
+        }
+        self.time_scale.store(time_scale, Ordering::Release);
+        if time_scale != 0.0 {
+            self.zero_cvar.1.notify_all();
+        }
+    }
+
+    /// Sleeps the given duration times the time scale of the game engine.
+    pub fn sleep(&self, duration: Duration) {
+        spin_sleep::sleep(duration.mul_f64(self.time_scale.load(Ordering::Acquire)));
     }
 }

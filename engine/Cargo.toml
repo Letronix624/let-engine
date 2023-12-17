@@ -29,7 +29,6 @@ derive_builder = "0.12"
 indexmap = "2.0"
 atomic_float = "0.1"
 crossbeam = "0.8"
-once_cell = "1.18"
 
 glam = { version = "0.24.2", features = [ "bytemuck" ] }
 nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }

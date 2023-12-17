@@ -42,7 +42,7 @@ impl TickSystem {
         let settings = self.settings.clone();
         let mut index: usize = 0;
         let stop = self.stop.clone();
-        dbg!("one time");
+        let time = components.time().clone();
         self.handle = Some(Mutex::new(thread::spawn(move || loop {
             // capture tick start time.
             let start_time = SystemTime::now();
@@ -54,11 +54,25 @@ impl TickSystem {
             }
             // record the elapsed time.
             let elapsed_time = start_time.elapsed().unwrap();
-            // calculate waiting time
-            let waiting_time = if let TimeStep::Variable = settings.timestep_mode {
-                settings.tick_wait.saturating_sub(elapsed_time)
+
+            if time.scale() == 0.0 {
+                let mut guard = time.zero_cvar.0.lock();
+                time.zero_cvar.1.wait(&mut guard);
+            }
+
+            let tick_wait = if settings.time_scale_influence {
+                // Multiply the waiting duration with the inverse time scale.
+                settings.tick_wait.mul_f64(1.0 / time.scale())
             } else {
                 settings.tick_wait
+            };
+
+            // calculate waiting time
+            let waiting_time = if let TimeStep::Variable = settings.timestep_mode {
+                // Subtract the tick logic execution time from the waiting time to make the waiting time between ticks more consistent.
+                tick_wait.saturating_sub(elapsed_time)
+            } else {
+                tick_wait
             };
 
             // Spin sleep, so windows users with their lower quality sleep functions get the same sleep duration
@@ -97,7 +111,7 @@ pub struct TickSettings {
     ///
     /// ## Default configuration:
     ///
-    /// TimeStep::Variable
+    /// `TimeStep::Variable`
     ///
     /// Prevents the game from slowing down in case ticks become more time expensive.
     #[builder(default)]
@@ -106,23 +120,30 @@ pub struct TickSettings {
     ///
     /// ## Default configuration:
     ///
-    /// true
+    /// `true`
     #[builder(default = "true")]
     pub update_physics: bool,
     /// If there is some reporter it will report about the most recent tick to the given reporter.
     ///
     /// ## Default configuration:
     ///
-    /// None
+    /// `None`
     #[builder(setter(strip_option), default)]
     pub reporter: Option<TickReporter>,
     /// If this is true the tick system will be paused.
     ///
     /// ## Default configuration:
     ///
-    /// false
+    /// `false`
     #[builder(default)]
     pub paused: bool,
+    /// If this is true the tick systems tick rate will be influenced by the time scale.
+    ///
+    /// ## Default configuration:
+    ///
+    /// `true`
+    #[builder(default = "true")]
+    pub time_scale_influence: bool,
 }
 
 impl Default for TickSettings {
@@ -133,6 +154,7 @@ impl Default for TickSettings {
             timestep_mode: TimeStep::default(),
             reporter: None,
             paused: false,
+            time_scale_influence: true,
         }
     }
 }

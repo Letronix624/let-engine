@@ -15,8 +15,6 @@ pub mod resources;
 pub(crate) mod utils;
 
 pub use glam::{vec2, Vec2};
-pub use once_cell::sync::Lazy;
-pub use parking_lot::Mutex;
 
 /// Egui feature on
 #[cfg(feature = "egui")]
@@ -24,8 +22,6 @@ pub use egui_winit_vulkano::egui;
 
 pub use rapier2d::prelude::CoefficientCombineRule;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-
-pub type _Resources = std::sync::Arc<Mutex<resources::Resources>>;
 
 /// Cardinal directions
 pub mod directions {
