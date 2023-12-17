@@ -17,15 +17,9 @@ pub enum Event {
     Window(WindowEvent),
     /// Input events.
     Input(InputEvent),
-    /// Update event that happens before every frame.
-    Update,
-    /// Update that happens after every frame has been drawn.
-    FrameUpdate,
     /// The last event to be called in this loop.
     /// This is the "do on quit" event.
     Destroyed,
-    /// The loop has started.
-    Ready,
 }
 
 /// An event coming with window context.

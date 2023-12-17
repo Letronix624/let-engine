@@ -5,6 +5,7 @@ pub use image::ImageFormat;
 use image::{load_from_memory_with_format, DynamicImage};
 
 use derive_builder::Builder;
+use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
 pub use vulkano::image::sampler::BorderColor;
@@ -12,7 +13,7 @@ use vulkano::image::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
 
-use super::Resources;
+use super::{vulkan::Vulkan, Loader, Resource};
 
 /// Formats for the texture from raw data.
 #[derive(Clone, Copy, Debug)]
@@ -167,22 +168,37 @@ impl Texture {
         format: Format,
         layers: u32,
         settings: TextureSettings,
-        resources: &Resources,
+        resources: &impl Resource,
     ) -> Texture {
-        let loader = resources.loader().lock();
+        let resources = resources.resources();
+        let loader = resources.loader();
+        Self::from_raw_with_loader(
+            data,
+            dimensions,
+            format,
+            layers,
+            settings,
+            resources.vulkan(),
+            loader,
+        )
+    }
+
+    pub(crate) fn from_raw_with_loader(
+        data: &[u8],
+        dimensions: (u32, u32),
+        format: Format,
+        layers: u32,
+        settings: TextureSettings,
+        vulkan: &Vulkan,
+        loader: &Arc<Mutex<Loader>>,
+    ) -> Texture {
+        let loader = loader.lock();
         let data: Arc<[u8]> = Arc::from(data.to_vec().into_boxed_slice());
         Texture {
             data: data.clone(),
             dimensions,
             layers,
-            set: loader.load_texture(
-                resources.vulkan(),
-                data,
-                dimensions,
-                layers,
-                format,
-                settings,
-            ),
+            set: loader.load_texture(vulkan, data, dimensions, layers, format, settings),
         }
     }
 
@@ -194,7 +210,7 @@ impl Texture {
         image_format: ImageFormat,
         layers: u32,
         settings: TextureSettings,
-        resources: &Resources,
+        resources: &impl Resource,
     ) -> Result<Texture, TextureError> {
         // Turn image to a vector of u8 first.
         let image = match load_from_memory_with_format(data, image_format) {

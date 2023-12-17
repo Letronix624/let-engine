@@ -3,9 +3,14 @@
 //! Requires the egui feature to be enabled.
 //! Runnable with `cargo run --features=egui --example egui`
 #![allow(unused_imports)]
+use std::cell::RefCell;
+
+use egui_demo_lib::DemoWindows;
 use let_engine::prelude::*;
 
-let_engine::let_engine!();
+thread_local! {
+    static DEMO_APP: RefCell<DemoWindows> = RefCell::new(DemoWindows::default());
+}
 
 #[cfg(not(feature = "egui"))]
 fn main() {
@@ -17,48 +22,77 @@ fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
     // Then you start the engine allowing you to load resources and layers.
-    let engine = start_engine!(window_builder).unwrap();
+    let engine = Engine::new(
+        EngineSettingsBuilder::default()
+            .window_settings(window_builder)
+            .build()
+            .unwrap(),
+    )
+    .unwrap();
 
-    // Makes a base layer where you place your scene into.
-    let layer = SCENE.new_layer();
-    // Makes the view zoomed out and not stretchy.
-    layer.set_camera_settings(CameraSettings {
-        zoom: 0.5,
-        mode: CameraScaling::Linear,
-    });
+    let game = Game::new(engine.components());
 
-    // Makes the circle in the middle.
-    let mut circle = Object::new();
-    // Loads a circle model into the engine and sets the appearance of this object to it.
-    circle
-        .appearance
-        .set_model(Model::Custom(model!(make_circle!(30)).unwrap()));
-    // Initializes the object to the layer
-    circle.init(&layer);
+    // Runs the game
+    engine.start(game);
+}
 
-    // Make the egui demo.
-    let mut demo_app = egui_demo_lib::DemoWindows::default();
+#[cfg(feature = "egui")]
+struct Game {
+    layer: Layer,
+    exit: bool,
+}
 
-    // Runs the loop
-    engine.run_loop(move |event, control_flow| {
+#[cfg(feature = "egui")]
+impl Game {
+    pub fn new(components: &Components) -> Self {
+        Self {
+            // Makes a base layer where you place your scene into.
+            layer: components.scene().new_layer(),
+            exit: false,
+        }
+    }
+}
+
+#[cfg(feature = "egui")]
+impl let_engine::Game for Game {
+    fn start(&mut self, components: &Components) {
+        // Makes the view zoomed out and not stretchy.
+        self.layer.set_camera_settings(CameraSettings {
+            zoom: 0.5,
+            mode: CameraScaling::Linear,
+        });
+
+        // Makes the circle in the middle.
+        let mut circle = Object::new();
+        // Loads a circle model into the engine and sets the appearance of this object to it.
+        circle.appearance.set_model(Model::Custom(
+            ModelData::new(make_circle!(30), components).unwrap(),
+        ));
+        // Initializes the object to the layer
+        circle.init(&self.layer);
+    }
+    fn event(&mut self, event: events::Event, _components: &Components) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {
-                control_flow.set_exit();
+                self.exit = true;
             }
             Event::Input(InputEvent::KeyboardInput { input }) => {
                 if input.state == ElementState::Pressed {
                     if let Some(VirtualKeyCode::Escape) = input.keycode {
                         // Exit when the escape key is pressed.
-                        control_flow.set_exit();
+                        self.exit = true;
                     }
                 }
             }
             Event::Egui(ctx) => {
                 // Use the egui context to make a gui.
-                demo_app.ui(&ctx);
+                DEMO_APP.with_borrow_mut(|app| app.ui(&ctx));
             }
             _ => (),
         };
-    })
+    }
+    fn exit(&self) -> bool {
+        self.exit
+    }
 }

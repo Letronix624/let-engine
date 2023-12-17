@@ -19,49 +19,52 @@ pub mod data;
 pub mod materials;
 mod model;
 pub use model::*;
-mod macros;
 
-const NOT_INITIALIZED_MSG: &str = "Resources are not initialized to a game.";
+/// Trait that allows this to be used to load data.
+pub trait Resource {
+    fn resources(&self) -> &Resources;
+}
 
 /// All the resources kept in the game engine like textures, fonts, sounds and models.
 #[derive(Clone)]
 pub struct Resources {
-    pub(crate) vulkan: Option<Vulkan>,
-    pub(crate) loader: Option<Arc<Mutex<Loader>>>,
+    pub(crate) vulkan: Vulkan,
+    pub(crate) loader: Arc<Mutex<Loader>>,
 
-    pub(crate) shapes: Option<BasicShapes>,
-    pub(crate) labelifier: Option<Arc<Mutex<Labelifier>>>,
+    pub(crate) shapes: BasicShapes,
+    pub(crate) labelifier: Arc<Mutex<Labelifier>>,
+}
+
+impl Resource for Resources {
+    fn resources(&self) -> &Resources {
+        self
+    }
 }
 
 impl Resources {
-    pub fn new() -> Self {
+    pub(crate) fn new(vulkan: Vulkan) -> Self {
+        let loader = Arc::new(Mutex::new(Loader::init(&vulkan).unwrap()));
+        let shapes = BasicShapes::new(&loader);
+        let labelifier = Arc::new(Mutex::new(Labelifier::new(&vulkan, &loader)));
         Self {
-            vulkan: None,
-            loader: None,
-            shapes: None,
-            labelifier: None,
+            vulkan,
+            loader,
+            shapes,
+            labelifier,
         }
     }
 
-    /// Initialisation
-    pub(crate) fn init(&mut self, vulkan: Vulkan) {
-        self.loader = Some(Arc::new(Mutex::new(Loader::init(&vulkan).unwrap())));
-        self.vulkan = Some(vulkan);
-        self.shapes = Some(BasicShapes::new(self));
-        self.labelifier = Some(Arc::new(Mutex::new(Labelifier::new(self))));
-    }
-
     pub(crate) fn vulkan(&self) -> &Vulkan {
-        self.vulkan.as_ref().expect(NOT_INITIALIZED_MSG)
+        &self.vulkan
     }
     pub(crate) fn loader(&self) -> &Arc<Mutex<Loader>> {
-        self.loader.as_ref().expect(NOT_INITIALIZED_MSG)
+        &self.loader
     }
     pub(crate) fn labelifier(&self) -> &Arc<Mutex<Labelifier>> {
-        self.labelifier.as_ref().expect(NOT_INITIALIZED_MSG)
+        &self.labelifier
     }
     pub(crate) fn shapes(&self) -> &BasicShapes {
-        self.shapes.as_ref().expect(NOT_INITIALIZED_MSG)
+        &self.shapes
     }
     //redraw
     pub(crate) fn update(&self) {
@@ -113,12 +116,6 @@ impl Resources {
     }
 }
 
-impl Default for Resources {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// A font to be used with the default label system.
 #[derive(Clone)]
 pub struct Font {
@@ -131,8 +128,8 @@ impl Font {
     ///
     /// Makes a new font using the bytes of a truetype or opentype font.
     /// Returns `None` in case the given bytes don't work.
-    pub fn from_bytes(data: &'static [u8], resources: &Resources) -> Option<Self> {
-        let labelifier = resources.labelifier().lock();
+    pub fn from_bytes(data: &'static [u8], resources: &impl Resource) -> Option<Self> {
+        let labelifier = resources.resources().labelifier().lock();
         let font = Arc::new(rusttype::Font::try_from_bytes(data)?);
         let id = labelifier.increment_id();
         Some(Self { font, id })
@@ -142,8 +139,8 @@ impl Font {
     ///
     /// Makes a new font using the bytes in a vec of a truetype or opentype font.
     /// Returns `None` in case the given bytes don't work.
-    pub fn from_vec(data: impl Into<Vec<u8>>, resources: &Resources) -> Option<Self> {
-        let labelifier = resources.labelifier().lock();
+    pub fn from_vec(data: impl Into<Vec<u8>>, resources: &impl Resource) -> Option<Self> {
+        let labelifier = resources.resources().labelifier().lock();
         let font = Arc::new(rusttype::Font::try_from_vec(data.into())?);
         let id = labelifier.increment_id();
         Some(Self { font, id })

@@ -7,6 +7,7 @@ use parking_lot::Mutex;
 
 use anyhow::Result;
 
+use resources::vulkan::Vulkan;
 use rusttype::gpu_cache::Cache;
 use rusttype::{point, PositionedGlyph, Scale};
 
@@ -100,8 +101,8 @@ pub struct Label {
 }
 impl Label {
     /// Creates a new label with the given settings.
-    pub fn new(resources: &Resources, font: &Font, create_info: LabelCreateInfo) -> Self {
-        let labelifier = resources.labelifier().clone();
+    pub fn new(resources: &impl Resource, font: &Font, create_info: LabelCreateInfo) -> Self {
+        let labelifier = resources.resources().labelifier().clone();
         let mut object = Object::new();
         object.transform = create_info.transform;
         object.appearance = create_info.appearance;
@@ -166,7 +167,7 @@ pub(crate) struct Labelifier {
 
 impl Labelifier {
     /// Makes a new label maker.
-    pub fn new(resources: &Resources) -> Self {
+    pub fn new(vulkan: &Vulkan, loader: &Arc<Mutex<Loader>>) -> Self {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
 
@@ -177,16 +178,16 @@ impl Labelifier {
         };
 
         // Make the cache a texture.
-        let texture = Texture::from_raw(
+        let texture = Texture::from_raw_with_loader(
             &cache_pixel_buffer,
             dimensions,
             Format::R8,
             1,
             settings,
-            resources,
+            vulkan,
+            loader,
         );
 
-        let vulkan = resources.vulkan();
         let text_shaders = Shaders::from_modules(
             vertex_shader(vulkan.device.clone()),
             text_fragment_shader(vulkan.device.clone()),
@@ -198,9 +199,15 @@ impl Labelifier {
             .build()
             .unwrap();
 
-        let material =
-            Material::new_with_shaders(material_settings, &text_shaders, false, vec![], resources)
-                .unwrap();
+        let material = Material::new_with_loader(
+            material_settings,
+            &text_shaders,
+            false,
+            vec![],
+            vulkan,
+            loader,
+        )
+        .unwrap();
 
         Self {
             material,
@@ -214,7 +221,7 @@ impl Labelifier {
     /// Updates the cache in case a label was changed or added.
     fn update_cache(
         &mut self,
-        resources: &Resources,
+        resources: &impl Resource,
     ) -> Result<(), rusttype::gpu_cache::CacheWriteErr> {
         let dimensions = self.cache.dimensions().0 as usize;
 
@@ -254,7 +261,7 @@ impl Labelifier {
     }
 
     /// Updates the cache and grows it, in case it's too small for everything.
-    fn update_and_resize_cache(&mut self, resources: &Resources) {
+    fn update_and_resize_cache(&mut self, resources: &impl Resource) {
         loop {
             // Adds every queued task to the cache
             for task in self.queued.iter() {
@@ -280,7 +287,7 @@ impl Labelifier {
         }
     }
 
-    fn update_each_object(&self, resources: &Resources) {
+    fn update_each_object(&self, resources: &impl Resource) {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
@@ -356,7 +363,7 @@ impl Labelifier {
     }
 
     /// Updates everything.
-    pub fn update(&mut self, resources: &Resources) {
+    pub fn update(&mut self, resources: &impl Resource) {
         if !self.ready {
             return;
         }

@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Let"]
 edition = "2021"
 description = "A simple 2d game engine."
@@ -38,6 +38,7 @@ rusttype = { version = "0.9.3", features = [ "gpu_cache" ] }
 egui_winit_vulkano = { version = "0.26", optional = true }
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
 paste = "1.0.14"
+spin_sleep = "1.1.1"
 
 [dev-dependencies]
 

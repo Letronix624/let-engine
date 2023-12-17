@@ -22,7 +22,6 @@ pub use parking_lot::Mutex;
 #[cfg(feature = "egui")]
 pub use egui_winit_vulkano::egui;
 
-use rapier2d;
 pub use rapier2d::prelude::CoefficientCombineRule;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 

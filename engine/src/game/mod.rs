@@ -1,8 +1,10 @@
 use super::objects;
 use super::resources::{vulkan::Vulkan, Resources};
 use anyhow::Result;
+use derive_builder::Builder;
 use glam::vec2;
 use objects::scenes::Scene;
+use parking_lot::Mutex;
 pub mod window;
 pub(crate) use super::draw::Draw;
 pub use winit::event_loop::ControlFlow;
@@ -14,10 +16,12 @@ pub mod input;
 use input::Input;
 #[cfg(feature = "egui")]
 mod egui;
+mod tick_system;
+pub use tick_system::*;
 pub mod events;
 
 use atomic_float::AtomicF64;
-use parking_lot::Mutex;
+use crossbeam::atomic::AtomicCell;
 
 use std::{
     sync::{atomic::Ordering, Arc},
@@ -25,127 +29,168 @@ use std::{
 };
 
 use crate::error::draw::VulkanError;
+use crate::resources::Resource;
 
 use self::{
     events::{InputEvent, ScrollDelta},
     window::{Window, WindowBuilder},
 };
 
-/// Initializes the let engine.
-///
-/// Creates 4 static variables that can be accessed everywhere to use.
-///
-/// `INPUT`: a live updated [Input] struct.
-///
-/// `TIME`: a live updated [Time] struct.
-///
-/// `RESOURCES`: The resource manager where you load your assets.
-///
-/// `WINDOW`: A [Window] that you can change the attributes of once you've run the [crate::start_engine] macro.
-#[macro_export]
-macro_rules! let_engine {
-    () => {
-        static INPUT: let_engine::Lazy<let_engine::input::Input> =
-            let_engine::Lazy::new(let_engine::input::Input::default);
-        static TIME: let_engine::Lazy<let_engine::Time> =
-            let_engine::Lazy::new(let_engine::Time::default);
-        static _RESOURCES: let_engine::Lazy<let_engine::_Resources> = let_engine::Lazy::new(|| {
-            std::sync::Arc::new(let_engine::Mutex::new(
-                let_engine::resources::Resources::new(),
-            ))
-        });
-        static SCENE: let_engine::Lazy<let_engine::objects::scenes::Scene> =
-            let_engine::Lazy::new(let_engine::objects::scenes::Scene::default);
-        static RESOURCES: let_engine::Lazy<let_engine::resources::Resources> =
-            let_engine::Lazy::new(|| {
-                let resources = _RESOURCES.lock();
-                resources.clone()
-            });
-        static WINDOW: let_engine::Lazy<let_engine::window::Window> =
-            let_engine::Lazy::new(|| _RESOURCES.lock().get_window());
-    };
+#[derive(Clone)]
+pub struct Components {
+    resources: Resources,
+    scene: Scene,
+    pub(crate) time: Time,
+    pub(crate) input: Input,
+    window: Window,
+    tick_settings: Arc<Mutex<TickSettings>>,
+    pub(crate) tick_settings_changed: Arc<AtomicCell<bool>>,
 }
 
-/// Starts the engine, enables the window and starts drawing the scene.
-/// Takes a [WindowBuilder] for the initial window.
-#[macro_export]
-macro_rules! start_engine {
-    ($window_builder:expr) => {{
-        let_engine::Game::new(
-            $window_builder,
-            _RESOURCES.clone(),
-            SCENE.clone(),
-            INPUT.clone(),
-            TIME.clone(),
-        )
-    }};
+impl Resource for Components {
+    fn resources(&self) -> &Resources {
+        &self.resources
+    }
+}
+
+impl Components {
+    pub fn new(
+        resources: Resources,
+        scene: Scene,
+        time: Time,
+        input: Input,
+        window: Window,
+
+        tick_settings: TickSettings,
+    ) -> Self {
+        Self {
+            resources,
+            scene,
+            time,
+            input,
+            window,
+            tick_settings: Arc::new(Mutex::new(tick_settings)),
+            tick_settings_changed: Arc::new(AtomicCell::new(false)),
+        }
+    }
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+    pub fn time(&self) -> &Time {
+        &self.time
+    }
+    pub fn input(&self) -> &Input {
+        &self.input
+    }
+    pub fn window(&self) -> &Window {
+        &self.window
+    }
+    pub fn tick_settings(&self) -> TickSettings {
+        self.tick_settings.lock().clone()
+    }
+    pub fn set_tick_settings(&self, settings: TickSettings) {
+        *self.tick_settings.lock() = settings;
+        self.tick_settings_changed.store(true);
+    }
+}
+
+/// Represents the game application with essential methods for a game's lifetime.
+pub trait Game {
+    /// Runs right before the first frame is drawn, initializing the instance.
+    fn start(&mut self, _components: &Components) {}
+    /// Runs before the frame is drawn.
+    fn update(&mut self, _components: &Components) {}
+    /// Runs after the frame is drawn.
+    fn frame_update(&mut self, _components: &Components) {}
+    /// Runs based on the configured tick settings of the engine.
+    fn tick(&mut self, _components: &Components) {}
+    /// Handles engine and window events.
+    fn event(&mut self, _event: events::Event, _components: &Components) {}
+    /// If true exits the program, stopping the loop and closing the window, when true.
+    fn exit(&self) -> bool;
+}
+
+/// The initial settings of this engine.
+#[derive(Clone, Builder, Default)]
+pub struct EngineSettings {
+    /// Settings that determines the look of the window.
+    #[builder(setter(into, strip_option), default)]
+    pub window_settings: WindowBuilder,
+    /// The initial settings of the tick system.
+    #[builder(setter(into), default)]
+    pub tick_settings: TickSettings,
+    // /// Starting scene of the game engine.
+    // pub scene: Option<Scene>,
 }
 
 /// The struct that holds and executes all of the game data.
-pub struct Game {
-    resources: Resources,
-    scene: Scene,
-    input: Input,
-    time: Time,
-    window: Window,
+pub struct Engine {
+    components: Components,
     event_loop: EventLoop<()>,
     #[cfg(feature = "egui")]
     gui: egui_winit_vulkano::Gui,
+    tick_system: TickSystem,
 
     draw: Draw,
 }
 
-impl Game {
-    pub fn new(
-        window_builder: WindowBuilder,
-        resources: Arc<Mutex<Resources>>,
-        scene: Scene,
-        input: Input,
-        time: Time,
-    ) -> Result<Self> {
+impl Engine {
+    /// Initializes the game engine with the given settings ready to be launched using the `start` method.
+    pub fn new(settings: impl Into<EngineSettings>) -> Result<Self> {
+        let settings = settings.into();
         let event_loop = EventLoopBuilder::new().build();
-        let vulkan = Vulkan::init(&event_loop, window_builder)?;
+        let vulkan = Vulkan::init(&event_loop, settings.window_settings)?;
 
         #[cfg(feature = "egui")]
         let gui = egui::init(&event_loop, &vulkan);
 
-        let mut resources = resources.lock();
-        resources.init(vulkan);
-        let resources = resources.clone();
+        let resources = Resources::new(vulkan);
+
+        let scene = Scene::default();
+        let input = Input::new();
+        let time = Time::default();
+        let tick_system = TickSystem::new(settings.tick_settings.clone());
 
         let draw = Draw::setup(&resources);
 
         let window = resources.get_window();
 
-        Ok(Self {
+        let components = Components::new(
             resources,
             scene,
-            input,
             time,
+            input,
             window,
+            settings.tick_settings,
+        );
+
+        Ok(Self {
+            components,
             event_loop,
 
             #[cfg(feature = "egui")]
             gui,
+            tick_system,
 
             draw,
         })
     }
 
-    /// Runs the main loop updating the window after every iteration.
-    ///
-    /// There is also a provided control flow.
-    ///
-    /// On `Wait` this will update each window event.
-    /// It also allows updating the window using the `request_redraw()` function for the [Window]
-    pub fn run_loop<F>(mut self, mut func: F)
-    where
-        F: FnMut(events::Event, &mut ControlFlow) + 'static,
-    {
+    pub fn components(&self) -> &Components {
+        &self.components
+    }
+
+    pub fn start(mut self, game: impl Game + Send + 'static) {
         let event_loop = self.event_loop;
+        let game = Arc::new(Mutex::new(game));
 
         event_loop.run(move |event, _, control_flow| {
-            self.input.update(&event, self.window.inner_size());
+            self.components
+                .input
+                .update(&event, self.components.window.inner_size());
+            if game.lock().exit() {
+                control_flow.set_exit();
+            }
             match event {
                 Event::WindowEvent { event, .. } => {
                     #[cfg(feature = "egui")]
@@ -213,21 +258,21 @@ impl Game {
                     // destroy event can't be called here so I did the most lazy approach possible.
                     if let events::Event::Destroyed = event {
                     } else {
-                        func(event, control_flow);
+                        game.lock().event(event, &self.components);
                     }
                 }
                 Event::DeviceEvent { event, .. } => match event {
                     DeviceEvent::MouseMotion { delta } => {
-                        func(
+                        game.lock().event(
                             events::Event::Input(InputEvent::MouseMotion(vec2(
                                 delta.0 as f32,
                                 delta.1 as f32,
                             ))),
-                            control_flow,
+                            &self.components,
                         );
                     }
                     DeviceEvent::MouseWheel { delta } => {
-                        func(
+                        game.lock().event(
                             events::Event::Input(InputEvent::MouseWheel(match delta {
                                 MouseScrollDelta::LineDelta(x, y) => {
                                     ScrollDelta::LineDelta(vec2(x, y))
@@ -236,7 +281,7 @@ impl Game {
                                     ScrollDelta::PixelDelta(delta)
                                 }
                             })),
-                            control_flow,
+                            &self.components,
                         );
                     }
                     _ => (),
@@ -244,17 +289,18 @@ impl Game {
                 Event::MainEventsCleared => {
                     #[cfg(feature = "egui")]
                     self.gui.immediate_ui(|gui| {
-                        func(events::Event::Egui(gui.context()), control_flow);
+                        game.lock()
+                            .event(events::Event::Egui(gui.context()), &self.components);
                     });
 
-                    func(events::Event::Update, control_flow);
-                    self.window.request_redraw();
+                    game.lock().update(&self.components);
+                    self.components.window.request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    self.resources.update();
+                    self.components.resources.update();
                     match self.draw.redrawevent(
-                        &self.resources,
-                        &self.scene,
+                        &self.components.resources,
+                        &self.components.scene,
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     ) {
@@ -264,20 +310,22 @@ impl Game {
                     };
                 }
                 Event::RedrawEventsCleared => {
-                    self.time.update();
-                    func(events::Event::FrameUpdate, control_flow);
+                    self.components.time.update();
+                    game.lock().frame_update(&self.components);
                 }
                 Event::LoopDestroyed => {
-                    func(events::Event::Destroyed, control_flow);
+                    game.lock()
+                        .event(events::Event::Destroyed, &self.components);
                 }
                 Event::NewEvents(StartCause::Init) => {
                     #[cfg(feature = "egui")]
                     self.gui.immediate_ui(|gui| {
-                        func(events::Event::Egui(gui.context()), control_flow);
+                        game.lock()
+                            .event(events::Event::Egui(gui.context()), &self.components);
                     });
                     match self.draw.redrawevent(
-                        &self.resources,
-                        &self.scene,
+                        &self.components.resources,
+                        &self.components.scene,
                         #[cfg(feature = "egui")]
                         &mut self.gui,
                     ) {
@@ -285,9 +333,24 @@ impl Game {
                         Err(e) => panic!("{e}"),
                         _ => (),
                     };
-                    func(events::Event::Ready, control_flow)
+                    game.lock().start(&self.components);
+                    if !self.components.tick_settings.lock().paused {
+                        self.tick_system
+                            .run(Arc::clone(&game), self.components.clone());
+                    }
                 }
                 _ => (),
+            }
+            if self.components.tick_settings_changed.load() {
+                // Also stops the tick system.
+                self.tick_system
+                    .update(self.components.tick_settings().clone());
+                // Start it back up in case it is not paused.
+                if !self.components.tick_settings.lock().paused {
+                    self.tick_system
+                        .run(Arc::clone(&game), self.components.clone());
+                }
+                self.components.tick_settings_changed.store(false);
             }
         });
     }
@@ -298,7 +361,7 @@ impl Game {
 pub struct Time {
     /// Time since engine start.
     pub time: SystemTime,
-    delta_instant: SystemTime,
+    delta_instant: Arc<AtomicCell<SystemTime>>,
     delta_time: Arc<AtomicF64>,
 }
 
@@ -306,7 +369,7 @@ impl Default for Time {
     fn default() -> Self {
         Self {
             time: SystemTime::now(),
-            delta_instant: SystemTime::now(),
+            delta_instant: Arc::new(AtomicCell::new(SystemTime::now())),
             delta_time: Arc::new(AtomicF64::new(0.0f64)),
         }
     }
@@ -316,10 +379,10 @@ impl Time {
     /// Updates the time data on frame redraw.
     pub(crate) fn update(&mut self) {
         self.delta_time.store(
-            self.delta_instant.elapsed().unwrap().as_secs_f64(),
+            self.delta_instant.load().elapsed().unwrap().as_secs_f64(),
             Ordering::Release,
         );
-        self.delta_instant = SystemTime::now();
+        self.delta_instant.store(SystemTime::now());
     }
 
     /// Returns the time it took to execute last iteration.

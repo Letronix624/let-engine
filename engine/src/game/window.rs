@@ -273,7 +273,7 @@ impl Window {
 }
 
 /// A builder describing the initial state of the window.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[must_use]
 pub struct WindowBuilder {
     attributes: winit::window::WindowBuilder,

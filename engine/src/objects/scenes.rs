@@ -76,7 +76,12 @@ impl Scene {
         self.layers.lock().clone()
     }
 
-    //Add support to serialize and deserialize scenes. load and undload.
+    /// Returns a layer by index.
+    pub fn get_layer(&self, index: usize) -> Layer {
+        self.layers.lock().get_index(index).unwrap().clone()
+    }
+
+    //Add support to serialize and deserialize scenes. load and unload.
     //Add those functions to game.
 }
 impl Default for Scene {
