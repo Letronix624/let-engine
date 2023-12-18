@@ -55,7 +55,7 @@ impl Game {
 
 #[cfg(feature = "egui")]
 impl let_engine::Game for Game {
-    fn start(&mut self, components: &Components) {
+    fn start(&mut self, _components: &Components) {
         // Makes the view zoomed out and not stretchy.
         self.layer.set_camera_settings(CameraSettings {
             zoom: 0.5,
@@ -65,9 +65,9 @@ impl let_engine::Game for Game {
         // Makes the circle in the middle.
         let mut circle = Object::new();
         // Loads a circle model into the engine and sets the appearance of this object to it.
-        circle.appearance.set_model(Model::Custom(
-            ModelData::new(make_circle!(30), components).unwrap(),
-        ));
+        circle
+            .appearance
+            .set_model(Model::Custom(ModelData::new(make_circle!(30)).unwrap()));
         // Initializes the object to the layer
         circle.init(&self.layer);
     }

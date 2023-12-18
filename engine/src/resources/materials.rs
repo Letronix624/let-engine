@@ -6,7 +6,6 @@ use crate::prelude::{InstanceData, Texture, Vertex as GameVertex};
 
 use anyhow::Result;
 use derive_builder::Builder;
-use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
 use vulkano::pipeline::graphics::multisample::MultisampleState;
@@ -30,8 +29,7 @@ use vulkano::pipeline::{
 use vulkano::render_pass::Subpass;
 use vulkano::shader::{ShaderModule, ShaderModuleCreateInfo};
 
-use super::vulkan::Vulkan;
-use super::{Loader, Resource};
+use super::RESOURCES;
 // pub use vulkano::pipeline::graphics::rasterization::LineStipple;
 
 /// The way in which an object gets drawn using it's vertices and indices.
@@ -74,13 +72,12 @@ impl std::fmt::Debug for Material {
 ///
 /// Right now it produces an error when the shaders don't have a main function.
 impl Material {
-    pub(crate) fn new_with_loader(
+    /// Creates a new material using the given shaders, settings and write operations.
+    pub fn new_with_shaders(
         settings: MaterialSettings,
         shaders: &Shaders,
         instanced: bool,
         writes: Vec<WriteDescriptorSet>,
-        vulkan: &Vulkan,
-        loader: &Arc<Mutex<Loader>>,
     ) -> Result<Self, VulkanError> {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
@@ -97,7 +94,9 @@ impl Material {
 
         // let line_stipple = settings.line_stripple.map(StateMode::Fixed);
 
-        let loader = loader.lock();
+        let resources = &RESOURCES;
+        let loader = resources.loader().lock();
+        let vulkan = resources.vulkan();
         let pipeline_cache = loader.pipeline_cache.clone();
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
         let allocator = &loader.descriptor_set_allocator;
@@ -180,74 +179,40 @@ impl Material {
             texture: settings.texture,
         })
     }
-    /// Creates a new material using the given shaders, settings and write operations.
-    pub fn new_with_shaders(
-        settings: MaterialSettings,
-        shaders: &Shaders,
-        instanced: bool,
-        writes: Vec<WriteDescriptorSet>,
-        resources: &impl Resource,
-    ) -> Result<Self, VulkanError> {
-        let resources = resources.resources();
-        Self::new_with_loader(
-            settings,
-            shaders,
-            instanced,
-            writes,
-            resources.vulkan(),
-            resources.loader(),
-        )
+
+    /// Makes a new default material.
+    pub fn new(settings: MaterialSettings) -> Result<Material, VulkanError> {
+        let resources = &RESOURCES;
+        let shaders = resources.vulkan().clone().default_shaders;
+        Self::new_with_shaders(settings, &shaders, false, vec![])
     }
 
     /// Makes a new default material.
-    pub fn new(
-        settings: MaterialSettings,
-        resources: &impl Resource,
-    ) -> Result<Material, VulkanError> {
-        let resources = resources.resources();
-        let shaders = &resources.vulkan().default_shaders;
-        Self::new_with_shaders(settings, shaders, false, vec![], resources)
-    }
-
-    /// Makes a new default material.
-    pub fn new_instanced(
-        settings: MaterialSettings,
-        resources: &impl Resource,
-    ) -> Result<Material, VulkanError> {
-        let resources = resources.resources();
-        let shaders = &resources.vulkan().default_instance_shaders;
-        Self::new_with_shaders(settings, shaders, true, vec![], resources)
+    pub fn new_instanced(settings: MaterialSettings) -> Result<Material, VulkanError> {
+        let resources = &RESOURCES;
+        let shaders = resources.vulkan().clone().default_instance_shaders;
+        Self::new_with_shaders(settings, &shaders, true, vec![])
     }
 
     /// Creates a simple material made just for showing a texture.
-    pub fn new_default_textured(texture: &Texture, resources: &impl Resource) -> Material {
+    pub fn new_default_textured(texture: &Texture) -> Material {
+        let resources = &RESOURCES;
         let default = if texture.layers() == 1 {
-            resources.resources().vulkan().textured_material.clone()
+            resources.vulkan().textured_material.clone()
         } else {
-            resources
-                .resources()
-                .vulkan()
-                .texture_array_material
-                .clone()
+            resources.vulkan().texture_array_material.clone()
         };
         Material {
             texture: Some(texture.clone()),
             ..default
         }
     }
-    pub fn new_default_textured_instance(texture: &Texture, resources: &impl Resource) -> Material {
+    pub fn new_default_textured_instance(texture: &Texture) -> Material {
+        let resources = &RESOURCES;
         let default = if texture.layers() == 1 {
-            resources
-                .resources()
-                .vulkan()
-                .textured_instance_material
-                .clone()
+            resources.vulkan().textured_instance_material.clone()
         } else {
-            resources
-                .resources()
-                .vulkan()
-                .texture_array_instance_material
-                .clone()
+            resources.vulkan().texture_array_instance_material.clone()
         };
         Material {
             texture: Some(texture.clone()),
@@ -264,9 +229,9 @@ impl Material {
         // this has to be changed
         &mut self,
         descriptor: Vec<WriteDescriptorSet>,
-        resources: &impl Resource,
     ) {
-        let loader = resources.resources().loader().lock();
+        let resources = &RESOURCES;
+        let loader = resources.loader().lock();
         self.descriptor = Some(
             PersistentDescriptorSet::new(
                 &loader.descriptor_set_allocator,
@@ -385,10 +350,10 @@ impl Shaders {
         vertex_bytes: &[u8],
         fragment_bytes: &[u8],
         entry_point: &str,
-        resources: &impl Resource,
         // layout: &[Box<dyn BufferContents + Any>],
     ) -> Result<Self, ShaderError> {
-        let device = &resources.resources().vulkan().device;
+        let resources = &RESOURCES;
+        let device = resources.vulkan().clone().device;
         let vertex_words = bytes_to_words(vertex_bytes)?;
         let fragment_words = bytes_to_words(fragment_bytes)?;
         let vertex: Arc<ShaderModule> = unsafe {

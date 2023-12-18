@@ -62,12 +62,11 @@ impl Game {
         let ball = Ball::new(game_layer.clone());
 
         // Loading the font for the score.
-        let font = Font::from_bytes(include_bytes!("Px437_CL_Stingray_8x16.ttf"), components)
+        let font = Font::from_bytes(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
             .expect("Font is invalid.");
 
         // Making a default label for the left side.
         let mut left_score = Label::new(
-            components,
             &font,
             LabelCreateInfo {
                 appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
@@ -82,7 +81,6 @@ impl Game {
 
         // Making a default label for the right side.
         let mut right_score = Label::new(
-            components,
             &font,
             LabelCreateInfo {
                 appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
@@ -98,18 +96,15 @@ impl Game {
         let mut middle_line = Object::new();
         // Make a custom model that is just a stippled line going from 1 to -1.
         middle_line.appearance.set_model(Model::Custom(
-            ModelData::new(
-                Data {
-                    vertices: vec![
-                        vert(0.0, 0.7),
-                        vert(0.0, 0.3),
-                        vert(0.0, -0.3),
-                        vert(0.0, -0.7),
-                    ],
-                    indices: vec![0, 1, 2, 3],
-                },
-                components,
-            )
+            ModelData::new(Data {
+                vertices: vec![
+                    vert(0.0, 0.7),
+                    vert(0.0, 0.3),
+                    vert(0.0, -0.3),
+                    vert(0.0, -0.7),
+                ],
+                indices: vec![0, 1, 2, 3],
+            })
             .unwrap(),
         ));
         // A description of how the line should look like.
@@ -118,7 +113,7 @@ impl Game {
             .topology(Topology::LineList)
             .build()
             .unwrap();
-        let line_material = Material::new(line_material, components).unwrap();
+        let line_material = Material::new(line_material).unwrap();
         middle_line.appearance.set_material(Some(line_material));
         middle_line.init(&ui_layer);
 

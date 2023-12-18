@@ -16,8 +16,8 @@ impl ModelData {
     /// Makes a new model with given data.
     ///
     /// Can return an error in case the GPU memory is full.
-    pub fn new(data: Data, resources: &impl Resource) -> Result<Self> {
-        Self::new_from_loader(data, resources.resources().loader())
+    pub fn new(data: Data) -> Result<Self> {
+        Self::new_from_loader(data, RESOURCES.loader())
     }
 
     pub(crate) fn new_from_loader(data: Data, loader: &Arc<Mutex<Loader>>) -> Result<Self> {

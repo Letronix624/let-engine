@@ -4,7 +4,7 @@ use vulkano::device::{
     physical::PhysicalDeviceType, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
 };
 use vulkano::device::{Device, Features, Queue, QueueFlags};
-use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
+use vulkano::instance::{InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 use winit::event_loop::EventLoop;
@@ -12,7 +12,9 @@ use winit::event_loop::EventLoop;
 use crate::error::RequirementError;
 
 /// Initializes a new Vulkan instance.
-pub fn create_instance(event_loop: &EventLoop<()>) -> Result<Arc<Instance>, RequirementError> {
+pub fn create_instance(
+    event_loop: &EventLoop<()>,
+) -> Result<Arc<vulkano::instance::Instance>, RequirementError> {
     let library = VulkanLibrary::new().map_err(|e| RequirementError(e.to_string()))?;
     let required_extensions = Surface::required_extensions(event_loop);
 
@@ -41,7 +43,8 @@ pub fn create_instance(event_loop: &EventLoop<()>) -> Result<Arc<Instance>, Requ
         },
         ..Default::default()
     };
-    Instance::new(library, game_info).map_err(|e| RequirementError(e.to_string()))
+    vulkano::instance::Instance::new(library, game_info)
+        .map_err(|e| RequirementError(e.to_string()))
 }
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
@@ -53,7 +56,7 @@ pub fn create_device_extensions() -> DeviceExtensions {
 
 /// Makes a physical device.
 pub fn create_physical_device(
-    instance: &Arc<Instance>,
+    instance: &Arc<vulkano::instance::Instance>,
     device_extensions: DeviceExtensions,
     features: Features,
     surface: &Arc<Surface>,

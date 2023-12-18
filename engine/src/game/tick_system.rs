@@ -68,6 +68,7 @@ impl TickSystem {
             };
 
             // calculate waiting time
+            // ((1.0 / time_scale) * tick_wait) - elapsed_time
             let waiting_time = if let TimeStep::Variable = settings.timestep_mode {
                 // Subtract the tick logic execution time from the waiting time to make the waiting time between ticks more consistent.
                 tick_wait.saturating_sub(elapsed_time)
