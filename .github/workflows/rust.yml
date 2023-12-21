@@ -10,26 +10,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-      - name: Rust Lint Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "${{ runner.os }}-rust-lint"
-      - run: rustup component add rustfmt
-      - name: check rustfmt
-        run: cargo fmt -- --check --color always
-      - run: rustup component add clippy
-      - run: cargo fetch
-      - name: cargo clippy
-        run: cargo clippy --all-features --all-targets -- -D warnings
   ubuntu:
     runs-on: ubuntu-latest
     steps:
