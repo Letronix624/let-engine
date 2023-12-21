@@ -50,7 +50,6 @@ pub(crate) struct Vulkan {
 impl Vulkan {
     pub fn init() -> Result<Self> {
         EVENT_LOOP.with_borrow(|event_loop| {
-            
         let instance = instance::create_instance(event_loop.get().unwrap())?;
         #[cfg(feature = "vulkan_debug_utils")]
         let _debug = Arc::new(debug::make_debug(&instance));
