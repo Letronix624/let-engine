@@ -9,60 +9,49 @@ use derive_builder::Builder;
 use parking_lot::Mutex;
 use spin_sleep::sleep;
 
-use crate::{Components, Game};
+use crate::{Game, SCENE, SETTINGS, TIME};
 
 pub(crate) struct TickSystem {
-    settings: TickSettings,
     handle: Option<Mutex<JoinHandle<()>>>,
     stop: Arc<AtomicBool>,
 }
 
 impl TickSystem {
-    pub fn new(settings: TickSettings) -> Self {
+    pub fn new() -> Self {
         Self {
-            settings,
             handle: None,
             stop: Arc::new(AtomicBool::new(false)),
         }
     }
-    pub fn update(&mut self, settings: TickSettings) {
-        self.stop.store(true, std::sync::atomic::Ordering::Release);
-        if let Some(handle) = &self.handle {
-            while !handle.lock().is_finished() {
-                // dbg!("not_finished");
-            }
-        }
-        *self = Self {
-            settings,
-            handle: None,
-            stop: Arc::new(AtomicBool::new(false)),
-        };
-    }
-    pub fn run(&mut self, game: Arc<Mutex<impl Game + Send + 'static>>, components: Components) {
-        let settings = self.settings.clone();
+    pub fn run(&mut self, game: Arc<Mutex<impl Game + Send + 'static>>) {
         let mut index: usize = 0;
         let stop = self.stop.clone();
-        let time = components.time().clone();
         self.handle = Some(Mutex::new(thread::spawn(move || loop {
+            // wait if paused
+            SETTINGS
+                .tick_pause_lock
+                .1
+                .wait_while(&mut SETTINGS.tick_pause_lock.0.lock(), |x| *x);
+            let settings = SETTINGS.tick_settings();
             // capture tick start time.
             let start_time = SystemTime::now();
             // Run the logic
-            game.lock().tick(&components);
+            game.lock().tick();
             // update the physics in case they are active in the tick settings.
             if settings.update_physics {
-                components.scene.iterate_all_physics();
+                SCENE.iterate_all_physics();
             }
             // record the elapsed time.
             let elapsed_time = start_time.elapsed().unwrap();
 
-            if time.scale() == 0.0 {
-                let mut guard = time.zero_cvar.0.lock();
-                time.zero_cvar.1.wait(&mut guard);
+            if TIME.scale() == 0.0 {
+                let mut guard = TIME.zero_cvar.0.lock();
+                TIME.zero_cvar.1.wait(&mut guard);
             }
 
             let tick_wait = if settings.time_scale_influence {
                 // Multiply the waiting duration with the inverse time scale.
-                settings.tick_wait.mul_f64(1.0 / time.scale())
+                settings.tick_wait.mul_f64(1.0 / TIME.scale())
             } else {
                 settings.tick_wait
             };
@@ -156,6 +145,23 @@ impl Default for TickSettings {
             reporter: None,
             paused: false,
             time_scale_influence: true,
+        }
+    }
+}
+impl TickSettings {
+    pub fn into_builder(self) -> TickSettingsBuilder {
+        self.into()
+    }
+}
+impl From<TickSettings> for TickSettingsBuilder {
+    fn from(value: TickSettings) -> Self {
+        Self {
+            tick_wait: Some(value.tick_wait),
+            timestep_mode: Some(value.timestep_mode),
+            update_physics: Some(value.update_physics),
+            reporter: Some(value.reporter),
+            paused: Some(value.paused),
+            time_scale_influence: Some(value.time_scale_influence),
         }
     }
 }

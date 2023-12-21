@@ -14,6 +14,7 @@ fn main() {
         .resizable(false)
         .inner_size(RESOLUTION)
         .title("Pong 2");
+    // Initialize the engine.
     let engine = Engine::new(
         EngineSettingsBuilder::default()
             .window_settings(window_builder)
@@ -24,7 +25,8 @@ fn main() {
     )
     .unwrap();
 
-    let game = Game::new(engine.components());
+    // Initialize the game struct after the engine was initialized.
+    let game = Game::new();
 
     // Runs the game
     engine.start(game);
@@ -42,9 +44,9 @@ struct Game {
     right_score: Label,
 }
 impl Game {
-    pub fn new(components: &Components) -> Self {
-        let game_layer = components.scene().new_layer();
-        let ui_layer = components.scene().new_layer();
+    pub fn new() -> Self {
+        let game_layer = SCENE.new_layer();
+        let ui_layer = SCENE.new_layer();
         // limits the view to -1 to 1 max
         game_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Limited));
         ui_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Expand));
@@ -130,17 +132,17 @@ impl Game {
 }
 
 impl let_engine::Game for Game {
-    fn update(&mut self, components: &Components) {
+    fn update(&mut self) {
         // run the update functions of the pedals.
-        self.left_paddle.update(components);
-        self.right_paddle.update(components);
-        self.ball.update(components);
+        self.left_paddle.update();
+        self.right_paddle.update();
+        self.ball.update();
         self.left_score
             .update_text(format!("{}", self.ball.wins[0]));
         self.right_score
             .update_text(format!("{}", self.ball.wins[1]));
     }
-    fn event(&mut self, event: events::Event, _components: &Components) {
+    fn event(&mut self, event: events::Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {
@@ -206,14 +208,13 @@ impl Paddle {
             height,
         }
     }
-    pub fn update(&mut self, components: &Components) {
+    pub fn update(&mut self) {
         // Turn the `True` and `False` of the input.key_down() into 1, 0 or -1.
-        let shift = components.input().key_down(self.controls.0) as i32
-            - components.input().key_down(self.controls.1) as i32;
+        let shift = INPUT.key_down(self.controls.0) as i32 - INPUT.key_down(self.controls.1) as i32;
 
         // Shift Y and clamp it between 0.51 so it doesn't go out of bounds.
         let y = &mut self.object.transform.position.y;
-        *y -= shift as f32 * components.time().delta_time() as f32 * 1.3;
+        *y -= shift as f32 * TIME.delta_time() as f32 * 1.3;
         *y = y.clamp(-0.70, 0.70);
 
         // Updates the object in the game.
@@ -265,7 +266,7 @@ impl Ball {
             wins: [0; 2],
         }
     }
-    pub fn update(&mut self, components: &Components) {
+    pub fn update(&mut self) {
         // Wait one second before starting the round.
         if self.new_round.elapsed().unwrap().as_secs() > 0 {
             let position = self.object.transform.position;
@@ -300,7 +301,7 @@ impl Ball {
             }
 
             self.object.transform.position +=
-                self.direction * components.time().delta_time() as f32 * self.speed;
+                self.direction * TIME.delta_time() as f32 * self.speed;
             self.object.sync().unwrap();
         }
     }

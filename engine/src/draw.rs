@@ -31,7 +31,7 @@ use glam::{
 /// Responsible for drawing on the surface.
 pub struct Draw {
     pub surface: Arc<Surface>,
-    pub window: Window,
+    pub window: Arc<Window>,
     pub(crate) recreate_swapchain: bool,
     pub(crate) swapchain: Arc<Swapchain>,
     pub(crate) viewport: Viewport,
@@ -104,7 +104,7 @@ impl Draw {
         }
     }
 
-    pub fn get_window(&self) -> &Window {
+    pub fn get_window(&self) -> &Arc<Window> {
         &self.window
     }
 
@@ -440,9 +440,8 @@ impl Draw {
     }
 
     /// Redraws the scene.
-    pub(crate) fn redrawevent(
+    pub(crate) fn redraw_event(
         &mut self,
-        scene: &Scene,
         #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
     ) -> Result<(), VulkanError> {
         let resources = &RESOURCES;
@@ -482,7 +481,7 @@ impl Draw {
             &loader,
         )?;
 
-        Self::write_secondary_command_buffer(self, scene, &mut secondary_builder, &mut loader)?;
+        Self::write_secondary_command_buffer(self, &SCENE, &mut secondary_builder, &mut loader)?;
 
         builder
             .execute_commands(secondary_builder.build().unwrap())

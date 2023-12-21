@@ -1,8 +1,6 @@
-use super::objects;
 use anyhow::Result;
 use derive_builder::Builder;
 use glam::vec2;
-use objects::scenes::Scene;
 use once_cell::unsync::OnceCell;
 use parking_lot::{Condvar, Mutex};
 pub mod window;
@@ -12,10 +10,9 @@ use winit::{
     event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder},
 };
-pub mod input;
-use input::Input;
 #[cfg(feature = "egui")]
 mod egui;
+pub mod input;
 mod tick_system;
 pub use tick_system::*;
 pub mod events;
@@ -29,7 +26,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::{error::draw::VulkanError, resources::LABELIFIER};
+use crate::{error::draw::VulkanError, resources::LABELIFIER, INPUT, SETTINGS, TIME};
 
 use self::{
     events::{InputEvent, ScrollDelta},
@@ -40,67 +37,19 @@ thread_local! {
     pub static EVENT_LOOP: RefCell<OnceCell<EventLoop<()>>> = RefCell::new(OnceCell::new());
 }
 
-#[derive(Clone)]
-pub struct Components {
-    scene: Scene,
-    pub(crate) time: Arc<Time>,
-    pub(crate) input: Input,
-    window: Window,
-    tick_settings: Arc<Mutex<TickSettings>>,
-    pub(crate) tick_settings_changed: Arc<AtomicCell<bool>>,
-}
-
-impl Components {
-    pub(crate) fn new(
-        scene: Scene,
-        time: Arc<Time>,
-        input: Input,
-        window: Window,
-
-        tick_settings: TickSettings,
-    ) -> Self {
-        Self {
-            scene,
-            time,
-            input,
-            window,
-            tick_settings: Arc::new(Mutex::new(tick_settings)),
-            tick_settings_changed: Arc::new(AtomicCell::new(false)),
-        }
-    }
-    pub fn scene(&self) -> &Scene {
-        &self.scene
-    }
-    pub fn time(&self) -> &Arc<Time> {
-        &self.time
-    }
-    pub fn input(&self) -> &Input {
-        &self.input
-    }
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
-    pub fn tick_settings(&self) -> TickSettings {
-        self.tick_settings.lock().clone()
-    }
-    pub fn set_tick_settings(&self, settings: TickSettings) {
-        *self.tick_settings.lock() = settings;
-        self.tick_settings_changed.store(true);
-    }
-}
-
 /// Represents the game application with essential methods for a game's lifetime.
 pub trait Game {
-    /// Runs right before the first frame is drawn, initializing the instance.
-    fn start(&mut self, _components: &Components) {}
+    /// Runs right before the first frame is drawn and the window gets displayed, initializing the instance.
+    fn start(&mut self) {}
     /// Runs before the frame is drawn.
-    fn update(&mut self, _components: &Components) {}
+    fn update(&mut self) {}
     /// Runs after the frame is drawn.
-    fn frame_update(&mut self, _components: &Components) {}
+    fn frame_update(&mut self) {}
     /// Runs based on the configured tick settings of the engine.
-    fn tick(&mut self, _components: &Components) {}
+    fn tick(&mut self) {}
     /// Handles engine and window events.
-    fn event(&mut self, _event: events::Event, _components: &Components) {}
+    #[allow(unused_variables)]
+    fn event(&mut self, event: events::Event) {}
     /// If true exits the program, stopping the loop and closing the window, when true.
     fn exit(&self) -> bool;
 }
@@ -114,13 +63,44 @@ pub struct EngineSettings {
     /// The initial settings of the tick system.
     #[builder(setter(into), default)]
     pub tick_settings: TickSettings,
-    // /// Starting scene of the game engine.
-    // pub scene: Option<Scene>,
+}
+
+/// General in game settings built into the game engine.
+pub struct Settings {
+    tick_settings: Mutex<TickSettings>,
+    tick_pause_lock: (Mutex<bool>, Condvar),
+    window: Mutex<OnceCell<Arc<Window>>>,
+}
+
+impl Settings {
+    pub(crate) fn new() -> Self {
+        Self {
+            tick_settings: Mutex::new(TickSettings::default()),
+            tick_pause_lock: (Mutex::new(false), Condvar::new()),
+            window: Mutex::new(OnceCell::new()),
+        }
+    }
+    pub(crate) fn set_window(&self, window: Arc<Window>) {
+        self.window.lock().set(window).unwrap();
+    }
+    /// Returns the window of the game in case it is initialized.
+    pub fn window(&self) -> Option<Arc<Window>> {
+        self.window.lock().get().cloned()
+    }
+    /// Returns the engine wide tick settings.
+    pub fn tick_settings(&self) -> TickSettings {
+        self.tick_settings.lock().clone()
+    }
+    /// Sets the tick settings of the game engine.
+    pub fn set_tick_settings(&self, settings: TickSettings) {
+        *self.tick_pause_lock.0.lock() = settings.paused;
+        *self.tick_settings.lock() = settings;
+        self.tick_pause_lock.1.notify_all();
+    }
 }
 
 /// The struct that holds and executes all of the game data.
 pub struct Engine {
-    components: Components,
     #[cfg(feature = "egui")]
     gui: egui_winit_vulkano::Gui,
     tick_system: TickSystem,
@@ -133,27 +113,19 @@ impl Engine {
     pub fn new(settings: impl Into<EngineSettings>) -> Result<Self> {
         let settings = settings.into();
 
-        let scene = Scene::default();
-        let input = Input::new();
-        let time = Arc::new(Time::default());
-        let tick_system = TickSystem::new(settings.tick_settings.clone());
+        SETTINGS.set_tick_settings(settings.tick_settings);
+        let tick_system = TickSystem::new();
 
         EVENT_LOOP.with_borrow_mut(|cell| {
             cell.get_or_init(|| EventLoopBuilder::new().build());
         });
         let draw = Draw::setup(settings.window_settings);
+        SETTINGS.set_window(draw.get_window().clone());
 
         #[cfg(feature = "egui")]
         let gui = egui::init(&draw);
 
-        let window = draw.get_window();
-
-        let components =
-            Components::new(scene, time, input, window.clone(), settings.tick_settings);
-
         Ok(Self {
-            components,
-
             #[cfg(feature = "egui")]
             gui,
             tick_system,
@@ -162,8 +134,8 @@ impl Engine {
         })
     }
 
-    pub fn components(&self) -> &Components {
-        &self.components
+    pub fn get_window(&self) -> &Window {
+        self.draw.get_window()
     }
 
     pub fn start(mut self, game: impl Game + Send + 'static) {
@@ -173,9 +145,7 @@ impl Engine {
                 .take()
                 .unwrap()
                 .run(move |event, _, control_flow| {
-                    self.components
-                        .input
-                        .update(&event, self.components.window.inner_size());
+                    INPUT.update(&event, self.get_window().inner_size());
                     if game.lock().exit() {
                         control_flow.set_exit();
                     }
@@ -248,49 +218,45 @@ impl Engine {
                             // destroy event can't be called here so I did the most lazy approach possible.
                             if let events::Event::Destroyed = event {
                             } else {
-                                game.lock().event(event, &self.components);
+                                game.lock().event(event);
                             }
                         }
                         Event::DeviceEvent { event, .. } => match event {
                             DeviceEvent::MouseMotion { delta } => {
-                                game.lock().event(
-                                    events::Event::Input(InputEvent::MouseMotion(vec2(
+                                game.lock()
+                                    .event(events::Event::Input(InputEvent::MouseMotion(vec2(
                                         delta.0 as f32,
                                         delta.1 as f32,
-                                    ))),
-                                    &self.components,
-                                );
+                                    ))));
                             }
                             DeviceEvent::MouseWheel { delta } => {
-                                game.lock().event(
-                                    events::Event::Input(InputEvent::MouseWheel(match delta {
-                                        MouseScrollDelta::LineDelta(x, y) => {
-                                            ScrollDelta::LineDelta(vec2(x, y))
-                                        }
-                                        MouseScrollDelta::PixelDelta(delta) => {
-                                            ScrollDelta::PixelDelta(delta)
-                                        }
-                                    })),
-                                    &self.components,
-                                );
+                                game.lock()
+                                    .event(events::Event::Input(InputEvent::MouseWheel(
+                                        match delta {
+                                            MouseScrollDelta::LineDelta(x, y) => {
+                                                ScrollDelta::LineDelta(vec2(x, y))
+                                            }
+                                            MouseScrollDelta::PixelDelta(delta) => {
+                                                ScrollDelta::PixelDelta(delta)
+                                            }
+                                        },
+                                    )));
                             }
                             _ => (),
                         },
                         Event::MainEventsCleared => {
                             #[cfg(feature = "egui")]
                             self.gui.immediate_ui(|gui| {
-                                game.lock()
-                                    .event(events::Event::Egui(gui.context()), &self.components);
+                                game.lock().event(events::Event::Egui(gui.context()));
                             });
 
-                            game.lock().update(&self.components);
-                            self.components.window.request_redraw();
+                            game.lock().update();
+                            self.get_window().request_redraw();
                         }
                         Event::RedrawRequested(_) => {
                             let labelifier = &LABELIFIER;
                             labelifier.lock().update();
-                            match self.draw.redrawevent(
-                                &self.components.scene,
+                            match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
                                 &mut self.gui,
                             ) {
@@ -302,21 +268,18 @@ impl Engine {
                             };
                         }
                         Event::RedrawEventsCleared => {
-                            self.components.time.update();
-                            game.lock().frame_update(&self.components);
+                            TIME.update();
+                            game.lock().frame_update();
                         }
                         Event::LoopDestroyed => {
-                            game.lock()
-                                .event(events::Event::Destroyed, &self.components);
+                            game.lock().event(events::Event::Destroyed);
                         }
                         Event::NewEvents(StartCause::Init) => {
                             #[cfg(feature = "egui")]
                             self.gui.immediate_ui(|gui| {
-                                game.lock()
-                                    .event(events::Event::Egui(gui.context()), &self.components);
+                                game.lock().event(events::Event::Egui(gui.context()));
                             });
-                            match self.draw.redrawevent(
-                                &self.components.scene,
+                            match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
                                 &mut self.gui,
                             ) {
@@ -326,24 +289,11 @@ impl Engine {
                                 Err(e) => panic!("{e}"),
                                 _ => (),
                             };
-                            game.lock().start(&self.components);
-                            if !self.components.tick_settings.lock().paused {
-                                self.tick_system
-                                    .run(Arc::clone(&game), self.components.clone());
-                            }
+                            game.lock().start();
+                            self.get_window().initialize();
+                            self.tick_system.run(Arc::clone(&game));
                         }
                         _ => (),
-                    }
-                    if self.components.tick_settings_changed.load() {
-                        // Also stops the tick system.
-                        self.tick_system
-                            .update(self.components.tick_settings().clone());
-                        // Start it back up in case it is not paused.
-                        if !self.components.tick_settings.lock().paused {
-                            self.tick_system
-                                .run(Arc::clone(&game), self.components.clone());
-                        }
-                        self.components.tick_settings_changed.store(false);
                     }
                 });
         });

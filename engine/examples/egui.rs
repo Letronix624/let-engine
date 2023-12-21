@@ -30,7 +30,7 @@ fn main() {
     )
     .unwrap();
 
-    let game = Game::new(engine.components());
+    let game = Game::new();
 
     // Runs the game
     engine.start(game);
@@ -44,10 +44,10 @@ struct Game {
 
 #[cfg(feature = "egui")]
 impl Game {
-    pub fn new(components: &Components) -> Self {
+    pub fn new() -> Self {
         Self {
             // Makes a base layer where you place your scene into.
-            layer: components.scene().new_layer(),
+            layer: SCENE.new_layer(),
             exit: false,
         }
     }
@@ -55,7 +55,7 @@ impl Game {
 
 #[cfg(feature = "egui")]
 impl let_engine::Game for Game {
-    fn start(&mut self, _components: &Components) {
+    fn start(&mut self) {
         // Makes the view zoomed out and not stretchy.
         self.layer.set_camera_settings(CameraSettings {
             zoom: 0.5,
@@ -71,7 +71,7 @@ impl let_engine::Game for Game {
         // Initializes the object to the layer
         circle.init(&self.layer);
     }
-    fn event(&mut self, event: events::Event, _components: &Components) {
+    fn event(&mut self, event: events::Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {

@@ -14,7 +14,7 @@ fn main() {
     .unwrap();
 
     // Here it initializes the game struct to be used with the engine run method.
-    let game = Game::new(engine.components());
+    let game = Game::new();
 
     // Runs the game engine and makes a window.
     engine.start(game);
@@ -30,10 +30,10 @@ struct Game {
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(components: &Components) -> Self {
+    pub fn new() -> Self {
         Self {
             // Makes a base layer where you place your scene into.
-            main_layer: components.scene().new_layer(),
+            main_layer: SCENE.new_layer(),
             exit: false,
         }
     }
@@ -41,7 +41,7 @@ impl Game {
 
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
-    fn start(&mut self, _components: &Components) {
+    fn start(&mut self) {
         // Makes the view zoomed out and not stretchy.
         self.main_layer.set_camera_settings(CameraSettings {
             zoom: 0.5,
@@ -56,7 +56,7 @@ impl let_engine::Game for Game {
         // Initializes the object to the layer
         circle.init(&self.main_layer);
     }
-    fn event(&mut self, event: events::Event, _components: &Components) {
+    fn event(&mut self, event: events::Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {

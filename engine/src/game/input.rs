@@ -46,7 +46,7 @@ impl Input {
         }
     }
     /// Updates the input with the event.
-    pub(crate) fn update<T: 'static>(&mut self, event: &Event<T>, dimensions: Vec2) {
+    pub(crate) fn update<T: 'static>(&self, event: &Event<T>, dimensions: Vec2) {
         self.dimensions.store(dimensions);
         if let Event::WindowEvent { event, .. } = event {
             match event {

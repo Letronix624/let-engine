@@ -4,7 +4,10 @@
 use crate::prelude::Color;
 use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel};
 use winit::{
     dpi::*,
@@ -13,10 +16,11 @@ use winit::{
 };
 
 /// A struct representing the window.
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Window {
     window: Arc<winit::window::Window>,
-    clear_color: Arc<AtomicCell<Color>>,
+    clear_color: AtomicCell<Color>,
+    pub(crate) initialized: (AtomicBool, AtomicBool),
 }
 
 impl Window {
@@ -86,7 +90,14 @@ impl Window {
     /// Sets whether the window should be visible.
     #[inline]
     pub fn set_visible(&self, visible: bool) {
-        self.window.set_visible(visible)
+        self.initialized.0.store(true, Ordering::Release);
+        self.window
+            .set_visible(visible && self.initialized.0.load(Ordering::Acquire))
+    }
+    pub(crate) fn initialize(&self) {
+        self.initialized.1.store(true, Ordering::Release);
+        self.window
+            .set_visible(self.initialized.0.load(Ordering::Acquire));
     }
 
     /// Returns whether the window is visible.
@@ -278,6 +289,7 @@ impl Window {
 pub struct WindowBuilder {
     attributes: winit::window::WindowBuilder,
     pub(crate) clear_color: Color,
+    pub(crate) visible: bool,
 }
 
 impl WindowBuilder {
@@ -287,6 +299,7 @@ impl WindowBuilder {
         Self {
             attributes,
             clear_color: Color::BLACK,
+            visible: true,
         }
     }
 
@@ -296,6 +309,7 @@ impl WindowBuilder {
         Self {
             attributes: builder,
             clear_color: Color::BLACK,
+            visible: true,
         }
     }
 
@@ -387,7 +401,7 @@ impl WindowBuilder {
     /// Sets the window to be visible upon creation.
     #[inline]
     pub fn visible(mut self, visible: bool) -> Self {
-        self.attributes = self.attributes.with_visible(visible);
+        self.visible = visible;
         self
     }
 
@@ -442,11 +456,12 @@ impl From<WindowBuilder> for winit::window::WindowBuilder {
         val.attributes
     }
 }
-impl From<Arc<winit::window::Window>> for Window {
-    fn from(value: Arc<winit::window::Window>) -> Self {
+impl From<(Arc<winit::window::Window>, bool)> for Window {
+    fn from(value: (Arc<winit::window::Window>, bool)) -> Self {
         Self {
-            window: value,
-            clear_color: Arc::new(AtomicCell::new(Color::BLACK)),
+            window: value.0,
+            clear_color: AtomicCell::new(Color::BLACK),
+            initialized: (AtomicBool::new(value.1), AtomicBool::new(false)),
         }
     }
 }
