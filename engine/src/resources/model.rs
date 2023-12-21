@@ -1,6 +1,7 @@
-use super::Resources;
-use crate::{data::Data, error::NoDataError, Vertex};
+use crate::{error::NoDataError, prelude::*};
 use anyhow::Result;
+use parking_lot::Mutex;
+use std::sync::Arc;
 use vulkano::buffer::Subbuffer;
 
 /// The custom model of an object made of vertices and indices.
@@ -15,11 +16,15 @@ impl ModelData {
     /// Makes a new model with given data.
     ///
     /// Can return an error in case the GPU memory is full.
-    pub fn new(data: Data, resources: &Resources) -> Result<Self> {
+    pub fn new(data: Data) -> Result<Self> {
+        Self::new_from_loader(data, RESOURCES.loader())
+    }
+
+    pub(crate) fn new_from_loader(data: Data, loader: &Arc<Mutex<Loader>>) -> Result<Self> {
         if data.is_empty() {
             return Err(NoDataError.into());
         }
-        let loader = resources.loader().lock();
+        let loader = loader.lock();
         let vertex_sub_buffer = loader
             .vertex_buffer_allocator
             .allocate_slice(data.vertices.clone().len() as _)?;

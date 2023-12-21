@@ -17,15 +17,9 @@ pub enum Event {
     Window(WindowEvent),
     /// Input events.
     Input(InputEvent),
-    /// Update event that happens before every frame.
-    Update,
-    /// Update that happens after every frame has been drawn.
-    FrameUpdate,
     /// The last event to be called in this loop.
     /// This is the "do on quit" event.
     Destroyed,
-    /// The loop has started.
-    Ready,
 }
 
 /// An event coming with window context.
@@ -83,7 +77,7 @@ pub enum InputEvent {
     /// The modifiers were changed.
     /// Gets called when either shift, ctrl, alt or the super key get pressed.
     ///
-    /// The changes can be taken from the [INPUT](Input) struct.
+    /// The changes can be taken from the [INPUT](input::Input) struct.
     ModifiersChanged,
 }
 

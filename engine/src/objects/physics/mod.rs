@@ -1,6 +1,6 @@
 //! Physics related structs.
 
-use crate::Transform;
+use crate::objects::Transform;
 use glam::f32::{vec2, Vec2};
 use parking_lot::Mutex;
 pub use rapier2d::parry::transformation::vhacd::VHACDParameters;

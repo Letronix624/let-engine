@@ -8,6 +8,7 @@ pub mod scenes;
 
 use crate::{error::objects::ObjectError, prelude::*};
 
+use derive_builder::Builder;
 use scenes::Layer;
 
 use anyhow::Result;
@@ -144,14 +145,21 @@ impl Node<Object> {
 }
 
 /// Object to be rendered on the screen and get the physics processed of.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Builder)]
 pub struct Object {
+    #[builder(setter(into))]
     pub transform: Transform,
+    #[builder(setter(skip))]
     parent_transform: Transform,
+    #[builder(setter(into))]
     pub appearance: Appearance,
+    #[builder(setter(skip))]
     id: usize,
+    #[builder(setter(skip))]
     reference: Option<WeakObject>,
+    #[builder(setter(skip))]
     pub(crate) physics: ObjectPhysics,
+    #[builder(setter(skip))]
     layer: Option<Layer>,
 }
 

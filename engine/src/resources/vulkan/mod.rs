@@ -5,10 +5,10 @@ pub use shaders::*;
 #[cfg(feature = "vulkan_debug_utils")]
 mod debug;
 pub mod swapchain;
-mod window;
+pub(crate) mod window;
 
 use crate::prelude::*;
-use crate::Vertex as GameVertex;
+use crate::resources::data::Vertex as GameVertex;
 use anyhow::Result;
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;
@@ -20,17 +20,14 @@ use vulkano::{
         GraphicsPipeline,
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
-    swapchain::Surface,
 };
-use winit::event_loop::EventLoop;
 
 use std::sync::Arc;
 
 /// Just a holder of general immutable information about Vulkan.
 #[derive(Clone)]
 pub(crate) struct Vulkan {
-    pub surface: Arc<Surface>,
-    pub window: Window,
+    pub instance: Arc<vulkano::instance::Instance>,
     pub physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
@@ -51,11 +48,14 @@ pub(crate) struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn init(event_loop: &EventLoop<()>, window_builder: WindowBuilder) -> Result<Self> {
-        let instance = instance::create_instance(event_loop)?;
+    pub fn init() -> Result<Self> {
+        EVENT_LOOP.with_borrow(|event_loop| {
+            
+        let instance = instance::create_instance(event_loop.get().unwrap())?;
         #[cfg(feature = "vulkan_debug_utils")]
         let _debug = Arc::new(debug::make_debug(&instance));
-        let (surface, window) = window::create_window(event_loop, &instance, window_builder);
+        let (surface, _window) =
+            window::create_window(event_loop.get().unwrap(), &instance, WindowBuilder::new());
 
         let device_extensions = instance::create_device_extensions();
         let features = Features {
@@ -198,8 +198,7 @@ impl Vulkan {
         };
 
         Ok(Self {
-            surface,
-            window,
+            instance,
             physical_device,
             device,
             queue,
@@ -215,6 +214,7 @@ impl Vulkan {
             default_instance_material,
             #[cfg(feature = "vulkan_debug_utils")]
             _debug,
+        })
         })
     }
 }

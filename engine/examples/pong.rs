@@ -8,127 +8,177 @@ use std::{
 // A const that contains the constant window resolution.
 const RESOLUTION: Vec2 = vec2(800.0, 600.0);
 
-let_engine!();
 fn main() {
     // Describing the window.
     let window_builder = WindowBuilder::default()
         .resizable(false)
         .inner_size(RESOLUTION)
         .title("Pong 2");
-    let engine = start_engine!(window_builder).unwrap();
+    // Initialize the engine.
+    let engine = Engine::new(
+        EngineSettingsBuilder::default()
+            .window_settings(window_builder)
+            // Disable ticks.
+            .tick_settings(TickSettingsBuilder::default().paused(true).build().unwrap())
+            .build()
+            .unwrap(),
+    )
+    .unwrap();
 
-    // Creating a layer to put the objects into.
-    let layer = SCENE.new_layer();
-    layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Limited));
+    // Initialize the game struct after the engine was initialized.
+    let game = Game::new();
 
-    // Make left paddle controlled with W for up and S for down.
-    let mut paddle1 = Paddle::new(&layer, (VirtualKeyCode::W, VirtualKeyCode::S), -0.95);
-    // The right paddle controlled with the arrow up and down keys.
-    let mut paddle2 = Paddle::new(&layer, (VirtualKeyCode::Up, VirtualKeyCode::Down), 0.95);
+    // Runs the game
+    engine.start(game);
+}
 
-    // Spawns a ball in the middle.
-    let mut ball = Ball::new(layer.clone());
+struct Game {
+    /// Exits the program on true.
+    exit: bool,
 
-    // Loading the font for the score.
-    let font = font!(include_bytes!("Px437_CL_Stingray_8x16.ttf")).expect("Font is invalid.");
+    left_paddle: Paddle,
+    right_paddle: Paddle,
+    ball: Ball,
 
-    // Making a default label for the left side.
-    let mut left_score = Label::new(
-        &RESOURCES,
-        &font,
-        LabelCreateInfo {
-            appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
-            text: "0".to_string(),
-            align: directions::NO,
-            transform: Transform::default().position(vec2(-0.55, 0.0)),
-            scale: vec2(50.0, 50.0),
-        },
-    );
-    left_score.init(&layer);
+    left_score: Label,
+    right_score: Label,
+}
+impl Game {
+    pub fn new() -> Self {
+        let game_layer = SCENE.new_layer();
+        let ui_layer = SCENE.new_layer();
+        // limits the view to -1 to 1 max
+        game_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Limited));
+        ui_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Expand));
 
-    // Making a default label for the right side.
-    let mut right_score = Label::new(
-        &RESOURCES,
-        &font,
-        LabelCreateInfo {
-            appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
-            text: "0".to_string(),
-            align: directions::NW,
-            transform: Transform::default().position(vec2(0.55, 0.0)),
-            scale: vec2(50.0, 50.0),
-        },
-    );
-    right_score.init(&layer);
+        // Make left paddle controlled with W for up and S for down.
+        let left_paddle = Paddle::new(&game_layer, (VirtualKeyCode::W, VirtualKeyCode::S), -0.95);
+        // The right paddle controlled with the arrow up and down keys.
+        let right_paddle = Paddle::new(
+            &game_layer,
+            (VirtualKeyCode::Up, VirtualKeyCode::Down),
+            0.95,
+        );
 
-    // Just the line in the middle.
-    let mut middle_line = Object::new();
-    // Make a custom model that is just a stippled line going from 1 to -1.
-    middle_line.appearance.set_model(Model::Custom(
-        model!(Data {
-            vertices: vec![
-                vert(0.0, 0.7),
-                vert(0.0, 0.3),
-                vert(0.0, -0.3),
-                vert(0.0, -0.7)
-            ],
-            indices: vec![0, 1, 2, 3]
-        })
-        .unwrap(),
-    ));
-    // A description of how the line should look like.
-    let line_material = MaterialSettingsBuilder::default()
-        .line_width(10.0)
-        .topology(Topology::LineList)
-        .build()
-        .unwrap();
-    let line_material = Material::new(line_material, &RESOURCES).unwrap();
-    middle_line.appearance.set_material(Some(line_material));
-    middle_line.init(&layer);
+        // Spawns a ball in the middle.
+        let ball = Ball::new(game_layer.clone());
 
-    // Starting the event loop.
-    engine.run_loop(move |event, control_flow| {
+        // Loading the font for the score.
+        let font = Font::from_bytes(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
+            .expect("Font is invalid.");
+
+        // Making a default label for the left side.
+        let mut left_score = Label::new(
+            &font,
+            LabelCreateInfo {
+                appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
+                text: "0".to_string(),
+                align: directions::NO,
+                transform: Transform::default().position(vec2(-0.55, 0.0)),
+                scale: vec2(50.0, 50.0),
+            },
+        );
+        // initialize this one to the ui
+        left_score.init(&ui_layer);
+
+        // Making a default label for the right side.
+        let mut right_score = Label::new(
+            &font,
+            LabelCreateInfo {
+                appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
+                text: "0".to_string(),
+                align: directions::NW,
+                transform: Transform::default().position(vec2(0.55, 0.0)),
+                scale: vec2(50.0, 50.0),
+            },
+        );
+        right_score.init(&ui_layer);
+
+        // Just the line in the middle.
+        let mut middle_line = Object::new();
+        // Make a custom model that is just a stippled line going from 1 to -1.
+        middle_line.appearance.set_model(Model::Custom(
+            ModelData::new(Data {
+                vertices: vec![
+                    vert(0.0, 0.7),
+                    vert(0.0, 0.3),
+                    vert(0.0, -0.3),
+                    vert(0.0, -0.7),
+                ],
+                indices: vec![0, 1, 2, 3],
+            })
+            .unwrap(),
+        ));
+        // A description of how the line should look like.
+        let line_material = MaterialSettingsBuilder::default()
+            .line_width(10.0)
+            .topology(Topology::LineList)
+            .build()
+            .unwrap();
+        let line_material = Material::new(line_material).unwrap();
+        middle_line.appearance.set_material(Some(line_material));
+        middle_line.init(&ui_layer);
+
+        Self {
+            exit: false,
+            left_paddle,
+            right_paddle,
+            ball,
+
+            left_score,
+            right_score,
+        }
+    }
+}
+
+impl let_engine::Game for Game {
+    fn update(&mut self) {
+        // run the update functions of the pedals.
+        self.left_paddle.update();
+        self.right_paddle.update();
+        self.ball.update();
+        self.left_score
+            .update_text(format!("{}", self.ball.wins[0]));
+        self.right_score
+            .update_text(format!("{}", self.ball.wins[1]));
+    }
+    fn event(&mut self, event: events::Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {
-                control_flow.set_exit();
+                self.exit = true;
             }
             Event::Input(InputEvent::KeyboardInput { input }) => {
                 if input.state == ElementState::Pressed {
                     match input.keycode {
                         // Exit when the escape key is pressed.
-                        Some(VirtualKeyCode::Escape) => control_flow.set_exit(),
+                        Some(VirtualKeyCode::Escape) => self.exit = true,
                         // Troll the right paddle
                         Some(VirtualKeyCode::E) => {
-                            paddle2.shrink();
+                            self.right_paddle.shrink();
                         }
                         // Grow and show the right paddle whos boss.
                         Some(VirtualKeyCode::Q) => {
-                            paddle1.grow();
+                            self.left_paddle.grow();
                         }
                         // Oh, so the left paddle thinks it's funny. I'll show it.
                         Some(VirtualKeyCode::Left) => {
-                            paddle1.shrink();
+                            self.left_paddle.shrink();
                         }
                         // I can grow too, noob.
                         Some(VirtualKeyCode::Right) => {
-                            paddle2.grow();
+                            self.right_paddle.grow();
                         }
                         _ => (),
                     }
                 }
             }
-            // Update for the game code.
-            Event::Update => {
-                // run the update functions of the pedals.
-                paddle1.update();
-                paddle2.update();
-                ball.update();
-                left_score.update_text(format!("{}", ball.wins[0]));
-                right_score.update_text(format!("{}", ball.wins[1]));
-            }
             _ => (),
         }
-    });
+    }
+    fn exit(&self) -> bool {
+        self.exit
+    }
 }
 
 struct Paddle {

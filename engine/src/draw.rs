@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{error::draw::*, prelude::*, resources::Loader};
 use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
@@ -11,23 +11,15 @@ use vulkano::{
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline, Pipeline},
     render_pass::Framebuffer,
     swapchain::{
-        acquire_next_image, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+        acquire_next_image, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
         SwapchainPresentInfo,
     },
     sync::{self, GpuFuture},
     Validated, VulkanError as VulkanoError,
 };
 
-use super::{
-    resources::vulkan::{
-        swapchain::create_swapchain_and_images, window_size_dependent_setup, Vulkan,
-    },
-    Loader,
-};
-
-use crate::{
-    camera::CameraSettings, error::draw::*, game::Node, objects::VisualObject, resources::data::*,
-    resources::Resources, utils, Object,
+use super::resources::vulkan::{
+    swapchain::create_swapchain_and_images, window_size_dependent_setup,
 };
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
@@ -38,6 +30,8 @@ use glam::{
 
 /// Responsible for drawing on the surface.
 pub struct Draw {
+    pub surface: Arc<Surface>,
+    pub window: Arc<Window>,
     pub(crate) recreate_swapchain: bool,
     pub(crate) swapchain: Arc<Swapchain>,
     pub(crate) viewport: Viewport,
@@ -49,14 +43,22 @@ pub struct Draw {
 }
 
 impl Draw {
-    pub(crate) fn setup(resources: &Resources) -> Self {
-        let vulkan = resources.vulkan();
+    pub(crate) fn setup(window_builder: WindowBuilder) -> Self {
+        let resources = &RESOURCES;
+        let vulkan = resources.vulkan().clone();
         let loader = resources.loader().lock();
+        let (surface, window) = EVENT_LOOP.with_borrow(|event_loop| {
+            return vulkan::window::create_window(
+                event_loop.get().unwrap(),
+                &resources.vulkan().instance,
+                window_builder,
+            );
+        });
 
         let recreate_swapchain = false;
 
         let (swapchain, images) =
-            create_swapchain_and_images(&vulkan.physical_device, &vulkan.device, &vulkan.surface);
+            create_swapchain_and_images(&vulkan.physical_device, &vulkan.device, &surface);
 
         let mut viewport = Viewport {
             offset: [0.0, 0.0],
@@ -89,6 +91,8 @@ impl Draw {
         let default_instance_pipeline = vulkan.default_instance_material.pipeline.clone();
 
         Self {
+            surface,
+            window,
             recreate_swapchain,
             swapchain,
             viewport,
@@ -100,8 +104,12 @@ impl Draw {
         }
     }
 
+    pub fn get_window(&self) -> &Arc<Window> {
+        &self.window
+    }
+
     /// Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
-    fn recreate_swapchain(&mut self, vulkan: &Vulkan) -> Result<(), VulkanError> {
+    fn recreate_swapchain(&mut self) -> Result<(), VulkanError> {
         if self.recreate_swapchain {
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: self.dimensions,
@@ -113,10 +121,11 @@ impl Draw {
                 }
             };
 
+            let resources = &RESOURCES;
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(
                 &new_images,
-                vulkan.render_pass.clone(),
+                resources.vulkan().render_pass.clone(),
                 &mut self.viewport,
             );
             self.recreate_swapchain = false;
@@ -127,10 +136,9 @@ impl Draw {
     /// Makes a primary and secondary command buffer already inside a render pass.
     fn make_command_buffer(
         &self,
-        vulkan: &Vulkan,
-        loader: &Loader,
         image_num: usize,
         clear_color: [f32; 4],
+        loader: &Loader,
     ) -> Result<
         (
             AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
@@ -138,6 +146,8 @@ impl Draw {
         ),
         VulkanError,
     > {
+        let resources = &RESOURCES;
+        let vulkan = resources.vulkan().clone();
         let mut builder = AutoCommandBufferBuilder::primary(
             &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
@@ -222,13 +232,12 @@ impl Draw {
     /// Draws the Game Scene on the given command buffer.
     fn write_secondary_command_buffer(
         &self,
-        scene: &crate::Scene,
+        scene: &Scene,
         command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
-        loader: &Loader,
-        shapes: &BasicShapes,
+        loader: &mut Loader,
     ) -> Result<(), VulkanError> {
         for layer in scene.get_layers().iter() {
-            let mut order: Vec<VisualObject> = vec![];
+            let mut order: Vec<VisualObject> = Vec::with_capacity(layer.objects_map.lock().len());
             let mut instances: Vec<Instance> = vec![];
 
             Node::order_position(&mut order, &layer.root.lock());
@@ -313,6 +322,8 @@ impl Draw {
                     .map_err(VulkanError::Validated)?,
                 );
 
+                let resources = &RESOURCES;
+                let shapes = resources.shapes().clone();
                 let model = match appearance.get_model() {
                     Model::Custom(data) => data,
                     Model::Square => &shapes.square,
@@ -359,6 +370,8 @@ impl Draw {
                     self.default_instance_pipeline.clone()
                 };
 
+                let resources = &RESOURCES;
+                let shapes = resources.shapes().clone();
                 let model = match &instance.model {
                     Model::Custom(data) => data,
                     Model::Square => &shapes.square,
@@ -394,8 +407,9 @@ impl Draw {
         command_buffer: Arc<PrimaryAutoCommandBuffer>,
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
-        vulkan: &Vulkan,
     ) -> Result<(), VulkanError> {
+        let resources = &RESOURCES;
+        let vulkan = resources.vulkan().clone();
         let future = self
             .previous_frame_end
             .take()
@@ -426,18 +440,14 @@ impl Draw {
     }
 
     /// Redraws the scene.
-    pub(crate) fn redrawevent(
+    pub(crate) fn redraw_event(
         &mut self,
-        resources: &Resources,
-        scene: &crate::Scene,
         #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
     ) -> Result<(), VulkanError> {
-        let vulkan = resources.vulkan();
-        let loader = resources.loader().as_ref().lock();
+        let resources = &RESOURCES;
+        let mut loader = resources.loader().lock();
 
-        let window = &vulkan.window;
-
-        let dimensions = window.inner_size();
+        let dimensions = self.window.inner_size();
         self.dimensions = [dimensions.x as u32, dimensions.y as u32];
 
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
@@ -446,7 +456,7 @@ impl Draw {
             return Ok(());
         }
 
-        Self::recreate_swapchain(self, resources.vulkan())?;
+        Self::recreate_swapchain(self)?;
 
         let (image_num, suboptimal, acquire_future) =
             match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {
@@ -466,19 +476,12 @@ impl Draw {
 
         let (mut builder, mut secondary_builder) = Self::make_command_buffer(
             self,
-            vulkan,
-            &loader,
             image_num as usize,
-            window.clear_color().rgba(),
+            self.window.clear_color().rgba(),
+            &loader,
         )?;
 
-        Self::write_secondary_command_buffer(
-            self,
-            scene,
-            &mut secondary_builder,
-            &loader,
-            resources.shapes(),
-        )?;
+        Self::write_secondary_command_buffer(self, &SCENE, &mut secondary_builder, &mut loader)?;
 
         builder
             .execute_commands(secondary_builder.build().unwrap())
@@ -497,7 +500,7 @@ impl Draw {
             .map_err(|e| VulkanError::Validated(e.into()))?;
         let command_buffer = builder.build().unwrap();
 
-        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num, vulkan)?;
+        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)?;
         Ok(())
     }
 }

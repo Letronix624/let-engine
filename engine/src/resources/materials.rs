@@ -29,7 +29,7 @@ use vulkano::pipeline::{
 use vulkano::render_pass::Subpass;
 use vulkano::shader::{ShaderModule, ShaderModuleCreateInfo};
 
-use super::Resources;
+use super::RESOURCES;
 // pub use vulkano::pipeline::graphics::rasterization::LineStipple;
 
 /// The way in which an object gets drawn using it's vertices and indices.
@@ -78,7 +78,6 @@ impl Material {
         shaders: &Shaders,
         instanced: bool,
         writes: Vec<WriteDescriptorSet>,
-        resources: &Resources,
     ) -> Result<Self, VulkanError> {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
@@ -95,6 +94,7 @@ impl Material {
 
         // let line_stipple = settings.line_stripple.map(StateMode::Fixed);
 
+        let resources = &RESOURCES;
         let loader = resources.loader().lock();
         let vulkan = resources.vulkan();
         let pipeline_cache = loader.pipeline_cache.clone();
@@ -181,22 +181,22 @@ impl Material {
     }
 
     /// Makes a new default material.
-    pub fn new(settings: MaterialSettings, resources: &Resources) -> Result<Material, VulkanError> {
-        let shaders = &resources.vulkan().default_shaders;
-        Self::new_with_shaders(settings, shaders, false, vec![], resources)
+    pub fn new(settings: MaterialSettings) -> Result<Material, VulkanError> {
+        let resources = &RESOURCES;
+        let shaders = resources.vulkan().clone().default_shaders;
+        Self::new_with_shaders(settings, &shaders, false, vec![])
     }
 
     /// Makes a new default material.
-    pub fn new_instanced(
-        settings: MaterialSettings,
-        resources: &Resources,
-    ) -> Result<Material, VulkanError> {
-        let shaders = &resources.vulkan().default_instance_shaders;
-        Self::new_with_shaders(settings, shaders, true, vec![], resources)
+    pub fn new_instanced(settings: MaterialSettings) -> Result<Material, VulkanError> {
+        let resources = &RESOURCES;
+        let shaders = resources.vulkan().clone().default_instance_shaders;
+        Self::new_with_shaders(settings, &shaders, true, vec![])
     }
 
     /// Creates a simple material made just for showing a texture.
-    pub fn new_default_textured(texture: &Texture, resources: &Resources) -> Material {
+    pub fn new_default_textured(texture: &Texture) -> Material {
+        let resources = &RESOURCES;
         let default = if texture.layers() == 1 {
             resources.vulkan().textured_material.clone()
         } else {
@@ -207,7 +207,8 @@ impl Material {
             ..default
         }
     }
-    pub fn new_default_textured_instance(texture: &Texture, resources: &Resources) -> Material {
+    pub fn new_default_textured_instance(texture: &Texture) -> Material {
+        let resources = &RESOURCES;
         let default = if texture.layers() == 1 {
             resources.vulkan().textured_instance_material.clone()
         } else {
@@ -221,12 +222,15 @@ impl Material {
 }
 impl Material {
     /// Writes to the material changing the variables for the shaders.
-    pub fn write(
+    ///
+    /// # Safety
+    /// The program will crash in case in case the data input here is not as the shader wants it.
+    pub unsafe fn write(
+        // this has to be changed
         &mut self,
         descriptor: Vec<WriteDescriptorSet>,
-        resources: &Resources,
-        // allocator: &StandardDescriptorSetAllocator,
     ) {
+        let resources = &RESOURCES;
         let loader = resources.loader().lock();
         self.descriptor = Some(
             PersistentDescriptorSet::new(
@@ -346,9 +350,10 @@ impl Shaders {
         vertex_bytes: &[u8],
         fragment_bytes: &[u8],
         entry_point: &str,
-        resources: &Resources,
+        // layout: &[Box<dyn BufferContents + Any>],
     ) -> Result<Self, ShaderError> {
-        let device = &resources.vulkan().device;
+        let resources = &RESOURCES;
+        let device = resources.vulkan().clone().device;
         let vertex_words = bytes_to_words(vertex_bytes)?;
         let fragment_words = bytes_to_words(fragment_bytes)?;
         let vertex: Arc<ShaderModule> = unsafe {

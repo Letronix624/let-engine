@@ -11,14 +11,19 @@ pub fn create_window(
     event_loop: &EventLoop<()>,
     instance: &Arc<Instance>,
     builder: WindowBuilder,
-) -> (Arc<Surface>, Window) {
+) -> (Arc<Surface>, Arc<Window>) {
     let clear_color = builder.clear_color;
+    let visible = builder.visible;
     let builder: winit::window::WindowBuilder = builder.into();
-    let window: Arc<winit::window::Window> = builder.build(event_loop).unwrap().into();
+    let window: Arc<winit::window::Window> = builder
+        .with_visible(false)
+        .build(event_loop)
+        .unwrap()
+        .into();
 
     let surface = Surface::from_window(instance.clone(), window.clone()).unwrap();
 
-    let window: Window = window.into();
+    let window: Arc<Window> = Arc::new((window, visible).into());
     window.set_clear_color(clear_color);
     (surface, window)
 }

@@ -12,7 +12,7 @@ use vulkano::image::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
 
-use super::Resources;
+use super::RESOURCES;
 
 /// Formats for the texture from raw data.
 #[derive(Clone, Copy, Debug)]
@@ -167,16 +167,14 @@ impl Texture {
         format: Format,
         layers: u32,
         settings: TextureSettings,
-        resources: &Resources,
     ) -> Texture {
-        let loader = resources.loader().lock();
         let data: Arc<[u8]> = Arc::from(data.to_vec().into_boxed_slice());
         Texture {
             data: data.clone(),
             dimensions,
             layers,
-            set: loader.load_texture(
-                resources.vulkan(),
+            set: RESOURCES.loader().lock().load_texture(
+                RESOURCES.vulkan(),
                 data,
                 dimensions,
                 layers,
@@ -194,7 +192,6 @@ impl Texture {
         image_format: ImageFormat,
         layers: u32,
         settings: TextureSettings,
-        resources: &Resources,
     ) -> Result<Texture, TextureError> {
         // Turn image to a vector of u8 first.
         let image = match load_from_memory_with_format(data, image_format) {
@@ -274,9 +271,7 @@ impl Texture {
 
         dimensions.1 /= layers;
 
-        Ok(Self::from_raw(
-            &image, dimensions, format, layers, settings, resources,
-        ))
+        Ok(Self::from_raw(&image, dimensions, format, layers, settings))
     }
 }
 /// Accessing
