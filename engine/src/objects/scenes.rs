@@ -1,7 +1,8 @@
+#[cfg(feature = "client")]
+use crate::utils::scale;
 use crate::{
     camera::{CameraScaling, CameraSettings},
     error::objects::*,
-    utils::scale,
 };
 
 use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap};
@@ -134,6 +135,7 @@ impl Layer {
         *self.camera.lock() = camera.as_node().ok_or(ObjectError::Uninitialized)?;
         Ok(())
     }
+    #[cfg(feature = "client")]
     pub(crate) fn camera_position(&self) -> Vec2 {
         self.camera.lock().lock().object.transform.position
     }
@@ -166,6 +168,7 @@ impl Layer {
     /// Returns the position of a given side with given window dimensions to world space.
     ///
     /// Be careful! Don't use this when the camera is locked.
+    #[cfg(feature = "client")]
     pub fn side_to_world(&self, direction: [f32; 2], dimensions: Vec2) -> Vec2 {
         // Change this to remove dimensions.
         let camera = Self::camera_position(self);

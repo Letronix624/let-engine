@@ -5,16 +5,25 @@
 //!
 //! A Game engine made in Rust.
 pub mod camera;
+#[cfg(feature = "client")]
 pub(crate) mod draw;
 pub mod error;
 mod game;
 pub use game::*;
 pub mod objects;
 pub mod prelude;
+#[cfg(feature = "client")]
 pub mod resources;
+#[cfg(feature = "client")]
 pub(crate) mod utils;
 
 pub use glam::{vec2, Vec2};
+
+#[cfg(feature = "egui")]
+mod check_feature_dependency {
+    #[cfg(not(feature = "client"))]
+    compile_error!("`egui` requires the `client` feature to be enabled.");
+}
 
 /// Egui feature on
 #[cfg(feature = "egui")]
@@ -22,6 +31,7 @@ pub use egui_winit_vulkano::egui;
 
 use once_cell::sync::Lazy;
 pub use rapier2d::prelude::CoefficientCombineRule;
+#[cfg(feature = "client")]
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 /// Cardinal directions
@@ -37,7 +47,12 @@ pub mod directions {
     pub const NW: [f32; 2] = [0.0; 2];
 }
 
+/// The engine wide scene holding all objects in layers.
 pub static SCENE: Lazy<objects::scenes::Scene> = Lazy::new(objects::scenes::Scene::default);
+/// General time methods of the game engine.
 pub static TIME: Lazy<Time> = Lazy::new(Time::default);
+/// The input system holding the state of every key and the mouse position.
+#[cfg(feature = "client")]
 pub static INPUT: Lazy<input::Input> = Lazy::new(input::Input::new);
+/// General settings for the game engine.
 pub static SETTINGS: Lazy<game::Settings> = Lazy::new(game::Settings::new);

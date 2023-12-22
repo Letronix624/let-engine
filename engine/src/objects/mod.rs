@@ -1,8 +1,12 @@
 //! Objects to be drawn to the screen.
 
+#[cfg(feature = "client")]
 pub mod appearance;
+#[cfg(feature = "client")]
 pub mod color;
+#[cfg(feature = "client")]
 pub mod labels;
+
 pub mod physics;
 pub mod scenes;
 
@@ -62,10 +66,12 @@ impl Default for Transform {
 }
 
 #[derive(Clone)]
+#[cfg(feature = "client")]
 pub(crate) struct VisualObject {
     pub transform: Transform,
     pub appearance: Appearance,
 }
+#[cfg(feature = "client")]
 impl VisualObject {
     /// Combines the object position data.
     pub fn combined(object: &Object, other: &Object) -> Self {
@@ -88,6 +94,7 @@ pub struct Node<T> {
 
 impl Node<Object> {
     /// Takes a vector of every object transform and appearance and fills it with the right drawing order based on the root node inserted.
+    #[cfg(feature = "client")]
     pub(crate) fn order_position(order: &mut Vec<VisualObject>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
@@ -152,6 +159,7 @@ pub struct Object {
     #[builder(setter(skip))]
     parent_transform: Transform,
     #[builder(setter(into))]
+    #[cfg(feature = "client")]
     pub appearance: Appearance,
     #[builder(setter(skip))]
     id: usize,
@@ -281,6 +289,7 @@ impl Object {
         self.parent_transform = transform;
     }
     /// Returns a reference to the appearance of the object.
+    #[cfg(feature = "client")]
     pub fn appearance(&self) -> &Appearance {
         &self.appearance
     }
@@ -308,7 +317,10 @@ impl Object {
         {
             let object = &arc.lock().object;
             self.transform = object.transform;
-            self.appearance = object.appearance().clone();
+            #[cfg(feature = "client")]
+            {
+                self.appearance = object.appearance().clone();
+            }
         } else {
             self.physics.remove();
         };

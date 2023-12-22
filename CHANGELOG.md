@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A brand new changelog.
+- Added a server mode that does not contain client features like resources, rendering and client specific things.
 
 ## [0.9.0] - 2023-12-21
 

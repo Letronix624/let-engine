@@ -234,7 +234,13 @@ impl ColliderBuilder {
     }
 
     /// Initializes a collider builder with a triangle mesh shape defined by its vertex and index buffers.
+    #[cfg(feature = "client")]
     pub fn trimesh(data: Data) -> Self {
+        Self::new(Shape::trimesh(data))
+    }
+    /// Initializes a triangle mesh shape defined by its vertex and index buffers.
+    #[cfg(not(feature = "client"))]
+    pub fn trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
         Self::new(Shape::trimesh(data))
     }
 
@@ -455,6 +461,7 @@ impl Shape {
     }
 
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.
+    #[cfg(feature = "client")]
     pub fn trimesh(data: Data) -> Self {
         Self(SharedShape::trimesh(
             data.vertices
@@ -462,6 +469,14 @@ impl Shape {
                 .map(|x| x.position.into())
                 .collect(),
             data.indices.chunks(3).map(|x| [x[0], x[1], x[2]]).collect(),
+        ))
+    }
+    /// Initializes a triangle mesh shape defined by its vertex and index buffers.
+    #[cfg(not(feature = "client"))]
+    pub fn trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
+        Self(SharedShape::trimesh(
+            data.0.into_iter().map(|x| x.into()).collect(),
+            data.1.into(),
         ))
     }
 

@@ -1,56 +1,90 @@
 use anyhow::Result;
 use derive_builder::Builder;
+#[cfg(feature = "client")]
 use glam::vec2;
+#[cfg(feature = "client")]
 use once_cell::unsync::OnceCell;
 use parking_lot::{Condvar, Mutex};
+#[cfg(feature = "client")]
 pub mod window;
+#[cfg(feature = "client")]
 pub(crate) use super::draw::Draw;
+#[cfg(feature = "client")]
 pub use winit::event_loop::ControlFlow;
+#[cfg(feature = "client")]
 use winit::{
     event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent},
     event_loop::{EventLoop, EventLoopBuilder},
 };
-#[cfg(feature = "egui")]
+#[cfg(all(feature = "egui", feature = "client"))]
 mod egui;
+#[cfg(feature = "client")]
 pub mod input;
 mod tick_system;
 pub use tick_system::*;
+#[cfg(feature = "client")]
 pub mod events;
 
 use atomic_float::AtomicF64;
 use crossbeam::atomic::AtomicCell;
 
-use std::{cell::RefCell, time::Duration};
+#[cfg(feature = "client")]
+use std::cell::RefCell;
 use std::{
     sync::{atomic::Ordering, Arc},
+    time::Duration,
     time::SystemTime,
 };
 
-use crate::{error::draw::VulkanError, resources::LABELIFIER, INPUT, SETTINGS, TIME};
+#[cfg(feature = "client")]
+use crate::{error::draw::VulkanError, resources::LABELIFIER, INPUT};
+use crate::{SETTINGS, TIME};
 
+#[cfg(feature = "client")]
 use self::{
     events::{InputEvent, ScrollDelta},
     window::{Window, WindowBuilder},
 };
 
+#[cfg(feature = "client")]
 thread_local! {
-    pub static EVENT_LOOP: RefCell<OnceCell<EventLoop<()>>> = RefCell::new(OnceCell::new());
+    pub(crate) static EVENT_LOOP: RefCell<OnceCell<EventLoop<()>>> = RefCell::new(OnceCell::new());
 }
 
 /// Represents the game application with essential methods for a game's lifetime.
 pub trait Game {
-    /// Runs right before the first frame is drawn and the window gets displayed, initializing the instance.
+    #[cfg_attr(
+        feature = "client",
+        doc = "Runs right before the first frame is drawn and the window gets displayed, initializing the instance."
+    )]
+    #[cfg_attr(
+        not(feature = "client"),
+        doc = "Runs right after the `start` function was called for the Engine."
+    )]
     fn start(&mut self) {}
-    /// Runs before the frame is drawn.
+    #[cfg_attr(feature = "client", doc = "Runs before the frame is drawn.")]
+    #[cfg_attr(
+        not(feature = "client"),
+        doc = "Runs in a loop after the `start` function."
+    )]
     fn update(&mut self) {}
     /// Runs after the frame is drawn.
+    #[cfg(feature = "client")]
     fn frame_update(&mut self) {}
     /// Runs based on the configured tick settings of the engine.
     fn tick(&mut self) {}
     /// Handles engine and window events.
     #[allow(unused_variables)]
+    #[cfg(feature = "client")]
     fn event(&mut self, event: events::Event) {}
-    /// If true exits the program, stopping the loop and closing the window, when true.
+    #[cfg_attr(
+        feature = "client",
+        doc = "If true exits the program, stopping the loop and closing the window."
+    )]
+    #[cfg_attr(
+        not(feature = "client"),
+        doc = "If true exits the program, stopping the loop."
+    )]
     fn exit(&self) -> bool;
 }
 
@@ -59,6 +93,7 @@ pub trait Game {
 pub struct EngineSettings {
     /// Settings that determines the look of the window.
     #[builder(setter(into, strip_option), default)]
+    #[cfg(feature = "client")]
     pub window_settings: WindowBuilder,
     /// The initial settings of the tick system.
     #[builder(setter(into), default)]
@@ -69,6 +104,7 @@ pub struct EngineSettings {
 pub struct Settings {
     tick_settings: Mutex<TickSettings>,
     tick_pause_lock: (Mutex<bool>, Condvar),
+    #[cfg(feature = "client")]
     window: Mutex<OnceCell<Arc<Window>>>,
 }
 
@@ -77,12 +113,15 @@ impl Settings {
         Self {
             tick_settings: Mutex::new(TickSettings::default()),
             tick_pause_lock: (Mutex::new(false), Condvar::new()),
+            #[cfg(feature = "client")]
             window: Mutex::new(OnceCell::new()),
         }
     }
+    #[cfg(feature = "client")]
     pub(crate) fn set_window(&self, window: Arc<Window>) {
         self.window.lock().set(window).unwrap();
     }
+    #[cfg(feature = "client")]
     /// Returns the window of the game in case it is initialized.
     pub fn window(&self) -> Option<Arc<Window>> {
         self.window.lock().get().cloned()
@@ -101,10 +140,11 @@ impl Settings {
 
 /// The struct that holds and executes all of the game data.
 pub struct Engine {
-    #[cfg(feature = "egui")]
+    #[cfg(all(feature = "egui", feature = "client"))]
     gui: egui_winit_vulkano::Gui,
     tick_system: TickSystem,
 
+    #[cfg(feature = "client")]
     draw: Draw,
 }
 
@@ -116,30 +156,53 @@ impl Engine {
         SETTINGS.set_tick_settings(settings.tick_settings);
         let tick_system = TickSystem::new();
 
+        #[cfg(feature = "client")]
         EVENT_LOOP.with_borrow_mut(|cell| {
             cell.get_or_init(|| EventLoopBuilder::new().build());
         });
+        #[cfg(feature = "client")]
         let draw = Draw::setup(settings.window_settings);
+        #[cfg(feature = "client")]
         SETTINGS.set_window(draw.get_window().clone());
 
-        #[cfg(feature = "egui")]
+        #[cfg(all(feature = "egui", feature = "client"))]
         let gui = egui::init(&draw);
 
         Ok(Self {
-            #[cfg(feature = "egui")]
+            #[cfg(all(feature = "egui", feature = "client"))]
             gui,
             tick_system,
 
+            #[cfg(feature = "client")]
             draw,
         })
     }
 
+    /// Returns the window of the game.
+    #[cfg(feature = "client")]
     pub fn get_window(&self) -> &Window {
         self.draw.get_window()
     }
-
+    /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
+    #[cfg(not(feature = "client"))]
     pub fn start(mut self, game: impl Game + Send + 'static) {
         let game = Arc::new(Mutex::new(game));
+
+        game.lock().start();
+        self.tick_system.run(Arc::clone(&game));
+        loop {
+            if game.lock().exit() {
+                break;
+            }
+            game.lock().update();
+            TIME.update();
+        }
+    }
+    /// Client start function running all the methods of the given game object as documented in the [trait](Game).
+    #[cfg(feature = "client")]
+    pub fn start(mut self, game: impl Game + Send + 'static) {
+        let game = Arc::new(Mutex::new(game));
+
         EVENT_LOOP.with_borrow_mut(|event_loop| {
             event_loop
                 .take()
