@@ -14,11 +14,12 @@ keywords = [
 license = "Apache-2.0"
 
 [dependencies]
-vulkano = "0.34.1"
-winit = { version = "0.28" }
-image = "0.24"
-
-#rodio = "0.17.1"
+# Client dependencies:
+vulkano = { version = "0.34", optional = true }
+winit = { version = "0.28", optional = true }
+image = { version = "0.24", optional = true }
+rusttype = { version = "0.9.3", features = [ "gpu_cache" ], optional = true }
+egui_winit_vulkano = { version = "0.26", optional = true }
 
 anyhow = "1.0"
 thiserror = "1.0"
@@ -33,8 +34,6 @@ crossbeam = "0.8"
 glam = { version = "0.24.2", features = [ "bytemuck" ] }
 nalgebra = { version = "0.32.3", features = [ "convert-glam024" ] }
 
-rusttype = { version = "0.9.3", features = [ "gpu_cache" ] }
-egui_winit_vulkano = { version = "0.26", optional = true }
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
 paste = "1.0.14"
 spin_sleep = "1.1.1"
@@ -45,9 +44,10 @@ once_cell = "1.19.0"
 egui_demo_lib = "0.23"
 
 [features]
-default = []
+default = ["client"]
 egui = ["dep:egui_winit_vulkano"]
 vulkan_debug_utils = []
+client = ["dep:vulkano", "dep:winit", "dep:image", "dep:rusttype"]
 
 [package.metadata.docs.rs]
 

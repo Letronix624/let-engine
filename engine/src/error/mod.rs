@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 /// Drawing related errors.
+#[cfg(feature = "client")]
 pub mod draw;
 /// Object and layer related errors.
 pub mod objects;
