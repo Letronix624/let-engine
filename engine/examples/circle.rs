@@ -1,6 +1,16 @@
 //! Simple circle scene.
+#[cfg(feature = "client")]
+use std::sync::Arc;
+
+#[cfg(feature = "client")]
 use let_engine::prelude::*;
 
+#[cfg(not(feature = "client"))]
+fn main() {
+    eprintln!("This example requires you to have the `client` feature enabled.");
+}
+
+#[cfg(feature = "client")]
 fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
@@ -21,13 +31,15 @@ fn main() {
 }
 
 /// Makes a game struct containing
+#[cfg(feature = "client")]
 struct Game {
     /// the main layer, where the scene gets put inside,
-    main_layer: Layer,
+    main_layer: Arc<Layer>,
     /// a variable that decides whether the program should close.
     exit: bool,
 }
 
+#[cfg(feature = "client")]
 impl Game {
     /// Constructor for this scene.
     pub fn new() -> Self {
@@ -40,6 +52,7 @@ impl Game {
 }
 
 /// Implement the Game trait into the Game struct.
+#[cfg(feature = "client")]
 impl let_engine::Game for Game {
     fn start(&mut self) {
         // Makes the view zoomed out and not stretchy.
@@ -48,7 +61,7 @@ impl let_engine::Game for Game {
             mode: CameraScaling::Expand,
         });
         // Makes the circle in the middle.
-        let mut circle = Object::new();
+        let mut circle = NewObject::new();
         // Loads a circle model into the engine and sets the appearance of this object to it.
         circle
             .appearance

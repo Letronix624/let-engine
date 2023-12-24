@@ -9,7 +9,6 @@ use rusttype::gpu_cache::Cache;
 use rusttype::{point, PositionedGlyph, Scale};
 
 use super::super::resources::vulkan::shaders::*;
-use crate::error::objects::ObjectError;
 use crate::prelude::*;
 use glam::f32::{vec2, Vec2};
 
@@ -88,17 +87,17 @@ impl Default for LabelCreateInfo {
 /// At the beginning of the game update all the text gets rendered if any labels changed. This produces a new texture which if not synced
 /// to every label produces multiple textures, which take more memory.
 #[derive(Clone)]
-pub struct Label {
+pub struct Label<Object> {
     pub object: Object,
     pub font: Font,
     pub text: String,
     pub scale: Vec2,
     pub align: [f32; 2],
 }
-impl Label {
+impl Label<NewObject> {
     /// Creates a new label with the given settings.
     pub fn new(font: &Font, create_info: LabelCreateInfo) -> Self {
-        let mut object = Object::new();
+        let mut object = NewObject::new();
         object.transform = create_info.transform;
         object.appearance = create_info.appearance;
         Self {
@@ -109,28 +108,48 @@ impl Label {
             align: create_info.align,
         }
     }
-    pub fn init(&mut self, layer: &Layer) {
-        self.object.init(layer);
-        self.sync();
+    pub fn init(self, layer: &Arc<Layer>) -> Label<Object> {
+        let mut object = self.object.init(layer);
+        object.sync();
+        Label {
+            object,
+            font: self.font,
+            text: self.text,
+            scale: self.scale,
+            align: self.align,
+        }
     }
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
-        self.object.init_with_parent(layer, parent)?;
-        self.sync();
-        Ok(())
+    pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Label<Object> {
+        let mut object = self.object.init_with_parent(layer, parent);
+        object.sync();
+        Label {
+            object,
+            font: self.font,
+            text: self.text,
+            scale: self.scale,
+            align: self.align,
+        }
     }
     pub fn init_with_optional_parent(
-        &mut self,
-        layer: &Layer,
+        self,
+        layer: &Arc<Layer>,
         parent: Option<&Object>,
-    ) -> Result<(), ObjectError> {
-        self.object.init_with_optional_parent(layer, parent)?;
-        self.sync();
-        Ok(())
+    ) -> Label<Object> {
+        let mut object = self.object.init_with_optional_parent(layer, parent);
+        object.sync();
+        Label {
+            object,
+            font: self.font,
+            text: self.text,
+            scale: self.scale,
+            align: self.align,
+        }
     }
+}
+impl Label<Object> {
     /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
-    pub fn update(&mut self) -> Result<(), ObjectError> {
-        self.object.update()?;
-        Ok(())
+    pub fn update(&mut self) {
+        self.object.update();
     }
     /// Changes the text of the label and updates it on the layer.
     pub fn update_text(&mut self, text: impl Into<String>) {
@@ -334,7 +353,7 @@ impl Labelifier {
                 .set_material(Some(self.material.clone()));
             label.object.appearance.set_visible(visible);
             //label.sync();
-            let node = label.object.as_node().unwrap();
+            let node = label.object.as_node();
             let mut object = node.lock();
             object.object = label.object.clone();
         }
@@ -353,7 +372,7 @@ impl Labelifier {
         self.queued = vec![];
         self.ready = false;
     }
-    pub fn queue(&mut self, label: Label) {
+    pub fn queue(&mut self, label: Label<Object>) {
         self.ready = true;
 
         let size = label.object.appearance.get_transform().size;
@@ -371,11 +390,11 @@ impl Labelifier {
 }
 
 struct DrawTask<'a> {
-    pub label: Label,
+    pub label: Label<Object>,
     pub glyphs: Vec<PositionedGlyph<'a>>,
 }
 
-fn layout_paragraph<'a>(label: &Label, dimensions: [f32; 2]) -> Vec<PositionedGlyph<'a>> {
+fn layout_paragraph<'a>(label: &Label<Object>, dimensions: [f32; 2]) -> Vec<PositionedGlyph<'a>> {
     if label.text.is_empty() {
         return vec![];
     };
@@ -384,6 +403,7 @@ fn layout_paragraph<'a>(label: &Label, dimensions: [f32; 2]) -> Vec<PositionedGl
         x: label.scale[0],
         y: label.scale[1],
     };
+
     let v_metrics = label.font.font().v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
     let mut caret = point(0.0, v_metrics.ascent);

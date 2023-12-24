@@ -1,5 +1,4 @@
-/target
-/.vscode
-/.obsidian
-/Cargo.lock
-/engine/Cargo.lock
+target
+.vscode
+.obsidian
+*.lock

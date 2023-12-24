@@ -5,7 +5,6 @@ use glam::f32::{vec2, Vec2};
 use parking_lot::Mutex;
 pub use rapier2d::parry::transformation::vhacd::VHACDParameters;
 use rapier2d::prelude::*;
-use std::sync::Arc;
 
 mod colliders;
 pub mod joints;
@@ -138,12 +137,18 @@ impl Physics {
 /// It also holds the collider, it's position, rigid body and all it's handles.
 #[derive(Clone, Default)]
 pub(crate) struct ObjectPhysics {
-    pub physics: Option<Arc<Mutex<Physics>>>,
     pub collider: Option<colliders::Collider>,
     pub local_collider_position: Vec2,
     pub rigid_body: Option<rigid_bodies::RigidBody>,
     pub collider_handle: Option<ColliderHandle>,
     pub rigid_body_handle: Option<RigidBodyHandle>,
+}
+impl PartialEq for ObjectPhysics {
+    fn eq(&self, other: &Self) -> bool {
+        self.local_collider_position == other.local_collider_position
+            && self.collider_handle == other.collider_handle
+            && self.rigid_body_handle == other.rigid_body_handle
+    }
 }
 
 impl std::fmt::Debug for ObjectPhysics {
@@ -164,12 +169,13 @@ impl ObjectPhysics {
         parent: &super::NObject,
         rigid_body_object: &mut crate::objects::RigidBodyParent,
         id: u128,
+        physics: &Mutex<Physics>,
     ) -> Transform {
         let parent = parent.lock();
         let parent_transform = parent.object.transform;
         let public_transform = transform.combine(parent_transform);
 
-        let mut physics = self.physics.as_ref().unwrap().lock();
+        let mut physics = physics.lock();
         physics.query_pipeline_out_of_date = true;
 
         // What happens in every combination.
@@ -313,8 +319,8 @@ impl ObjectPhysics {
         parent_transform
     }
     /// In case the object gets removed from the layer.
-    pub fn remove(&mut self) {
-        let mut physics = self.physics.as_ref().unwrap().lock();
+    pub fn remove(&mut self, physics: &Mutex<Physics>) {
+        let mut physics = physics.lock();
         physics.query_pipeline_out_of_date = true;
         match (
             self.collider_handle.as_ref(),
