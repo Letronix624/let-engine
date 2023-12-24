@@ -89,9 +89,9 @@ feel free to contribute. Go resolve some of the issues I made or take a look at 
 
 ## Plan
 
-Once all planned features have been implemented, the code looks acceptable, a not that bad performance as well as me being happy with the format I will release 1.0.0.
+Once all planned features have been implemented, the code looks acceptable, the performance is acceptable and when I am happy with the format I will release 1.0.0.
 
-After the first stage of my game engine is comleted, this is where I will start advertising the game engine.
+After the first stage of my game engine is completed, this is where I will start advertising the game engine.
 Only together this game engine can be made great.
 
 https://crates.io/crates/let-engine
