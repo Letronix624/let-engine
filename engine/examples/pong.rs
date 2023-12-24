@@ -52,8 +52,8 @@ struct Game {
     right_paddle: Paddle,
     ball: Ball,
 
-    left_score: Label,
-    right_score: Label,
+    left_score: Label<Object>,
+    right_score: Label<Object>,
 }
 #[cfg(feature = "client")]
 impl Game {
@@ -81,7 +81,7 @@ impl Game {
             .expect("Font is invalid.");
 
         // Making a default label for the left side.
-        let mut left_score = Label::new(
+        let left_score = Label::new(
             &font,
             LabelCreateInfo {
                 appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
@@ -92,10 +92,10 @@ impl Game {
             },
         );
         // initialize this one to the ui
-        left_score.init(&ui_layer);
+        let left_score = left_score.init(&ui_layer);
 
         // Making a default label for the right side.
-        let mut right_score = Label::new(
+        let right_score = Label::new(
             &font,
             LabelCreateInfo {
                 appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
@@ -105,10 +105,10 @@ impl Game {
                 scale: vec2(50.0, 50.0),
             },
         );
-        right_score.init(&ui_layer);
+        let right_score = right_score.init(&ui_layer);
 
         // Just the line in the middle.
-        let mut middle_line = Object::new();
+        let mut middle_line = NewObject::new();
         // Make a custom model that is just a stippled line going from 1 to -1.
         middle_line.appearance.set_model(Model::Custom(
             ModelData::new(Data {
@@ -206,7 +206,7 @@ struct Paddle {
 impl Paddle {
     pub fn new(layer: &Arc<Layer>, controls: (VirtualKeyCode, VirtualKeyCode), x: f32) -> Self {
         let height = 0.05;
-        let mut object = Object::new();
+        let mut object = NewObject::new();
         object.transform = Transform {
             position: vec2(x, 0.0),
             size: vec2(0.015, height),
@@ -217,7 +217,7 @@ impl Paddle {
         object.set_collider(Some(ColliderBuilder::square(0.015, height).build()));
 
         // Initialize the object to the given layer.
-        object.init(layer);
+        let object = object.init(layer);
         Self {
             controls,
             object,
@@ -234,7 +234,7 @@ impl Paddle {
         *y = y.clamp(-0.70, 0.70);
 
         // Updates the object in the game.
-        self.object.sync().unwrap();
+        self.object.sync();
     }
     /// To troll the opponent.
     pub fn shrink(&mut self) {
@@ -250,7 +250,7 @@ impl Paddle {
         self.object.transform.size.y = self.height;
         self.object
             .set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
-        self.object.sync().unwrap();
+        self.object.sync();
     }
 }
 
@@ -270,9 +270,9 @@ struct Ball {
 impl Ball {
     pub fn new(layer: &Arc<Layer>) -> Self {
         let lifetime = SystemTime::now();
-        let mut object = Object::new();
+        let mut object = NewObject::new();
         object.transform.size = vec2(0.015, 0.015);
-        object.init(layer);
+        let object = object.init(layer);
 
         Self {
             object,
@@ -320,14 +320,14 @@ impl Ball {
 
             self.object.transform.position +=
                 self.direction * TIME.delta_time() as f32 * self.speed;
-            self.object.sync().unwrap();
+            self.object.sync();
         }
     }
     fn reset(&mut self) {
         self.new_round = SystemTime::now();
         self.object.transform.position = vec2(0.0, 0.0);
         self.direction = Self::random_direction(self.lifetime);
-        self.object.sync().unwrap();
+        self.object.sync();
     }
     fn rebound(&mut self, x: f64) {
         // Random 0.0 to 1.0 value. Some math that makes a random direction.

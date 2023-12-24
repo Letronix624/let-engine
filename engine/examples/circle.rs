@@ -61,7 +61,7 @@ impl let_engine::Game for Game {
             mode: CameraScaling::Expand,
         });
         // Makes the circle in the middle.
-        let mut circle = Object::new();
+        let mut circle = NewObject::new();
         // Loads a circle model into the engine and sets the appearance of this object to it.
         circle
             .appearance

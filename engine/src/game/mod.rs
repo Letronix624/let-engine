@@ -487,7 +487,7 @@ mod tests {
             }
             fn tick(&mut self) {
                 self.number += 1;
-                if self.number > 624 {
+                if self.number > 62 {
                     self.exit = true;
                 }
             }

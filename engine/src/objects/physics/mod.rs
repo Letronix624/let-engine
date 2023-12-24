@@ -143,6 +143,13 @@ pub(crate) struct ObjectPhysics {
     pub collider_handle: Option<ColliderHandle>,
     pub rigid_body_handle: Option<RigidBodyHandle>,
 }
+impl PartialEq for ObjectPhysics {
+    fn eq(&self, other: &Self) -> bool {
+        self.local_collider_position == other.local_collider_position
+            && self.collider_handle == other.collider_handle
+            && self.rigid_body_handle == other.rigid_body_handle
+    }
+}
 
 impl std::fmt::Debug for ObjectPhysics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

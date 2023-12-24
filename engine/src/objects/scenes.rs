@@ -36,17 +36,10 @@ impl Scene {
 
     /// Initializes a new layer into the scene.
     pub fn new_layer(&self) -> Arc<Layer> {
-        let object = Object::default();
+        let layer = Arc::new(Layer::new());
+        self.layers.lock().insert(layer.clone());
 
-        let node = Arc::new(Layer::new(Arc::new(Mutex::new(Node {
-            object,
-            parent: None,
-            rigid_body_parent: None,
-            children: vec![],
-        }))));
-        self.layers.lock().insert(node.clone());
-
-        node
+        layer
     }
 
     /// Removes a layer from the scene.
@@ -107,7 +100,13 @@ pub struct Layer {
 
 impl Layer {
     /// Creates a new layer with the given root.
-    pub(crate) fn new(root: NObject) -> Self {
+    pub(crate) fn new() -> Self {
+        let root = Arc::new(Mutex::new(Node {
+            object: Object::root(),
+            parent: None,
+            rigid_body_parent: None,
+            children: vec![],
+        }));
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
         Self {
@@ -130,7 +129,7 @@ impl Layer {
     }
     /// Sets the camera of this layer.
     pub fn set_camera(&self, camera: &Object) -> Result<(), ObjectError> {
-        *self.camera.lock() = camera.as_node().ok_or(ObjectError::Uninitialized)?;
+        *self.camera.lock() = camera.as_node();
         Ok(())
     }
     #[cfg(feature = "client")]
@@ -446,7 +445,7 @@ impl Layer {
     ///
     /// Returns
     pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
-        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
+        let node = object.as_node();
         let count = Self::count_children(&node);
 
         if count < index {
@@ -461,7 +460,7 @@ impl Layer {
 
     /// Moves an object one up in it's parents children order.
     pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
+        let node = object.as_node();
         let parent = Self::get_parent(&node);
         let index = Self::find_child_index(&parent, &node);
         if index == 0 {
@@ -476,7 +475,7 @@ impl Layer {
 
     /// Moves an object one down in it's parents children order.
     pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
+        let node = object.as_node();
         let parent = Self::get_parent(&node);
         let count = Self::count_children(&node);
         let index = Self::find_child_index(&parent, &node);
@@ -492,14 +491,14 @@ impl Layer {
 
     /// Moves an object all the way to the top of it's parents children list.
     pub fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
+        let node = object.as_node();
         Self::move_object_to(node, 0);
         Ok(())
     }
 
     /// Moves an object all the way to the bottom of it's parents children list.
     pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node().ok_or(ObjectError::Uninitialized)?;
+        let node = object.as_node();
         let count = Self::count_children(&node) - 1;
         Self::move_object_to(node, count);
         Ok(())
@@ -539,7 +538,7 @@ impl Layer {
     }
 
     pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
-        let node = parent.as_node().ok_or(ObjectError::Uninitialized)?;
+        let node = parent.as_node();
         Ok(Self::count_children(&node))
     }
 }
