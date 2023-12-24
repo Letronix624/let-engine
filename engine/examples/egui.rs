@@ -3,7 +3,7 @@
 //! Requires the egui feature to be enabled.
 //! Runnable with `cargo run --features=egui --example egui`
 #![allow(unused_imports)]
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 
 use egui_demo_lib::DemoWindows;
 use let_engine::prelude::*;
@@ -12,12 +12,13 @@ thread_local! {
     static DEMO_APP: RefCell<DemoWindows> = RefCell::new(DemoWindows::default());
 }
 
-#[cfg(not(feature = "egui"))]
+#[cfg(any(not(feature = "egui"), not(feature = "client")))]
 fn main() {
-    eprintln!("This example requires you to have the `egui` feature enabled.");
+    eprintln!("This example requires you to have the `egui` and `client` feature enabled.");
 }
 
 #[cfg(feature = "egui")]
+#[cfg(feature = "client")]
 fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
@@ -38,7 +39,7 @@ fn main() {
 
 #[cfg(feature = "egui")]
 struct Game {
-    layer: Layer,
+    layer: Arc<Layer>,
     exit: bool,
 }
 

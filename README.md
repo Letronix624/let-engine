@@ -19,6 +19,8 @@
 
 - Rapier Physics
 
+- Tick System
+
 # Progress
 To do:
 
@@ -28,13 +30,9 @@ To do:
 
 - Post processing
 
-- Tick System
-
 - Serialisation, Deserialisation with Serde
 
 - Resource packing system
-
-- Server mode
 
 - Better labels with text edit and caret
 
@@ -89,6 +87,11 @@ A graphics driver with Vulkan 1.2 support.
 feel free to contribute. Go resolve some of the issues I made or take a look at this:
 [![dependency status](https://deps.rs/repo/github/Letronix624/let-engine/status.svg)](https://deps.rs/repo/github/Letronix624/let-engine)
 
-I would be grateful.
+## Plan
+
+Once all planned features have been implemented, the code looks acceptable, a not that bad performance as well as me being happy with the format I will release 1.0.0.
+
+After the first stage of my game engine is comleted, this is where I will start advertising the game engine.
+Only together this game engine can be made great.
 
 https://crates.io/crates/let-engine

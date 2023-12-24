@@ -52,6 +52,26 @@ thread_local! {
 }
 
 /// Represents the game application with essential methods for a game's lifetime.
+/// # Usage
+///
+/// ```
+/// use let_engine::prelude::*;
+///
+/// struct Game {
+///     exit: bool,
+/// }
+///
+/// impl let_engine::Game for Game {
+///     fn exit(&self) -> bool {
+///        // exits the program in case self.exit is true
+///        self.exit
+///     }
+///     fn update(&mut self) {
+///         // runs every frame or every engine loop update.
+///         //...
+///     }
+/// }
+/// ```
 pub trait Game {
     #[cfg_attr(
         feature = "client",
@@ -436,5 +456,43 @@ impl Time {
     /// Sleeps the given duration times the time scale of the game engine.
     pub fn sleep(&self, duration: Duration) {
         spin_sleep::sleep(duration.mul_f64(self.time_scale.load(Ordering::Acquire)));
+    }
+}
+
+#[cfg(not(feature = "client"))]
+#[cfg(test)]
+mod tests {
+    use crate::prelude::*;
+
+    #[test]
+    fn start_engine() {
+        let engine = Engine::new(EngineSettings::default()).unwrap();
+
+        struct Game {
+            number: u32,
+            exit: bool,
+        }
+        impl Game {
+            pub fn new() -> Self {
+                Self {
+                    number: 0,
+                    exit: false,
+                }
+            }
+        }
+
+        impl crate::Game for Game {
+            fn exit(&self) -> bool {
+                self.exit
+            }
+            fn tick(&mut self) {
+                self.number += 1;
+                if self.number > 624 {
+                    self.exit = true;
+                }
+            }
+        }
+
+        engine.start(Game::new());
     }
 }

@@ -18,10 +18,9 @@ use std::sync::{
 };
 
 /// The whole scene seen with all it's layers.
-#[derive(Clone)]
 pub struct Scene {
-    layers: Arc<Mutex<IndexSet<Layer>>>,
-    physics_pipeline: Arc<Mutex<PhysicsPipeline>>,
+    layers: Mutex<IndexSet<Arc<Layer>>>,
+    physics_pipeline: Mutex<PhysicsPipeline>,
 }
 
 impl Scene {
@@ -36,15 +35,15 @@ impl Scene {
     }
 
     /// Initializes a new layer into the scene.
-    pub fn new_layer(&self) -> Layer {
+    pub fn new_layer(&self) -> Arc<Layer> {
         let object = Object::default();
 
-        let node = Layer::new(Arc::new(Mutex::new(Node {
+        let node = Arc::new(Layer::new(Arc::new(Mutex::new(Node {
             object,
             parent: None,
             rigid_body_parent: None,
             children: vec![],
-        })));
+        }))));
         self.layers.lock().insert(node.clone());
 
         node
@@ -73,12 +72,12 @@ impl Scene {
     }
 
     /// Returns an IndexSet of all layers.
-    pub fn get_layers(&self) -> IndexSet<Layer> {
+    pub fn get_layers(&self) -> IndexSet<Arc<Layer>> {
         self.layers.lock().clone()
     }
 
     /// Returns a layer by index.
-    pub fn get_layer(&self, index: usize) -> Layer {
+    pub fn get_layer(&self, index: usize) -> Arc<Layer> {
         self.layers.lock().get_index(index).unwrap().clone()
     }
 
@@ -88,46 +87,45 @@ impl Scene {
 impl Default for Scene {
     fn default() -> Self {
         Self {
-            layers: Arc::new(Mutex::new(indexset![])),
-            physics_pipeline: Arc::new(Mutex::new(PhysicsPipeline::new())),
+            layers: Mutex::new(indexset![]),
+            physics_pipeline: Mutex::new(PhysicsPipeline::new()),
         }
     }
 }
 
 /// A layer struct holding it's own object hierarchy, camera and physics iteration.
-#[derive(Clone)]
 pub struct Layer {
     pub(crate) root: NObject,
-    pub(crate) camera: Arc<Mutex<NObject>>,
-    camera_settings: Arc<AtomicCell<CameraSettings>>,
-    pub(crate) objects_map: Arc<Mutex<ObjectsMap>>,
-    rigid_body_roots: Arc<Mutex<ObjectsMap>>,
-    latest_object: Arc<AtomicU64>,
-    physics: Arc<Mutex<Physics>>,
-    physics_enabled: Arc<AtomicBool>,
+    pub(crate) camera: Mutex<NObject>,
+    camera_settings: AtomicCell<CameraSettings>,
+    pub(crate) objects_map: Mutex<ObjectsMap>,
+    rigid_body_roots: Mutex<ObjectsMap>,
+    latest_object: AtomicU64,
+    physics: Mutex<Physics>,
+    physics_enabled: AtomicBool,
 }
 
 impl Layer {
     /// Creates a new layer with the given root.
-    pub fn new(root: NObject) -> Self {
+    pub(crate) fn new(root: NObject) -> Self {
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
         Self {
             root: root.clone(),
-            camera: Arc::new(Mutex::new(root)),
-            camera_settings: Arc::new(AtomicCell::new(CameraSettings::default())),
-            objects_map: Arc::new(Mutex::new(objects_map)),
-            rigid_body_roots: Arc::new(Mutex::new(HashMap::new())),
-            latest_object: Arc::new(AtomicU64::new(1)),
-            physics: Arc::new(Mutex::new(Physics::new())),
-            physics_enabled: Arc::new(AtomicBool::new(true)),
+            camera: Mutex::new(root),
+            camera_settings: AtomicCell::new(CameraSettings::default()),
+            objects_map: Mutex::new(objects_map),
+            rigid_body_roots: Mutex::new(HashMap::new()),
+            latest_object: AtomicU64::new(1),
+            physics: Mutex::new(Physics::new()),
+            physics_enabled: AtomicBool::new(true),
         }
     }
     /// Used by the proc macro to initialize the physics for an object.
-    pub(crate) fn physics(&self) -> &Arc<Mutex<Physics>> {
+    pub(crate) fn physics(&self) -> &Mutex<Physics> {
         &self.physics
     }
-    pub(crate) fn rigid_body_roots(&self) -> &Arc<Mutex<ObjectsMap>> {
+    pub(crate) fn rigid_body_roots(&self) -> &Mutex<ObjectsMap> {
         &self.rigid_body_roots
     }
     /// Sets the camera of this layer.
@@ -548,9 +546,7 @@ impl Layer {
 
 impl PartialEq for Layer {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.root, &other.root)
-            && Arc::ptr_eq(&self.camera, &other.camera)
-            && Arc::ptr_eq(&self.objects_map, &other.objects_map)
+        *self.root.lock() == *other.root.lock()
     }
 }
 
@@ -559,7 +555,5 @@ impl Eq for Layer {}
 impl std::hash::Hash for Layer {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         Arc::as_ptr(&self.root).hash(state);
-        Arc::as_ptr(&self.camera).hash(state);
-        Arc::as_ptr(&self.objects_map).hash(state);
     }
 }

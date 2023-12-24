@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A brand new changelog.
 - Added a server mode that does not contain client features like resources, rendering and client specific things.
 
+### Changed
+
+- Layer and scene to not contain a lot of Arc's but have a single outer one. Layers are now accessible as `Arc<Layer>`.
+
+### Removed
+
+- Public visibility of the layer new function.
+
 ## [0.9.0] - 2023-12-21
 
 ### Added

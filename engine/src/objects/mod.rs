@@ -33,6 +33,7 @@ pub struct Transform {
     pub size: Vec2,
     pub rotation: f32,
 }
+impl Eq for Transform {}
 impl Transform {
     pub fn combine(self, rhs: Self) -> Self {
         Self {
@@ -91,6 +92,11 @@ pub struct Node<T> {
     pub rigid_body_parent: RigidBodyParent,
     pub children: Vec<Arc<Mutex<Node<T>>>>,
 }
+impl PartialEq for Node<Object> {
+    fn eq(&self, other: &Self) -> bool {
+        self.object == other.object
+    }
+}
 
 impl Node<Object> {
     /// Takes a vector of every object transform and appearance and fills it with the right drawing order based on the root node inserted.
@@ -131,7 +137,9 @@ impl Node<Object> {
     }
     /// Removes all children and their children from the layer.
     pub fn remove_children(&mut self, objects: &mut ObjectsMap, rigid_bodies: &mut ObjectsMap) {
-        self.object.physics.remove();
+        self.object
+            .physics
+            .remove(self.object.layer.as_ref().unwrap().physics());
         for child in self.children.iter() {
             child.clone().lock().remove_children(objects, rigid_bodies);
         }
@@ -168,8 +176,28 @@ pub struct Object {
     #[builder(setter(skip))]
     pub(crate) physics: ObjectPhysics,
     #[builder(setter(skip))]
-    layer: Option<Layer>,
+    layer: Option<Arc<Layer>>,
 }
+impl PartialEq for Object {
+    fn eq(&self, other: &Self) -> bool {
+        #[cfg(not(feature = "client"))]
+        {
+            self.transform == other.transform
+                && self.parent_transform == other.parent_transform
+                && self.id == other.id
+                && self.layer == other.layer
+        }
+        #[cfg(feature = "client")]
+        {
+            self.transform == other.transform
+                && self.parent_transform == other.parent_transform
+                && self.appearance == other.appearance
+                && self.id == other.id
+                && self.layer == other.layer
+        }
+    }
+}
+impl Eq for Object {}
 
 /// New
 impl Object {
@@ -178,25 +206,27 @@ impl Object {
         Self::default()
     }
     /// Initializes the object into a layer.
-    pub fn init(&mut self, layer: &Layer) {
+    pub fn init(&mut self, layer: &Arc<Layer>) {
         self.init_with_optional_parent(layer, None).unwrap();
     }
     /// Initializes the object into a layer with a parent object.
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
+    pub fn init_with_parent(
+        &mut self,
+        layer: &Arc<Layer>,
+        parent: &Object,
+    ) -> Result<(), ObjectError> {
         self.init_with_optional_parent(layer, Some(parent))?;
         Ok(())
     }
     /// Initializes the object into a layer with an optional parent object.
     pub fn init_with_optional_parent(
         &mut self,
-        layer: &Layer,
+        layer: &Arc<Layer>,
         parent: Option<&Object>,
     ) -> Result<(), ObjectError> {
         self.layer = Some(layer.clone());
         // Init ID of this object.
         self.id = layer.increment_id();
-        // Set the physics reference of this object.
-        self.physics.physics = Some(layer.physics().clone());
 
         let mut rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
@@ -213,6 +243,7 @@ impl Object {
             &parent,
             &mut rigid_body_parent,
             self.id as u128,
+            layer.physics(),
         );
 
         // Make yourself to a node.
@@ -260,7 +291,7 @@ impl Object {
         };
         rigid_bodies.remove(&self.id);
         // Remove self from the physics side.
-        self.physics.remove();
+        self.physics.remove(self.layer()?.physics());
 
         let mut object = node.lock();
         object.remove_children(&mut map, &mut rigid_bodies);
@@ -322,9 +353,16 @@ impl Object {
                 self.appearance = object.appearance().clone();
             }
         } else {
-            self.physics.remove();
+            self.physics.remove(self.layer()?.physics());
         };
         Ok(())
+    }
+    fn layer(&self) -> Result<Arc<Layer>, ObjectError> {
+        Ok(self
+            .layer
+            .as_ref()
+            .ok_or(ObjectError::Uninitialized)?
+            .clone())
     }
     /// Updates the object inside the layer system to match with this one. Useful when doing anything to the object and submitting it with this function.
     pub fn sync(&mut self) -> Result<(), ObjectError> {
@@ -338,6 +376,7 @@ impl Object {
                 &node.parent.clone().unwrap().upgrade().unwrap(),
                 &mut node.rigid_body_parent,
                 self.id as u128,
+                self.layer()?.physics(),
             );
         }
         node.lock()

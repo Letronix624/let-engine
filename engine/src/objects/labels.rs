@@ -109,18 +109,22 @@ impl Label {
             align: create_info.align,
         }
     }
-    pub fn init(&mut self, layer: &Layer) {
+    pub fn init(&mut self, layer: &Arc<Layer>) {
         self.object.init(layer);
         self.sync();
     }
-    pub fn init_with_parent(&mut self, layer: &Layer, parent: &Object) -> Result<(), ObjectError> {
+    pub fn init_with_parent(
+        &mut self,
+        layer: &Arc<Layer>,
+        parent: &Object,
+    ) -> Result<(), ObjectError> {
         self.object.init_with_parent(layer, parent)?;
         self.sync();
         Ok(())
     }
     pub fn init_with_optional_parent(
         &mut self,
-        layer: &Layer,
+        layer: &Arc<Layer>,
         parent: Option<&Object>,
     ) -> Result<(), ObjectError> {
         self.object.init_with_optional_parent(layer, parent)?;
@@ -384,6 +388,7 @@ fn layout_paragraph<'a>(label: &Label, dimensions: [f32; 2]) -> Vec<PositionedGl
         x: label.scale[0],
         y: label.scale[1],
     };
+
     let v_metrics = label.font.font().v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
     let mut caret = point(0.0, v_metrics.ascent);

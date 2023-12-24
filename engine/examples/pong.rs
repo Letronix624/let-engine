@@ -1,13 +1,24 @@
 //#![windows_subsystem = "windows"]
+#[cfg(feature = "client")]
 use let_engine::prelude::*;
+
+#[cfg(feature = "client")]
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
+    sync::Arc,
     time::SystemTime,
 };
 
 // A const that contains the constant window resolution.
+#[cfg(feature = "client")]
 const RESOLUTION: Vec2 = vec2(800.0, 600.0);
 
+#[cfg(not(feature = "client"))]
+fn main() {
+    eprintln!("This example requires you to have the `client` feature enabled.");
+}
+
+#[cfg(feature = "client")]
 fn main() {
     // Describing the window.
     let window_builder = WindowBuilder::default()
@@ -32,6 +43,7 @@ fn main() {
     engine.start(game);
 }
 
+#[cfg(feature = "client")]
 struct Game {
     /// Exits the program on true.
     exit: bool,
@@ -43,6 +55,7 @@ struct Game {
     left_score: Label,
     right_score: Label,
 }
+#[cfg(feature = "client")]
 impl Game {
     pub fn new() -> Self {
         let game_layer = SCENE.new_layer();
@@ -61,7 +74,7 @@ impl Game {
         );
 
         // Spawns a ball in the middle.
-        let ball = Ball::new(game_layer.clone());
+        let ball = Ball::new(&game_layer);
 
         // Loading the font for the score.
         let font = Font::from_bytes(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
@@ -131,9 +144,10 @@ impl Game {
     }
 }
 
+#[cfg(feature = "client")]
 impl let_engine::Game for Game {
     fn update(&mut self) {
-        // run the update functions of the pedals.
+        // run the update functions of the paddles.
         self.left_paddle.update();
         self.right_paddle.update();
         self.ball.update();
@@ -181,14 +195,16 @@ impl let_engine::Game for Game {
     }
 }
 
+#[cfg(feature = "client")]
 struct Paddle {
     controls: (VirtualKeyCode, VirtualKeyCode), //up/down
     object: Object,
     height: f32,
 }
 
+#[cfg(feature = "client")]
 impl Paddle {
-    pub fn new(layer: &Layer, controls: (VirtualKeyCode, VirtualKeyCode), x: f32) -> Self {
+    pub fn new(layer: &Arc<Layer>, controls: (VirtualKeyCode, VirtualKeyCode), x: f32) -> Self {
         let height = 0.05;
         let mut object = Object::new();
         object.transform = Transform {
@@ -238,9 +254,10 @@ impl Paddle {
     }
 }
 
+#[cfg(feature = "client")]
 struct Ball {
     object: Object,
-    layer: Layer,
+    layer: Arc<Layer>,
     direction: Vec2,
     speed: f32,
     lifetime: SystemTime,
@@ -249,16 +266,17 @@ struct Ball {
 }
 
 /// Ball logic.
+#[cfg(feature = "client")]
 impl Ball {
-    pub fn new(layer: Layer) -> Self {
+    pub fn new(layer: &Arc<Layer>) -> Self {
         let lifetime = SystemTime::now();
         let mut object = Object::new();
         object.transform.size = vec2(0.015, 0.015);
-        object.init(&layer);
+        object.init(layer);
 
         Self {
             object,
-            layer,
+            layer: layer.clone(),
             direction: Self::random_direction(lifetime),
             speed: 1.0,
             lifetime,
