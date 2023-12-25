@@ -245,7 +245,7 @@ impl NewObject {
             layer.physics(),
         );
 
-        let initialized = Object {
+        let mut initialized = Object {
             transform: self.transform,
             parent_transform,
             #[cfg(feature = "client")]
@@ -266,7 +266,8 @@ impl NewObject {
 
         // set reference to own node to manipulate.
         let reference = Some(std::sync::Arc::downgrade(&node));
-        node.lock().object.node = reference;
+        node.lock().object.node = reference.clone();
+        initialized.node = reference;
 
         // In case there is no rigid body roots make yourself one.
         if let Some(value) = &rigid_body_parent {
