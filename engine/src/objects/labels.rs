@@ -109,41 +109,44 @@ impl Label<NewObject> {
         }
     }
     pub fn init(self, layer: &Arc<Layer>) -> Label<Object> {
-        let mut object = self.object.init(layer);
-        object.sync();
-        Label {
+        let object = self.object.init(layer);
+        let label = Label {
             object,
             font: self.font,
             text: self.text,
             scale: self.scale,
             align: self.align,
-        }
+        };
+        LABELIFIER.lock().queue(label.clone());
+        label
     }
     pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Label<Object> {
-        let mut object = self.object.init_with_parent(layer, parent);
-        object.sync();
-        Label {
+        let object = self.object.init_with_parent(layer, parent);
+        let label = Label {
             object,
             font: self.font,
             text: self.text,
             scale: self.scale,
             align: self.align,
-        }
+        };
+        LABELIFIER.lock().queue(label.clone());
+        label
     }
     pub fn init_with_optional_parent(
         self,
         layer: &Arc<Layer>,
         parent: Option<&Object>,
     ) -> Label<Object> {
-        let mut object = self.object.init_with_optional_parent(layer, parent);
-        object.sync();
-        Label {
+        let object = self.object.init_with_optional_parent(layer, parent);
+        let label = Label {
             object,
             font: self.font,
             text: self.text,
             scale: self.scale,
             align: self.align,
-        }
+        };
+        LABELIFIER.lock().queue(label.clone());
+        label
     }
 }
 impl Label<Object> {
@@ -158,8 +161,7 @@ impl Label<Object> {
     }
     /// Syncs the public layer side label to be the same as the current.
     pub fn sync(&self) {
-        let labelifier = &LABELIFIER;
-        labelifier.lock().queue(self.clone());
+        LABELIFIER.lock().queue(self.clone());
     }
 }
 
