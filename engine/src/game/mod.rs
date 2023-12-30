@@ -221,6 +221,8 @@ impl Engine {
     /// Client start function running all the methods of the given game object as documented in the [trait](Game).
     #[cfg(feature = "client")]
     pub fn start(mut self, game: impl Game + Send + 'static) {
+        use crate::SCENE;
+
         let game = Arc::new(Mutex::new(game));
 
         EVENT_LOOP.with_borrow_mut(|event_loop| {
@@ -339,6 +341,7 @@ impl Engine {
                         Event::RedrawRequested(_) => {
                             let labelifier = &LABELIFIER;
                             labelifier.lock().update();
+                            SCENE.update_all_layers();
                             match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
                                 &mut self.gui,

@@ -122,7 +122,7 @@ impl Input {
         let dims = self.dimensions.load();
         let dimensions = crate::utils::scale(layer.camera_scaling(), dims);
         let cp = self.cursor_position.load();
-        let cam = layer.camera_position();
+        let cam = layer.camera_transform().position;
         let zoom = 1.0 / layer.zoom();
         vec2(
             cp[0] * (dimensions.x * zoom) + cam[0] * 2.0,

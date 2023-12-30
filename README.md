@@ -1,9 +1,10 @@
 [![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/Letronix624/let-engine/rust.yml?style=for-the-badge&logo=github&label=GitHub&color=9376e0)](https://github.com/Letronix624/let-engine) [![Crates.io](https://img.shields.io/crates/d/let-engine?style=for-the-badge&logo=rust&label=Crates.io&color=e893cf)](https://crates.io/crates/let-engine) [![Static Badge](https://img.shields.io/badge/Docs-passing?style=for-the-badge&logo=docsdotrs&color=f3bcc8&link=docs.rs%2Flet_engine)](https://docs.rs/let-engine) [![Website](https://img.shields.io/website?up_message=Up&up_color=f6ffa6&down_message=Down&down_color=lightgrey&url=https%3A%2F%2Flet-server.net%2F&style=for-the-badge&logo=apache&color=f6ffa6&link=https%3A%2F%2Flet-server.net%2F)](https://let-server.net/)
 
 # Let Engine
-*Right now a simple 2d Rust game engine*
+*Right now a simple 2d Rust game engine with no inspiration from any other game engine at all.*
 
-- Heavily under development and not recommended for use right now.
+- Heavily under development.
+- Not all features are ready. The development phase is Alpha.
 
 ## Facts and features
 
@@ -35,12 +36,6 @@ To do:
 - Resource packing system
 
 - Better labels with text edit and caret
-
-## 3 stages of Rust repository building.
-
-1. [ ] Make it work first
-2. [ ] Make it right
-3. [ ] Make it fast
 
 ## Installation
 

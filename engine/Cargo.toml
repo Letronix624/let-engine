@@ -20,6 +20,7 @@ winit = { version = "0.28", optional = true }
 image = { version = "0.24", optional = true }
 rusttype = { version = "0.9.3", features = [ "gpu_cache" ], optional = true }
 egui_winit_vulkano = { version = "0.27", optional = true }
+kira = { version = "0.8", optional = true}
 
 anyhow = "1.0"
 thiserror = "1.0"
@@ -47,7 +48,7 @@ egui_demo_lib = "0.24"
 default = ["client"]
 egui = ["dep:egui_winit_vulkano"]
 vulkan_debug_utils = []
-client = ["dep:vulkano", "dep:winit", "dep:image", "dep:rusttype"]
+client = ["dep:vulkano", "dep:winit", "dep:image", "dep:rusttype", "dep:kira"]
 
 [package.metadata.docs.rs]
 

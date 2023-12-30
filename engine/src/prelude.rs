@@ -25,6 +25,8 @@ pub use materials::*;
 pub use physics::*;
 pub use scenes::*;
 #[cfg(feature = "client")]
+pub use sounds::*;
+#[cfg(feature = "client")]
 pub use textures::*;
 #[cfg(feature = "client")]
 pub use window::*;

@@ -158,7 +158,7 @@ impl Node<Object> {
 }
 
 /// Object to be initialized to the layer.
-#[derive(Default, Clone, Builder, PartialEq)]
+#[derive(Default, Clone, Builder, PartialEq, Debug)]
 pub struct NewObject {
     #[builder(setter(into))]
     pub transform: Transform,
@@ -180,6 +180,15 @@ pub struct Object {
     node: Option<WeakObject>,
     pub(crate) physics: ObjectPhysics,
     layer: Option<Arc<Layer>>,
+}
+impl std::fmt::Debug for Object {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Object")
+            .field("id", &self.id)
+            .field("transform", &self.transform)
+            .field("parent_transform", &self.parent_transform)
+            .finish()
+    }
 }
 
 impl Eq for NewObject {}

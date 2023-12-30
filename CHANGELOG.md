@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A brand new changelog.
 - Added a server mode that does not contain client features like resources, rendering and client specific things.
+- A `Sound` struct with `SoundData`, able to play sounds.
+- Basic rebound sound to the Pong example.
 
 ### Changed
 

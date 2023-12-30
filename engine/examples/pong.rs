@@ -6,7 +6,7 @@ use let_engine::prelude::*;
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
     sync::Arc,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 // A const that contains the constant window resolution.
@@ -29,8 +29,14 @@ fn main() {
     let engine = Engine::new(
         EngineSettingsBuilder::default()
             .window_settings(window_builder)
-            // Disable ticks.
-            .tick_settings(TickSettingsBuilder::default().paused(true).build().unwrap())
+            // Do not update physics because there are no physics.
+            .tick_settings(
+                TickSettingsBuilder::default()
+                    .update_physics(false)
+                    .tick_wait(Duration::from_secs_f64(1.0 / 20.0)) // 20 ticks per second
+                    .build()
+                    .unwrap(),
+            )
             .build()
             .unwrap(),
     )
@@ -62,16 +68,16 @@ impl Game {
         let ui_layer = SCENE.new_layer();
         // limits the view to -1 to 1 max
         game_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Limited));
-        ui_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Expand));
+        ui_layer.set_camera_settings(
+            CameraSettings::default()
+                .mode(CameraScaling::Expand)
+                .zoom(0.8),
+        );
 
         // Make left paddle controlled with W for up and S for down.
         let left_paddle = Paddle::new(&game_layer, (VirtualKeyCode::W, VirtualKeyCode::S), -0.95);
-        // The right paddle controlled with the arrow up and down keys.
-        let right_paddle = Paddle::new(
-            &game_layer,
-            (VirtualKeyCode::Up, VirtualKeyCode::Down),
-            0.95,
-        );
+        // The right paddle controlled with J and K. Weird controls, but 60% keyboard friendly
+        let right_paddle = Paddle::new(&game_layer, (VirtualKeyCode::K, VirtualKeyCode::J), 0.95);
 
         // Spawns a ball in the middle.
         let ball = Ball::new(&game_layer);
@@ -260,9 +266,10 @@ struct Ball {
     layer: Arc<Layer>,
     direction: Vec2,
     speed: f32,
-    lifetime: SystemTime,
     new_round: SystemTime,
     pub wins: [u32; 2],
+
+    bounce_sound: Sound,
 }
 
 /// Ball logic.
@@ -273,15 +280,21 @@ impl Ball {
         let mut object = NewObject::new();
         object.transform.size = vec2(0.015, 0.015);
         let object = object.init(layer);
+        // make a sound to play when bouncing.
+        let mut bounce_sound = Sound::new(
+            SoundData::gen_square_wave(777.0, 0.03),
+            SoundSettings::default().volume(0.05),
+        );
+        bounce_sound.bind_to_object(Some(&object));
 
         Self {
             object,
             layer: layer.clone(),
-            direction: Self::random_direction(lifetime),
-            speed: 1.0,
-            lifetime,
+            direction: Self::random_direction(),
+            speed: 1.1,
             new_round: lifetime,
             wins: [0; 2],
+            bounce_sound,
         }
     }
     pub fn update(&mut self) {
@@ -299,10 +312,13 @@ impl Ball {
                 position.y > self.layer.side_to_world(directions::S, RESOLUTION).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
-            if touching_paddle {
+            if touching_paddle
+                && (self.direction.x.is_sign_negative()
+                    == self.object.transform.position.x.is_sign_negative())
+            {
                 self.rebound(position.x as f64);
                 // It's getting faster with time.
-                self.speed += 0.005;
+                self.speed += 0.02;
             } else if touching_floor {
                 self.direction.y = self.direction.y.abs();
             } else if touching_roof {
@@ -321,26 +337,29 @@ impl Ball {
             self.object.transform.position +=
                 self.direction * TIME.delta_time() as f32 * self.speed;
             self.object.sync();
+            self.bounce_sound.update();
         }
     }
     fn reset(&mut self) {
         self.new_round = SystemTime::now();
         self.object.transform.position = vec2(0.0, 0.0);
-        self.direction = Self::random_direction(self.lifetime);
+        self.direction = Self::random_direction();
+        self.speed = 1.1;
         self.object.sync();
     }
     fn rebound(&mut self, x: f64) {
         // Random 0.0 to 1.0 value. Some math that makes a random direction.
-        let random = (self.lifetime.elapsed().unwrap().as_secs_f64() * 135225.3)
-            .sin()
-            .copysign(-x);
+        let random = (TIME.time() * 135225.3).sin().copysign(-x);
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(-x)) - FRAC_PI_2;
 
         self.direction = Vec2::from_angle(direction as f32).normalize();
+
+        // play the bounce sound.
+        self.bounce_sound.play();
     }
-    fn random_direction(lifetime: SystemTime) -> Vec2 {
+    fn random_direction() -> Vec2 {
         // Random -1.0 to 1.0 value. Some math that makes a random direction.
-        let random = (lifetime.elapsed().unwrap().as_secs_f64() * 135225.3).sin();
+        let random = (TIME.time() * 135225.3).sin();
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(random)) - FRAC_PI_2;
         Vec2::from_angle(direction as f32)
     }

@@ -1,20 +1,20 @@
 #[cfg(feature = "client")]
 use crate::utils::scale;
-use crate::{
-    camera::{CameraScaling, CameraSettings},
-    error::objects::*,
-};
+use crate::{error::objects::*, prelude::*};
 
-use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap};
+use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap, Transform};
 use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
 use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
+
+#[cfg(feature = "client")]
+use kira::spatial::listener::ListenerHandle;
 use parking_lot::Mutex;
 use rapier2d::prelude::*;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 
 /// The whole scene seen with all it's layers.
@@ -33,10 +33,18 @@ impl Scene {
             layer.step_physics(&mut pipeline);
         }
     }
+    /// updates all layers.
+    #[cfg(feature = "client")]
+    pub(crate) fn update_all_layers(&self) {
+        let layers = self.layers.lock();
+        for layer in layers.iter() {
+            layer.update();
+        }
+    }
 
     /// Initializes a new layer into the scene.
     pub fn new_layer(&self) -> Arc<Layer> {
-        let layer = Arc::new(Layer::new());
+        let layer = Layer::new();
         self.layers.lock().insert(layer.clone());
 
         layer
@@ -96,11 +104,13 @@ pub struct Layer {
     latest_object: AtomicU64,
     physics: Mutex<Physics>,
     physics_enabled: AtomicBool,
+    #[cfg(feature = "client")]
+    pub(crate) listener: Mutex<OnceLock<ListenerHandle>>,
 }
 
 impl Layer {
     /// Creates a new layer with the given root.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new() -> Arc<Self> {
         let root = Arc::new(Mutex::new(Node {
             object: Object::root(),
             parent: None,
@@ -109,7 +119,7 @@ impl Layer {
         }));
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
-        Self {
+        let layer = Arc::new(Self {
             root: root.clone(),
             camera: Mutex::new(root),
             camera_settings: AtomicCell::new(CameraSettings::default()),
@@ -118,7 +128,15 @@ impl Layer {
             latest_object: AtomicU64::new(1),
             physics: Mutex::new(Physics::new()),
             physics_enabled: AtomicBool::new(true),
-        }
+            #[cfg(feature = "client")]
+            listener: Mutex::new(OnceLock::new()),
+        });
+        #[cfg(feature = "client")]
+        RESOURCES
+            .audio_server
+            .send(AudioUpdate::NewLayer(layer.clone()))
+            .unwrap();
+        layer
     }
     /// Used by the proc macro to initialize the physics for an object.
     pub(crate) fn physics(&self) -> &Mutex<Physics> {
@@ -132,9 +150,8 @@ impl Layer {
         *self.camera.lock() = camera.as_node();
         Ok(())
     }
-    #[cfg(feature = "client")]
-    pub(crate) fn camera_position(&self) -> Vec2 {
-        self.camera.lock().lock().object.transform.position
+    pub(crate) fn camera_transform(&self) -> Transform {
+        self.camera.lock().lock().object.transform
     }
 
     /// Returns the scaling of the camera settings.
@@ -168,13 +185,13 @@ impl Layer {
     #[cfg(feature = "client")]
     pub fn side_to_world(&self, direction: [f32; 2], dimensions: Vec2) -> Vec2 {
         // Change this to remove dimensions.
-        let camera = Self::camera_position(self);
+        let camera = self.camera_transform();
         let direction = [direction[0] * 2.0 - 1.0, direction[1] * 2.0 - 1.0];
         let dimensions = scale(Self::camera_scaling(self), dimensions);
         let zoom = 1.0 / Self::zoom(self);
         vec2(
-            direction[0] * (dimensions.x * zoom) + camera.x * 2.0,
-            direction[1] * (dimensions.y * zoom) + camera.y * 2.0,
+            direction[0] * (dimensions.x * zoom) + camera.position.x * 2.0,
+            direction[1] * (dimensions.y * zoom) + camera.position.y * 2.0,
         )
     }
 
@@ -182,7 +199,24 @@ impl Layer {
     pub fn contains_object(&self, object_id: &usize) -> bool {
         self.objects_map.lock().contains_key(object_id)
     }
+    #[cfg(feature = "client")]
+    pub(crate) fn update(&self) {
+        use glam::Quat;
+        use kira::tween::Tween;
 
+        if let Some(listener) = self.listener.lock().get_mut() {
+            let cam_transform = self.camera_transform();
+            listener
+                .set_position(cam_transform.position.extend(0.0), Tween::default())
+                .unwrap();
+            listener
+                .set_orientation(
+                    Quat::from_rotation_z(cam_transform.rotation),
+                    Tween::default(),
+                )
+                .unwrap();
+        }
+    }
     pub(crate) fn step_physics(&self, physics_pipeline: &mut PhysicsPipeline) {
         if self.physics_enabled.load(Ordering::Acquire) {
             let mut map = self.rigid_body_roots.lock();

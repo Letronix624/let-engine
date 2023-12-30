@@ -3,6 +3,7 @@
 use crate::prelude::*;
 
 use core::panic;
+use crossbeam::channel::Sender;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -20,6 +21,7 @@ pub mod textures;
 pub mod data;
 pub mod materials;
 mod model;
+pub mod sounds;
 pub use model::*;
 
 pub(crate) static RESOURCES: Lazy<Resources> = Lazy::new(|| {
@@ -31,19 +33,21 @@ pub(crate) static LABELIFIER: Lazy<Mutex<Labelifier>> = Lazy::new(|| Mutex::new(
 /// All the resources kept in the game engine like textures, fonts, sounds and models.
 #[derive(Clone)]
 pub(crate) struct Resources {
-    pub(crate) vulkan: Vulkan,
-    pub(crate) loader: Arc<Mutex<Loader>>,
-
-    pub(crate) shapes: BasicShapes,
+    pub vulkan: Vulkan,
+    pub loader: Arc<Mutex<Loader>>,
+    pub audio_server: Sender<AudioUpdate>,
+    pub shapes: BasicShapes,
 }
 
 impl Resources {
     pub(crate) fn new(vulkan: Vulkan) -> Self {
         let loader = Arc::new(Mutex::new(Loader::init(&vulkan).unwrap()));
         let shapes = BasicShapes::new(&loader);
+        let audio_server = sounds::audio_server();
         Self {
             vulkan,
             loader,
+            audio_server,
             shapes,
         }
     }
