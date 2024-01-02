@@ -337,7 +337,7 @@ impl Ball {
             self.object.transform.position +=
                 self.direction * TIME.delta_time() as f32 * self.speed;
             self.object.sync();
-            self.bounce_sound.update();
+            self.bounce_sound.update(Tween::default()).unwrap();
         }
     }
     fn reset(&mut self) {
@@ -355,7 +355,7 @@ impl Ball {
         self.direction = Vec2::from_angle(direction as f32).normalize();
 
         // play the bounce sound.
-        self.bounce_sound.play();
+        self.bounce_sound.play().unwrap();
     }
     fn random_direction() -> Vec2 {
         // Random -1.0 to 1.0 value. Some math that makes a random direction.

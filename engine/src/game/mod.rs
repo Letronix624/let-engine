@@ -1,3 +1,4 @@
+// TODO: Please make this look better. oh no.
 use anyhow::Result;
 use derive_builder::Builder;
 #[cfg(feature = "client")]
@@ -37,7 +38,12 @@ use std::{
 };
 
 #[cfg(feature = "client")]
-use crate::{error::draw::VulkanError, resources::LABELIFIER, INPUT};
+use crate::{
+    error::draw::VulkanError,
+    resources::LABELIFIER,
+    resources::{sounds::AudioSettings, RESOURCES},
+    INPUT,
+};
 use crate::{SETTINGS, TIME};
 
 #[cfg(feature = "client")]
@@ -126,6 +132,8 @@ pub struct Settings {
     tick_pause_lock: (Mutex<bool>, Condvar),
     #[cfg(feature = "client")]
     window: Mutex<OnceCell<Arc<Window>>>,
+    #[cfg(feature = "client")]
+    audio_settings: Mutex<AudioSettings>,
 }
 
 impl Settings {
@@ -135,6 +143,8 @@ impl Settings {
             tick_pause_lock: (Mutex::new(false), Condvar::new()),
             #[cfg(feature = "client")]
             window: Mutex::new(OnceCell::new()),
+            #[cfg(feature = "client")]
+            audio_settings: Mutex::new(AudioSettings::new()),
         }
     }
     #[cfg(feature = "client")]
@@ -155,6 +165,20 @@ impl Settings {
         *self.tick_pause_lock.0.lock() = settings.paused;
         *self.tick_settings.lock() = settings;
         self.tick_pause_lock.1.notify_all();
+    }
+    #[cfg(feature = "client")]
+    pub fn audio_settings(&self) -> AudioSettings {
+        *self.audio_settings.lock()
+    }
+    #[cfg(feature = "client")]
+    pub fn set_audio_settings(&self, settings: AudioSettings) {
+        *self.audio_settings.lock() = settings;
+        RESOURCES
+            .audio_server
+            .send(crate::resources::sounds::AudioUpdate::SettingsChange(
+                settings,
+            ))
+            .unwrap();
     }
 }
 
@@ -221,8 +245,6 @@ impl Engine {
     /// Client start function running all the methods of the given game object as documented in the [trait](Game).
     #[cfg(feature = "client")]
     pub fn start(mut self, game: impl Game + Send + 'static) {
-        use crate::SCENE;
-
         let game = Arc::new(Mutex::new(game));
 
         EVENT_LOOP.with_borrow_mut(|event_loop| {
@@ -341,7 +363,6 @@ impl Engine {
                         Event::RedrawRequested(_) => {
                             let labelifier = &LABELIFIER;
                             labelifier.lock().update();
-                            SCENE.update_all_layers();
                             match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
                                 &mut self.gui,

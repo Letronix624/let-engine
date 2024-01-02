@@ -382,6 +382,15 @@ impl Object {
             physics: self.physics,
         }
     }
+    /// Makes a new object from this object.
+    pub fn to_new(&self) -> NewObject {
+        NewObject {
+            transform: self.transform,
+            #[cfg(feature = "client")]
+            appearance: self.appearance.clone(),
+            physics: self.physics.clone(),
+        }
+    }
 
     /// Sets the position and rotation of an object.
     pub fn set_isometry(&mut self, position: Vec2, rotation: f32) {

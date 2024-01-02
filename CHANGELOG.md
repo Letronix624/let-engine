@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A brand new changelog.
 - Added a server mode that does not contain client features like resources, rendering and client specific things.
-- A `Sound` struct with `SoundData`, able to play sounds.
+- A `Sound` struct with `SoundData`, able to play sounds with the help of the kira library.
+- Directional sound by binding an object to the new `Sound` struct
 - Basic rebound sound to the Pong example.
 
 ### Changed

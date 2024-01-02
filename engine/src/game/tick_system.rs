@@ -38,9 +38,7 @@ impl TickSystem {
             // Run the logic
             game.lock().tick();
             // update the physics in case they are active in the tick settings.
-            if settings.update_physics {
-                SCENE.iterate_all_physics();
-            }
+            SCENE.update(settings.update_physics);
             // record the elapsed time.
             let elapsed_time = start_time.elapsed().unwrap();
 

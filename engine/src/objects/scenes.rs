@@ -2,7 +2,7 @@
 use crate::utils::scale;
 use crate::{error::objects::*, prelude::*};
 
-use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap, Transform};
+use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap};
 use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
 use hashbrown::HashMap;
@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use rapier2d::prelude::*;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc, OnceLock,
+    Arc,
 };
 
 /// The whole scene seen with all it's layers.
@@ -25,20 +25,21 @@ pub struct Scene {
 
 impl Scene {
     /// Iterates through all physics.
-    pub fn iterate_all_physics(&self) {
-        let mut pipeline = self.physics_pipeline.lock();
+    pub fn update(&self, physics: bool) {
         let layers = self.layers.lock();
 
-        for layer in layers.iter() {
-            layer.step_physics(&mut pipeline);
-        }
-    }
-    /// updates all layers.
-    #[cfg(feature = "client")]
-    pub(crate) fn update_all_layers(&self) {
-        let layers = self.layers.lock();
-        for layer in layers.iter() {
-            layer.update();
+        let mut pipeline = self.physics_pipeline.lock();
+        if physics {
+            for layer in layers.iter() {
+                layer.step_physics(&mut pipeline);
+                #[cfg(feature = "client")]
+                layer.update();
+            }
+        } else {
+            #[cfg(feature = "client")]
+            for layer in layers.iter() {
+                layer.update();
+            }
         }
     }
 
@@ -98,6 +99,8 @@ impl Default for Scene {
 pub struct Layer {
     pub(crate) root: NObject,
     pub(crate) camera: Mutex<NObject>,
+    #[cfg(feature = "client")]
+    old_camera: Mutex<NewObject>,
     camera_settings: AtomicCell<CameraSettings>,
     pub(crate) objects_map: Mutex<ObjectsMap>,
     rigid_body_roots: Mutex<ObjectsMap>,
@@ -105,7 +108,7 @@ pub struct Layer {
     physics: Mutex<Physics>,
     physics_enabled: AtomicBool,
     #[cfg(feature = "client")]
-    pub(crate) listener: Mutex<OnceLock<ListenerHandle>>,
+    pub(crate) listener: Mutex<std::sync::OnceLock<ListenerHandle>>,
 }
 
 impl Layer {
@@ -122,6 +125,8 @@ impl Layer {
         let layer = Arc::new(Self {
             root: root.clone(),
             camera: Mutex::new(root),
+            #[cfg(feature = "client")]
+            old_camera: Mutex::new(NewObject::default()),
             camera_settings: AtomicCell::new(CameraSettings::default()),
             objects_map: Mutex::new(objects_map),
             rigid_body_roots: Mutex::new(HashMap::new()),
@@ -129,13 +134,14 @@ impl Layer {
             physics: Mutex::new(Physics::new()),
             physics_enabled: AtomicBool::new(true),
             #[cfg(feature = "client")]
-            listener: Mutex::new(OnceLock::new()),
+            listener: Mutex::new(std::sync::OnceLock::new()),
         });
         #[cfg(feature = "client")]
         RESOURCES
             .audio_server
             .send(AudioUpdate::NewLayer(layer.clone()))
             .unwrap();
+        #[allow(clippy::let_and_return)]
         layer
     }
     /// Used by the proc macro to initialize the physics for an object.
@@ -150,6 +156,7 @@ impl Layer {
         *self.camera.lock() = camera.as_node();
         Ok(())
     }
+    #[cfg(feature = "client")]
     pub(crate) fn camera_transform(&self) -> Transform {
         self.camera.lock().lock().object.transform
     }
@@ -202,19 +209,23 @@ impl Layer {
     #[cfg(feature = "client")]
     pub(crate) fn update(&self) {
         use glam::Quat;
-        use kira::tween::Tween;
 
-        if let Some(listener) = self.listener.lock().get_mut() {
-            let cam_transform = self.camera_transform();
-            listener
-                .set_position(cam_transform.position.extend(0.0), Tween::default())
-                .unwrap();
-            listener
-                .set_orientation(
-                    Quat::from_rotation_z(cam_transform.rotation),
-                    Tween::default(),
-                )
-                .unwrap();
+        let mut old_camera = self.old_camera.lock();
+        let camera = self.camera.lock().lock().object.to_new();
+        if *old_camera != camera {
+            *old_camera = camera;
+            if let Some(listener) = self.listener.lock().get_mut() {
+                let cam_transform = self.camera_transform();
+                listener
+                    .set_position(cam_transform.position.extend(0.0), Tween::default().into())
+                    .unwrap();
+                listener
+                    .set_orientation(
+                        Quat::from_rotation_z(cam_transform.rotation),
+                        Tween::default().into(),
+                    )
+                    .unwrap();
+            }
         }
     }
     pub(crate) fn step_physics(&self, physics_pipeline: &mut PhysicsPipeline) {

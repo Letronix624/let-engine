@@ -476,7 +476,7 @@ impl Shape {
     pub fn trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
         Self(SharedShape::trimesh(
             data.0.into_iter().map(|x| x.into()).collect(),
-            data.1.into(),
+            data.1,
         ))
     }
 
