@@ -25,7 +25,6 @@ kira = { version = "0.8", optional = true}
 anyhow = "1.0"
 thiserror = "1.0"
 
-hashbrown = "0.14"
 parking_lot = "0.12"
 derive_builder = "0.12"
 indexmap = "2.0"

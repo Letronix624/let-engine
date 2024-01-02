@@ -5,16 +5,18 @@ use crate::{error::objects::*, prelude::*};
 use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap};
 use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
-use hashbrown::HashMap;
 use indexmap::{indexset, IndexSet};
 
 #[cfg(feature = "client")]
 use kira::spatial::listener::ListenerHandle;
 use parking_lot::Mutex;
 use rapier2d::prelude::*;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+use std::{
+    collections::HashMap,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 /// The whole scene seen with all it's layers.

@@ -1,16 +1,18 @@
 //! The default input system by the engine.
 
 use crate::objects::scenes::Layer;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
+use std::{
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 use winit::event::{ElementState, Event, ModifiersState, WindowEvent};
 pub use winit::event::{MouseButton, VirtualKeyCode};
 
 use crossbeam::atomic::AtomicCell;
 use glam::f32::{vec2, Vec2};
-use hashbrown::HashSet;
 use parking_lot::Mutex;
 
 /// Holds the input information to be used in game.

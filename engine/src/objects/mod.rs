@@ -16,10 +16,12 @@ use derive_builder::Builder;
 use scenes::Layer;
 
 use glam::f32::{vec2, Vec2};
-use hashbrown::HashMap;
 use parking_lot::Mutex;
 
-use std::sync::{Arc, Weak};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Weak},
+};
 type RigidBodyParent = Option<Option<Weak<Mutex<Node<Object>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 pub(crate) type NObject = Arc<Mutex<Node<Object>>>;
