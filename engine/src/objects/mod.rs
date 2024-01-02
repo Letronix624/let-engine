@@ -34,6 +34,7 @@ pub struct Transform {
 }
 impl Eq for Transform {}
 impl Transform {
+    /// Combines two Transforms with each other. It adds position, multiplies size and adds rotation.
     pub fn combine(self, rhs: Self) -> Self {
         Self {
             position: self.position + rhs.position.rotate(Vec2::from_angle(self.rotation)),
@@ -41,14 +42,20 @@ impl Transform {
             rotation: self.rotation + rhs.rotation,
         }
     }
+
+    /// Sets the position of this transform and returns itself.
     pub fn position(mut self, position: Vec2) -> Self {
         self.position = position;
         self
     }
+
+    /// Sets the size of this transform and returns itself.
     pub fn size(mut self, size: Vec2) -> Self {
         self.size = size;
         self
     }
+
+    /// Sets the rotation of this transform and returns itself.
     pub fn rotation(mut self, rotation: f32) -> Self {
         self.rotation = rotation;
         self
@@ -358,6 +365,7 @@ impl Object {
     pub(crate) fn layer(&self) -> &Arc<Layer> {
         self.layer.as_ref().unwrap()
     }
+
     /// Removes the object from it's layer.
     pub fn remove(mut self) -> NewObject {
         let layer = self.layer.unwrap();
@@ -382,6 +390,7 @@ impl Object {
             physics: self.physics,
         }
     }
+
     /// Makes a new object from this object.
     pub fn to_new(&self) -> NewObject {
         NewObject {
@@ -392,18 +401,31 @@ impl Object {
         }
     }
 
+    /// Copies the data from a `NewObject` into itself.
+    pub fn copy_new(&mut self, object: NewObject) {
+        self.transform = object.transform;
+        self.physics = object.physics;
+        #[cfg(feature = "client")]
+        {
+            self.appearance = object.appearance;
+        }
+    }
+
     /// Sets the position and rotation of an object.
     pub fn set_isometry(&mut self, position: Vec2, rotation: f32) {
         self.transform.position = position;
         self.transform.rotation = rotation;
     }
+
     /// Returns the public position where the object is going to be rendered.
     pub fn public_transform(&self) -> Transform {
         self.transform.combine(self.parent_transform)
     }
+
     pub(crate) fn set_parent_transform(&mut self, transform: Transform) {
         self.parent_transform = transform;
     }
+
     /// Returns a reference to the appearance of the object.
     #[cfg(feature = "client")]
     pub fn appearance(&self) -> &Appearance {
@@ -416,12 +438,15 @@ impl Object {
     pub fn id(&self) -> usize {
         self.id
     }
+
     pub(crate) fn as_node(&self) -> NObject {
         self.node.as_ref().unwrap().upgrade().unwrap()
     }
+
     pub(crate) fn rigidbody_handle(&self) -> Option<rapier2d::dynamics::RigidBodyHandle> {
         self.physics.rigid_body_handle
     }
+
     /// Updates the object to match the object information located inside the system of the layer. Useful when having physics.
     pub fn update(&mut self) {
         // receive
@@ -433,6 +458,7 @@ impl Object {
             self.appearance = object.appearance().clone();
         }
     }
+
     /// Updates the object inside the layer system to match with this one. Useful when doing anything to the object and submitting it with this function.
     pub fn sync(&mut self) {
         // send
@@ -455,34 +481,42 @@ impl Object {
         let mut object = arc.lock();
         object.object = self.clone();
     }
+
     /// Returns the collider of the object in case it has one.
     pub fn collider(&self) -> Option<&Collider> {
         self.physics.collider.as_ref()
     }
+
     /// Sets the collider of the object.
     pub fn set_collider(&mut self, collider: Option<Collider>) {
         self.physics.collider = collider;
     }
+
     /// Returns a mutable reference to the collider.
     pub fn collider_mut(&mut self) -> Option<&mut Collider> {
         self.physics.collider.as_mut()
     }
+
     /// Returns the rigid bodyh of the object in case it has one.
     pub fn rigid_body(&self) -> Option<&RigidBody> {
         self.physics.rigid_body.as_ref()
     }
+
     /// Sets the rigid body of the object.
     pub fn set_rigid_body(&mut self, rigid_body: Option<RigidBody>) {
         self.physics.rigid_body = rigid_body;
     }
+
     /// Returns a mutable reference to the rigid body.
     pub fn rigid_body_mut(&mut self) -> Option<&mut RigidBody> {
         self.physics.rigid_body.as_mut()
     }
+
     /// Returns the local position of the collider.
     pub fn local_collider_position(&self) -> Vec2 {
         self.physics.local_collider_position
     }
+
     /// Sets the local position of the collider of this object in case it has one.
     pub fn set_local_collider_position(&mut self, pos: Vec2) {
         self.physics.local_collider_position = pos;
