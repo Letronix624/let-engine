@@ -1,4 +1,4 @@
-// TODO: Please make this look better. oh no.
+// TODO: Please make this look better, oh no!
 use anyhow::Result;
 use derive_builder::Builder;
 #[cfg(feature = "client")]
@@ -6,6 +6,7 @@ use glam::vec2;
 #[cfg(feature = "client")]
 use once_cell::unsync::OnceCell;
 use parking_lot::{Condvar, Mutex};
+use thiserror::Error;
 #[cfg(feature = "client")]
 pub mod window;
 #[cfg(feature = "client")]
@@ -41,7 +42,10 @@ use std::{
 use crate::{
     error::draw::VulkanError,
     resources::LABELIFIER,
-    resources::{sounds::AudioSettings, RESOURCES},
+    resources::{
+        sounds::{AudioSettings, NoAudioServerError},
+        RESOURCES,
+    },
     INPUT,
 };
 use crate::{SETTINGS, TIME};
@@ -52,6 +56,7 @@ use self::{
     window::{Window, WindowBuilder},
 };
 
+// The event loop that gets created and executed in the thread where Engine was made.
 #[cfg(feature = "client")]
 thread_local! {
     pub(crate) static EVENT_LOOP: RefCell<OnceCell<EventLoop<()>>> = RefCell::new(OnceCell::new());
@@ -166,19 +171,22 @@ impl Settings {
         *self.tick_settings.lock() = settings;
         self.tick_pause_lock.1.notify_all();
     }
+    /// Returns the audio settings.
     #[cfg(feature = "client")]
     pub fn audio_settings(&self) -> AudioSettings {
         *self.audio_settings.lock()
     }
+    /// Sets the audio settings and refreshes the engine side audio server to use them.
     #[cfg(feature = "client")]
-    pub fn set_audio_settings(&self, settings: AudioSettings) {
+    pub fn set_audio_settings(&self, settings: AudioSettings) -> Result<(), NoAudioServerError> {
         *self.audio_settings.lock() = settings;
         RESOURCES
             .audio_server
             .send(crate::resources::sounds::AudioUpdate::SettingsChange(
                 settings,
             ))
-            .unwrap();
+            .ok()
+            .ok_or(NoAudioServerError)
     }
 }
 
@@ -192,34 +200,48 @@ pub struct Engine {
     draw: Draw,
 }
 
+/// Makes sure the engine struct only gets constructed a single time.
+static INIT: parking_lot::Once = parking_lot::Once::new();
+
+/// Engine can only be made once.
+#[derive(Error, Debug, Clone, Copy)]
+#[error("You can only initialize this game engine one single time.")]
+pub struct EngineInitialized;
+
 impl Engine {
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
+    ///
+    /// This function can only be called one time. Attempting to make a second one of those will return an error.
     pub fn new(settings: impl Into<EngineSettings>) -> Result<Self> {
-        let settings = settings.into();
-
-        SETTINGS.set_tick_settings(settings.tick_settings);
-        let tick_system = TickSystem::new();
-
-        #[cfg(feature = "client")]
-        EVENT_LOOP.with_borrow_mut(|cell| {
-            cell.get_or_init(|| EventLoopBuilder::new().build());
-        });
-        #[cfg(feature = "client")]
-        let draw = Draw::setup(settings.window_settings);
-        #[cfg(feature = "client")]
-        SETTINGS.set_window(draw.get_window().clone());
-
-        #[cfg(all(feature = "egui", feature = "client"))]
-        let gui = egui::init(&draw);
-
-        Ok(Self {
-            #[cfg(all(feature = "egui", feature = "client"))]
-            gui,
-            tick_system,
+        if INIT.state() == parking_lot::OnceState::New {
+            INIT.call_once(|| {});
+            let settings = settings.into();
+            SETTINGS.set_tick_settings(settings.tick_settings);
+            let tick_system = TickSystem::new();
 
             #[cfg(feature = "client")]
-            draw,
-        })
+            EVENT_LOOP.with_borrow_mut(|cell| {
+                cell.get_or_init(|| EventLoopBuilder::new().build());
+            });
+            #[cfg(feature = "client")]
+            let draw = Draw::setup(settings.window_settings);
+            #[cfg(feature = "client")]
+            SETTINGS.set_window(draw.get_window().clone());
+
+            #[cfg(all(feature = "egui", feature = "client"))]
+            let gui = egui::init(&draw);
+
+            Ok(Self {
+                #[cfg(all(feature = "egui", feature = "client"))]
+                gui,
+                tick_system,
+
+                #[cfg(feature = "client")]
+                draw,
+            })
+        } else {
+            Err(EngineInitialized.into())
+        }
     }
 
     /// Returns the window of the game.

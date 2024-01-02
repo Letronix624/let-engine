@@ -24,6 +24,11 @@ use kira::{
     tween::Value,
 };
 
+#[derive(Clone, Copy, Debug, Error)]
+#[error("The audio server is not started for this session.")]
+pub struct NoAudioServerError;
+
+// TODO: Creatively remove all unwraps in a way that it can recover or on unrecoverable cases be handled by the user.
 pub(crate) fn audio_server() -> Sender<AudioUpdate> {
     let (send, recv) = unbounded();
     thread::spawn(|| {
@@ -38,6 +43,7 @@ pub(crate) fn audio_server() -> Sender<AudioUpdate> {
                     let mut emitter = sound.emitter.lock();
                     let mut settings: StaticSoundSettings = sound.settings.into();
                     if let Some(spatial_emitter) = emitter.get() {
+                        // remove the emitter in case the object was removed.
                         if sound.object.is_none() {
                             emitter.take();
                         } else {
@@ -49,7 +55,7 @@ pub(crate) fn audio_server() -> Sender<AudioUpdate> {
                         let spatial_emitter = spacial_scene
                             .add_emitter(
                                 object.transform.position.extend(0.0),
-                                EmitterSettings::default(),
+                                sound.spatial_settings().into(),
                             )
                             .unwrap();
                         settings = settings.output_destination(&spatial_emitter);
@@ -92,6 +98,7 @@ pub use kira::{
     sound::{
         EndPosition, IntoOptionalRegion, PlaybackPosition, PlaybackRate, PlaybackState, Region,
     },
+    spatial::emitter::EmitterDistances as Distances,
     tween::Easing,
     Volume,
 };
@@ -211,6 +218,7 @@ impl Default for AudioSettings {
 }
 
 use parking_lot::Mutex;
+use thiserror::Error;
 
 use crate::{
     objects::{scenes::Layer, Object},
@@ -307,12 +315,58 @@ impl SoundData {
     }
 }
 
+/// The settings of a sound with an object bound to it.
+#[derive(Clone, Copy, Debug)]
+pub struct SpatialSettings {
+    /// The distances where the sound appears the loudest and where it appears the quietest.
+    ///
+    /// By default it goes from 1 to 100.
+    pub distances: Distances,
+    /// How the volume will change with distance.
+    ///
+    /// On `None` the output volume will be constant.
+    pub attenuation_function: Option<Easing>,
+    /// On `true` sounds from the left will pan to the left and sounds from the right will pan right.
+    pub spatialization: bool,
+}
+
+impl SpatialSettings {
+    pub fn new() -> Self {
+        Self::from(EmitterSettings::new())
+    }
+}
+
+impl Default for SpatialSettings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<EmitterSettings> for SpatialSettings {
+    fn from(value: EmitterSettings) -> Self {
+        Self {
+            distances: value.distances,
+            attenuation_function: value.attenuation_function,
+            spatialization: value.enable_spatialization,
+        }
+    }
+}
+impl From<SpatialSettings> for EmitterSettings {
+    fn from(value: SpatialSettings) -> Self {
+        Self::default()
+            .distances(value.distances)
+            .attenuation_function(value.attenuation_function)
+            .enable_spatialization(value.spatialization)
+    }
+}
+
 pub struct Global;
 
 #[derive(Clone)]
 pub struct Sound {
     data: SoundData,
     settings: SoundSettings,
+    spatial_settings: SpatialSettings,
     emitter: Arc<Mutex<OnceLock<EmitterHandle>>>,
     handle: Arc<Mutex<OnceLock<Result<StaticSoundHandle>>>>,
     object: Option<Object>,
@@ -324,11 +378,13 @@ impl Sound {
         Self {
             data,
             settings,
+            spatial_settings: SpatialSettings::new(),
             emitter: Arc::new(Mutex::new(OnceLock::new())),
             handle: Arc::new(Mutex::new(OnceLock::new())),
             object: None,
         }
     }
+
     /// Sets the settings of this sound.
     pub fn set_settings(&mut self, settings: SoundSettings) {
         self.settings = settings;
@@ -339,10 +395,23 @@ impl Sound {
         self.settings
     }
 
+    /// Sets the spatial settings of this sound.
+    ///
+    /// Spatial settings are applied with the `play` function.
+    pub fn set_spatial_settings(&mut self, settings: SpatialSettings) {
+        self.spatial_settings = settings;
+    }
+
+    /// Returns the spatial settings of this sounds.
+    pub fn spatial_settings(&self) -> SpatialSettings {
+        self.spatial_settings
+    }
+
     /// Returns the data behind the sound.
     pub fn data(&self) -> &SoundData {
         &self.data
     }
+
     /// Returns the current playback state of the sound.
     pub fn state(&self) -> PlaybackState {
         if let Some(Ok(handle)) = self.handle.lock().get() {
@@ -351,6 +420,7 @@ impl Sound {
             PlaybackState::Stopped
         }
     }
+
     /// Returns the playback position in seconds.
     pub fn position(&self) -> f64 {
         if let Some(Ok(handle)) = self.handle.lock().get() {
@@ -359,7 +429,10 @@ impl Sound {
             0.0
         }
     }
+
     /// Sets the volume of the sound.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn set_volume(&mut self, volume: impl Into<Volume>, tween: Tween) -> Result<()> {
         let volume = volume.into();
         let value_volume = Value::Fixed(volume);
@@ -370,6 +443,8 @@ impl Sound {
         Ok(())
     }
     /// Sets the rate, at which the sound is getting played.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn set_playback_rate(
         &mut self,
         playback_rate: impl Into<PlaybackRate>,
@@ -383,7 +458,10 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Sets the panning of the sound, where 0.0 is left and 1.0 is right.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn set_panning(&mut self, panning: f64, tween: Tween) -> Result<()> {
         let value_panning = Value::Fixed(panning);
         self.settings.panning = panning;
@@ -392,7 +470,10 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Sets the region, where the sound is getting played.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn set_playback_region(&mut self, playback_region: impl Into<Region>) -> Result<()> {
         self.settings.playback_region = playback_region.into();
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
@@ -400,7 +481,10 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Sets the optional region, where the sound is getting looped.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn set_loop_region(&mut self, loop_region: impl IntoOptionalRegion) -> Result<()> {
         self.settings.loop_region = loop_region.into_optional_loop_region();
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
@@ -408,15 +492,20 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Binds an object to this sound and plays it where this object is located at.
     pub fn bind_to_object(&mut self, object: Option<&Object>) {
         self.object = object.cloned();
     }
+
     /// Returns the object bound to this sound.
     pub fn get_object(&self) -> Option<&Object> {
         self.object.as_ref()
     }
+
     /// Updates the position of the sound.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn update(&mut self, tween: Tween) -> Result<()> {
         if let (Some(emitter), Some(object)) = (self.emitter.lock().get_mut(), &mut self.object) {
             object.update();
@@ -430,11 +519,16 @@ impl Sound {
         if self.state() != PlaybackState::Playing {
             RESOURCES
                 .audio_server
-                .send(AudioUpdate::Play(self.clone()))?;
+                .send(AudioUpdate::Play(self.clone()))
+                .ok()
+                .ok_or(NoAudioServerError)?;
         }
         Ok(())
     }
+
     /// Pauses this sound.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn pause(&mut self, tween: Tween) -> Result<()> {
         if self.state() != PlaybackState::Paused {
             if let Some(Ok(handle)) = self.handle.lock().get_mut() {
@@ -443,7 +537,10 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Resumes the playback of this sound.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn resume(&mut self, tween: Tween) -> Result<()> {
         if self.state() != PlaybackState::Playing {
             if let Some(Ok(handle)) = self.handle.lock().get_mut() {
@@ -452,7 +549,10 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Stops this sound.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn stop(&mut self, tween: Tween) -> Result<()> {
         if self.state() != PlaybackState::Stopped {
             if let Some(Ok(handle)) = self.handle.lock().get_mut() {
@@ -461,14 +561,20 @@ impl Sound {
         }
         Ok(())
     }
+
     /// Sets the playhead to the given position in seconds.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn seek_to(&mut self, position: f64) -> Result<()> {
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
             handle.seek_to(position)?;
         }
         Ok(())
     }
+
     /// Sets the playhead ahead by the given seconds.
+    ///
+    /// Returns an error in case the command queue is full.
     pub fn seek_by(&mut self, position: f64) -> Result<()> {
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
             handle.seek_by(position)?;
