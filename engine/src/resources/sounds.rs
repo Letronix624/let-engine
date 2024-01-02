@@ -28,7 +28,7 @@ use kira::{
 #[error("The audio server is not started for this session.")]
 pub struct NoAudioServerError;
 
-// TODO: Creatively remove all unwraps in a way that it can recover or on unrecoverable cases be handled by the user.
+// TODO(Letronix624): Creatively remove all unwraps in a way that it can recover or on unrecoverable cases be handled by the user.
 pub(crate) fn audio_server() -> Sender<AudioUpdate> {
     let (send, recv) = unbounded();
     thread::spawn(|| {

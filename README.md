@@ -81,6 +81,7 @@ A graphics driver with Vulkan 1.2 support.
 
 feel free to contribute. Go resolve some of the issues I made or take a look at this:
 [![dependency status](https://deps.rs/repo/github/Letronix624/let-engine/status.svg)](https://deps.rs/repo/github/Letronix624/let-engine)
+also read [the contribution guidelines](CONTRIBUTING.md).
 
 ## Plan
 
