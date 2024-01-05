@@ -32,56 +32,71 @@ pub struct NoAudioServerError;
 pub(crate) fn audio_server() -> Sender<AudioUpdate> {
     let (send, recv) = unbounded();
     thread::spawn(|| {
-        let (manager_settings, scene_settings) = SETTINGS.audio_settings().make();
-        let mut audio_manager = AudioManager::<DefaultBackend>::new(manager_settings).unwrap();
-        let mut spacial_scene = audio_manager.add_spatial_scene(scene_settings).unwrap();
         let recv = recv;
-        loop {
-            let update: AudioUpdate = recv.recv().unwrap();
-            match update {
-                AudioUpdate::Play(sound) => {
-                    let mut emitter = sound.emitter.lock();
-                    let mut settings: StaticSoundSettings = sound.settings.into();
-                    if let Some(spatial_emitter) = emitter.get() {
-                        // remove the emitter in case the object was removed.
-                        if sound.object.is_none() {
-                            emitter.take();
-                        } else {
-                            settings = settings.output_destination(spatial_emitter);
-                        };
-                    }
-                    // if the sound contains an object then add a spatial emitter
-                    if let (None, Some(object)) = (emitter.get(), &sound.object) {
-                        let spatial_emitter = spacial_scene
-                            .add_emitter(
+
+        let (manager_settings, scene_settings) = SETTINGS.audio_settings().make();
+
+        let mut audio_manager = AudioManager::<DefaultBackend>::new(manager_settings);
+        if let Ok(audio_manager) = audio_manager.as_mut() {
+            let mut spacial_scene = audio_manager
+                .add_spatial_scene(scene_settings)
+                .expect("impossible");
+            loop {
+                match recv.recv() {
+                    Ok(AudioUpdate::Play(sound)) => {
+                        let mut emitter = sound.emitter.lock();
+                        let mut settings: StaticSoundSettings = sound.settings.into();
+                        if let Some(spatial_emitter) = emitter.get() {
+                            // remove the emitter in case the object was removed.
+                            if sound.object.is_none() {
+                                emitter.take();
+                            } else {
+                                settings = settings.output_destination(spatial_emitter);
+                            };
+                        }
+                        // if the sound contains an object then add a spatial emitter
+                        if let (None, Some(object)) = (emitter.get(), &sound.object) {
+                            if let Ok(spatial_emitter) = spacial_scene.add_emitter(
                                 object.transform.position.extend(0.0),
                                 sound.spatial_settings().into(),
-                            )
-                            .unwrap();
-                        settings = settings.output_destination(&spatial_emitter);
-                        let _ = emitter.set(spatial_emitter);
+                            ) {
+                                settings = settings.output_destination(&spatial_emitter);
+                                let _ = emitter.set(spatial_emitter);
+                            }
+                        }
+                        let handle = audio_manager.play(StaticSoundData {
+                            sample_rate: sound.data.sample_rate,
+                            frames: sound.data.frames,
+                            settings,
+                        });
+                        sound.handle.lock().take();
+                        let _ = sound.handle.lock().set(handle.map_err(|x| x.into()));
                     }
-                    let handle = audio_manager.play(StaticSoundData {
-                        sample_rate: sound.data.sample_rate,
-                        frames: sound.data.frames,
-                        settings,
-                    });
-                    sound.handle.lock().take();
-                    let _ = sound.handle.lock().set(handle.map_err(|x| x.into()));
-                }
-                AudioUpdate::NewLayer(layer) => {
-                    let _ = layer.listener.lock().set(
-                        spacial_scene
-                            .add_listener(Vec3::ZERO, Quat::IDENTITY, ListenerSettings::default())
-                            .unwrap(),
-                    );
-                }
-                AudioUpdate::SettingsChange(settings) => {
-                    let (manager_settings, scene_settings) = settings.make();
-                    audio_manager = AudioManager::<DefaultBackend>::new(manager_settings).unwrap();
-                    spacial_scene = audio_manager.add_spatial_scene(scene_settings).unwrap();
-                }
-            };
+                    Ok(AudioUpdate::NewLayer(layer)) => {
+                        if let Ok(listener) = spacial_scene.add_listener(
+                            Vec3::ZERO,
+                            Quat::IDENTITY,
+                            ListenerSettings::default(),
+                        ) {
+                            let _ = layer.listener.lock().set(listener);
+                        };
+                    }
+                    Ok(AudioUpdate::SettingsChange(settings)) => {
+                        let (manager_settings, scene_settings) = settings.make();
+                        if let Ok(mut manager) =
+                            AudioManager::<DefaultBackend>::new(manager_settings)
+                        {
+                            spacial_scene = manager
+                                .add_spatial_scene(scene_settings)
+                                .expect("unreachable");
+                            *audio_manager = manager;
+                        } else {
+                            break;
+                        };
+                    }
+                    _ => (),
+                };
+            }
         }
     });
     send
