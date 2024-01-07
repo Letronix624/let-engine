@@ -34,7 +34,7 @@ crossbeam = "0.8"
 glam = { version = "0.24", features = [ "bytemuck" ] }
 nalgebra = { version = "0.32", features = [ "convert-glam024" ] }
 
-rapier2d = { version = "0.17.2", features = [ "simd-stable" ]}
+rapier2d = { version = "0.17.2", features = [ "simd-stable" ], optional = true }
 paste = "1.0.14"
 spin_sleep = "1.1.1"
 once_cell = "1.19.0"
@@ -44,10 +44,16 @@ once_cell = "1.19.0"
 egui_demo_lib = "0.24"
 
 [features]
-default = ["client"]
+default = [ "client", "labels", "physics", "audio" ]
 egui = ["dep:egui_winit_vulkano"]
 vulkan_debug_utils = []
-client = ["dep:vulkano", "dep:winit", "dep:image", "dep:rusttype", "dep:kira"]
+
+client = [ "dep:vulkano", "dep:winit", "dep:image" ]
+labels = [ "dep:rusttype" ]
+
+audio = [ "dep:kira" ]
+
+physics = [ "dep:rapier2d" ]
 
 [package.metadata.docs.rs]
 

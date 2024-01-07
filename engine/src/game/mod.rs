@@ -1,10 +1,6 @@
 // TODO(Letronix624): Please make this look better, oh no!
 use anyhow::Result;
 use derive_builder::Builder;
-#[cfg(feature = "client")]
-use glam::vec2;
-#[cfg(feature = "client")]
-use once_cell::unsync::OnceCell;
 use parking_lot::{Condvar, Mutex};
 use thiserror::Error;
 #[cfg(feature = "client")]
@@ -38,16 +34,14 @@ use std::{
     time::SystemTime,
 };
 
-#[cfg(feature = "client")]
-use crate::{
-    error::draw::VulkanError,
-    resources::LABELIFIER,
-    resources::{
-        sounds::{AudioSettings, NoAudioServerError},
-        RESOURCES,
-    },
-    INPUT,
+#[cfg(feature = "audio")]
+use crate::resources::{
+    sounds::{AudioSettings, NoAudioServerError},
+    RESOURCES,
 };
+
+#[cfg(feature = "client")]
+use crate::{error::draw::VulkanError, INPUT};
 use crate::{SETTINGS, TIME};
 
 #[cfg(feature = "client")]
@@ -59,7 +53,7 @@ use self::{
 // The event loop that gets created and executed in the thread where Engine was made.
 #[cfg(feature = "client")]
 thread_local! {
-    pub(crate) static EVENT_LOOP: RefCell<OnceCell<EventLoop<()>>> = RefCell::new(OnceCell::new());
+    pub(crate) static EVENT_LOOP: RefCell<std::cell::OnceCell<EventLoop<()>>> = RefCell::new(std::cell::OnceCell::new());
 }
 
 /// Represents the game application with essential methods for a game's lifetime.
@@ -136,8 +130,8 @@ pub struct Settings {
     tick_settings: Mutex<TickSettings>,
     tick_pause_lock: (Mutex<bool>, Condvar),
     #[cfg(feature = "client")]
-    window: Mutex<OnceCell<Arc<Window>>>,
-    #[cfg(feature = "client")]
+    window: Mutex<std::sync::OnceLock<Arc<Window>>>,
+    #[cfg(feature = "audio")]
     audio_settings: Mutex<AudioSettings>,
 }
 
@@ -147,8 +141,8 @@ impl Settings {
             tick_settings: Mutex::new(TickSettings::default()),
             tick_pause_lock: (Mutex::new(false), Condvar::new()),
             #[cfg(feature = "client")]
-            window: Mutex::new(OnceCell::new()),
-            #[cfg(feature = "client")]
+            window: Mutex::new(std::sync::OnceLock::new()),
+            #[cfg(feature = "audio")]
             audio_settings: Mutex::new(AudioSettings::new()),
         }
     }
@@ -172,12 +166,12 @@ impl Settings {
         self.tick_pause_lock.1.notify_all();
     }
     /// Returns the audio settings.
-    #[cfg(feature = "client")]
+    #[cfg(feature = "audio")]
     pub fn audio_settings(&self) -> AudioSettings {
         *self.audio_settings.lock()
     }
     /// Sets the audio settings and refreshes the engine side audio server to use them.
-    #[cfg(feature = "client")]
+    #[cfg(feature = "audio")]
     pub fn set_audio_settings(&self, settings: AudioSettings) -> Result<(), NoAudioServerError> {
         *self.audio_settings.lock() = settings;
         RESOURCES
@@ -278,6 +272,7 @@ impl Engine {
                     if game.lock().exit() {
                         control_flow.set_exit();
                     }
+                    use glam::vec2;
                     match event {
                         Event::WindowEvent { event, .. } => {
                             #[cfg(feature = "egui")]
@@ -383,8 +378,11 @@ impl Engine {
                             self.get_window().request_redraw();
                         }
                         Event::RedrawRequested(_) => {
-                            let labelifier = &LABELIFIER;
-                            labelifier.lock().update();
+                            #[cfg(feature = "labels")]
+                            {
+                                let labelifier = &crate::resources::LABELIFIER;
+                                labelifier.lock().update();
+                            }
                             match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
                                 &mut self.gui,

@@ -19,10 +19,14 @@ pub(crate) mod utils;
 
 pub use glam::{vec2, Vec2};
 
-#[cfg(feature = "egui")]
+#[cfg(not(feature = "client"))]
 mod check_feature_dependency {
-    #[cfg(not(feature = "client"))]
+    #[cfg(feature = "egui")]
     compile_error!("`egui` requires the `client` feature to be enabled.");
+    #[cfg(feature = "labels")]
+    compile_error!("`labels` requires the `client` feature to be enabled.");
+    #[cfg(feature = "audio")]
+    compile_error!("`audio` requires the `client` feature to be enabled.");
 }
 
 /// Egui feature on
@@ -30,9 +34,8 @@ mod check_feature_dependency {
 pub use egui_winit_vulkano::egui;
 
 use once_cell::sync::Lazy;
+#[cfg(feature = "physics")]
 pub use rapier2d::prelude::CoefficientCombineRule;
-#[cfg(feature = "client")]
-use winit::dpi::{PhysicalPosition, PhysicalSize};
 
 /// Cardinal directions
 pub mod directions {

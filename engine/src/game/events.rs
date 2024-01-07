@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::prelude::*;
 #[cfg(feature = "egui")]
 use egui_winit_vulkano::egui::Context;
+use winit::dpi;
 pub use winit::event::{ElementState, MouseButton, VirtualKeyCode};
 
 /// Describes an event coming from the event loop.
@@ -26,7 +27,7 @@ pub enum Event {
 #[derive(Debug, Clone)]
 pub enum WindowEvent {
     /// In case the window has been resized the new size is given here.
-    Resized(PhysicalSize<u32>),
+    Resized(dpi::PhysicalSize<u32>),
     /// The window has been requested to close.
     /// Happens when the X button gets pressed on the title bar, the X gets pressed in the task bar, the Alt f4 combination gets pressed or any other ways to request a close to the window.
     CloseRequested,
@@ -54,7 +55,7 @@ pub enum WindowEvent {
     /// THe cursor has moved on the window.
     ///
     /// Cursor position in pixels relative the the top left corner of the screen.
-    CursorMoved(PhysicalPosition<f64>),
+    CursorMoved(dpi::PhysicalPosition<f64>),
     /// Mouse scroll event on the window.
     MouseWheel(ScrollDelta),
 }
@@ -86,7 +87,7 @@ pub enum InputEvent {
 pub enum ScrollDelta {
     LineDelta(Vec2),
     /// A scroll with exact pixels to be moved.
-    PixelDelta(PhysicalPosition<f64>),
+    PixelDelta(dpi::PhysicalPosition<f64>),
 }
 
 /// Input received from the keyboard.

@@ -455,3 +455,42 @@ fn layout_paragraph<'a>(label: &Label<Object>, dimensions: [f32; 2]) -> Vec<Posi
     }
     result.into_iter().flatten().collect()
 }
+
+/// A font to be used with the default label system.
+#[derive(Clone)]
+pub struct Font {
+    font: Arc<rusttype::Font<'static>>,
+    id: usize,
+}
+
+impl Font {
+    /// Loads a font into the resources.
+    ///
+    /// Makes a new font using the bytes of a truetype or opentype font.
+    /// Returns `None` in case the given bytes don't work.
+    pub fn from_bytes(data: &'static [u8]) -> Option<Self> {
+        let labelifier = &LABELIFIER;
+        let font = Arc::new(rusttype::Font::try_from_bytes(data)?);
+        let id = labelifier.lock().increment_id();
+        Some(Self { font, id })
+    }
+
+    /// Loads a font into the resources.
+    ///
+    /// Makes a new font using the bytes in a vec of a truetype or opentype font.
+    /// Returns `None` in case the given bytes don't work.
+    pub fn from_vec(data: impl Into<Vec<u8>>) -> Option<Self> {
+        let labelifier = &LABELIFIER;
+        let font = Arc::new(rusttype::Font::try_from_vec(data.into())?);
+        let id = labelifier.lock().increment_id();
+        Some(Self { font, id })
+    }
+    /// Returns the font ID.
+    pub fn id(&self) -> usize {
+        self.id
+    }
+    /// Returns the rusttype font.
+    pub(crate) fn font(&self) -> &Arc<rusttype::Font<'static>> {
+        &self.font
+    }
+}

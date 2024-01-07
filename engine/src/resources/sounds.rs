@@ -1,3 +1,5 @@
+//! Everything about playing audio in the game engine.
+
 use std::{
     f64::consts::PI,
     io::Cursor,
@@ -24,6 +26,7 @@ use kira::{
     tween::Value,
 };
 
+/// The audio server has not started.
 #[derive(Clone, Copy, Debug, Error)]
 #[error("The audio server is not started for this session.")]
 pub struct NoAudioServerError;
@@ -153,6 +156,7 @@ impl From<Tween> for kira::tween::Tween {
     }
 }
 
+/// The global audio settings that should be used throughout the game.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct AudioSettings {
     /// The limit of how many sounds can exist at the same time.
@@ -375,8 +379,9 @@ impl From<SpatialSettings> for EmitterSettings {
     }
 }
 
-pub struct Global;
-
+/// A playable sound.
+///
+/// You can bind an object to this sound making it directional.
 #[derive(Clone)]
 pub struct Sound {
     data: SoundData,
@@ -598,6 +603,7 @@ impl Sound {
     }
 }
 
+/// Settings that determine the appearance of the sound.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SoundSettings {
     /// The portion of the sound that should be played.

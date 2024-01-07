@@ -2,19 +2,17 @@
 use crate::utils::scale;
 use crate::{error::objects::*, prelude::*};
 
-use super::{physics::Shape, physics::*, NObject, Node, Object, ObjectsMap};
+use super::{NObject, Node, Object, ObjectsMap};
 use crossbeam::atomic::AtomicCell;
-use glam::{vec2, Vec2};
 use indexmap::{indexset, IndexSet};
 
-#[cfg(feature = "client")]
+#[cfg(feature = "audio")]
 use kira::spatial::listener::ListenerHandle;
 use parking_lot::Mutex;
-use rapier2d::prelude::*;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
@@ -22,11 +20,13 @@ use std::{
 /// The whole scene seen with all it's layers.
 pub struct Scene {
     layers: Mutex<IndexSet<Arc<Layer>>>,
+    #[cfg(feature = "physics")]
     physics_pipeline: Mutex<PhysicsPipeline>,
 }
 
 impl Scene {
-    /// Iterates through all physics.
+    /// Updates the scene physics and layers.
+    #[cfg(feature = "physics")]
     pub fn update(&self, physics: bool) {
         let layers = self.layers.lock();
 
@@ -34,14 +34,23 @@ impl Scene {
         if physics {
             for layer in layers.iter() {
                 layer.step_physics(&mut pipeline);
-                #[cfg(feature = "client")]
+                #[cfg(feature = "audio")]
                 layer.update();
             }
         } else {
-            #[cfg(feature = "client")]
+            #[cfg(feature = "audio")]
             for layer in layers.iter() {
                 layer.update();
             }
+        }
+    }
+
+    /// Updates all the layers.
+    #[cfg(all(feature = "audio", not(feature = "physics")))]
+    pub fn update(&self) {
+        let layers = self.layers.lock();
+        for layer in layers.iter() {
+            layer.update();
         }
     }
 
@@ -67,6 +76,7 @@ impl Scene {
         //delete all the children of the layer too.
         objectguard.remove_children(
             &mut layer.objects_map.lock(),
+            #[cfg(feature = "physics")]
             &mut layer.rigid_body_roots.lock(),
         );
         //finish him!
@@ -92,6 +102,7 @@ impl Default for Scene {
     fn default() -> Self {
         Self {
             layers: Mutex::new(indexset![]),
+            #[cfg(feature = "physics")]
             physics_pipeline: Mutex::new(PhysicsPipeline::new()),
         }
     }
@@ -101,15 +112,18 @@ impl Default for Scene {
 pub struct Layer {
     pub(crate) root: NObject,
     pub(crate) camera: Mutex<NObject>,
-    #[cfg(feature = "client")]
+    #[cfg(feature = "audio")]
     old_camera: Mutex<NewObject>,
     camera_settings: AtomicCell<CameraSettings>,
     pub(crate) objects_map: Mutex<ObjectsMap>,
+    #[cfg(feature = "physics")]
     rigid_body_roots: Mutex<ObjectsMap>,
     latest_object: AtomicU64,
+    #[cfg(feature = "physics")]
     physics: Mutex<Physics>,
-    physics_enabled: AtomicBool,
-    #[cfg(feature = "client")]
+    #[cfg(feature = "physics")]
+    physics_enabled: std::sync::atomic::AtomicBool,
+    #[cfg(feature = "audio")]
     pub(crate) listener: Mutex<std::sync::OnceLock<ListenerHandle>>,
 }
 
@@ -119,6 +133,7 @@ impl Layer {
         let root = Arc::new(Mutex::new(Node {
             object: Object::root(),
             parent: None,
+            #[cfg(feature = "physics")]
             rigid_body_parent: None,
             children: vec![],
         }));
@@ -127,18 +142,21 @@ impl Layer {
         let layer = Arc::new(Self {
             root: root.clone(),
             camera: Mutex::new(root),
-            #[cfg(feature = "client")]
+            #[cfg(feature = "audio")]
             old_camera: Mutex::new(NewObject::default()),
             camera_settings: AtomicCell::new(CameraSettings::default()),
             objects_map: Mutex::new(objects_map),
+            #[cfg(feature = "physics")]
             rigid_body_roots: Mutex::new(HashMap::new()),
             latest_object: AtomicU64::new(1),
+            #[cfg(feature = "physics")]
             physics: Mutex::new(Physics::new()),
-            physics_enabled: AtomicBool::new(true),
-            #[cfg(feature = "client")]
+            #[cfg(feature = "physics")]
+            physics_enabled: std::sync::atomic::AtomicBool::new(true),
+            #[cfg(feature = "audio")]
             listener: Mutex::new(std::sync::OnceLock::new()),
         });
-        #[cfg(feature = "client")]
+        #[cfg(feature = "audio")]
         RESOURCES
             .audio_server
             .send(AudioUpdate::NewLayer(layer.clone()))
@@ -147,9 +165,11 @@ impl Layer {
         layer
     }
     /// Used by the proc macro to initialize the physics for an object.
+    #[cfg(feature = "physics")]
     pub(crate) fn physics(&self) -> &Mutex<Physics> {
         &self.physics
     }
+    #[cfg(feature = "physics")]
     pub(crate) fn rigid_body_roots(&self) -> &Mutex<ObjectsMap> {
         &self.rigid_body_roots
     }
@@ -158,7 +178,9 @@ impl Layer {
         *self.camera.lock() = camera.as_node();
         Ok(())
     }
-    #[cfg(feature = "client")]
+
+    /// Returns the position of the camera object.
+    #[allow(dead_code)]
     pub(crate) fn camera_transform(&self) -> Transform {
         self.camera.lock().lock().object.transform
     }
@@ -208,7 +230,7 @@ impl Layer {
     pub fn contains_object(&self, object_id: &usize) -> bool {
         self.objects_map.lock().contains_key(object_id)
     }
-    #[cfg(feature = "client")]
+    #[cfg(feature = "audio")]
     pub(crate) fn update(&self) {
         use glam::Quat;
 
@@ -230,100 +252,6 @@ impl Layer {
             }
         }
     }
-    pub(crate) fn step_physics(&self, physics_pipeline: &mut PhysicsPipeline) {
-        if self.physics_enabled.load(Ordering::Acquire) {
-            let mut map = self.rigid_body_roots.lock();
-
-            let mut physics = self.physics.lock();
-            physics.step(physics_pipeline); // Rapier-side physics iteration run.
-            for (_, object) in map.iter_mut() {
-                let mut node = object.lock();
-                let rigid_body = physics
-                    .rigid_body_set
-                    .get(node.object.rigidbody_handle().unwrap())
-                    .unwrap();
-                node.object.set_isometry(
-                    (*rigid_body.translation()).into(),
-                    rigid_body.rotation().angle(),
-                );
-            }
-        }
-    }
-
-    /// Gets the gravity parameter.
-    pub fn gravity(&self) -> Vec2 {
-        self.physics.lock().gravity.into()
-    }
-    /// Sets the gravity parameter.
-    pub fn set_gravity(&self, gravity: Vec2) {
-        self.physics.lock().gravity = gravity.into();
-    }
-    /// Returns if physics is enabled.
-    pub fn physics_enabled(&self) -> bool {
-        self.physics_enabled.load(Ordering::Acquire)
-    }
-    /// Set physics to be enabled or disabled.
-    pub fn set_physics_enabled(&self, enabled: bool) {
-        self.physics_enabled.store(enabled, Ordering::Release)
-    }
-    /// Takes the physics simulation parameters.
-    pub fn physics_parameters(&self) -> IntegrationParameters {
-        self.physics.lock().integration_parameters
-    }
-    /// Sets the physics simulation parameters.
-    pub fn set_physics_parameters(&self, parameters: IntegrationParameters) {
-        self.physics.lock().integration_parameters = parameters;
-    }
-    /// Adds a joint between object 1 and 2.
-    pub fn add_joint(
-        &self,
-        object1: &Object,
-        object2: &Object,
-        data: impl Into<joints::GenericJoint>,
-        wake_up: bool,
-    ) -> Result<ImpulseJointHandle, NoRigidBodyError> {
-        if let (Some(handle1), Some(handle2)) =
-            (object1.rigidbody_handle(), object2.rigidbody_handle())
-        {
-            Ok(self.physics.lock().impulse_joint_set.insert(
-                handle1,
-                handle2,
-                data.into().data,
-                wake_up,
-            ))
-        } else {
-            Err(NoRigidBodyError)
-        }
-    }
-    /// Returns if the joint exists.
-    pub fn get_joint(&self, handle: ImpulseJointHandle) -> Option<joints::GenericJoint> {
-        self.physics
-            .lock()
-            .impulse_joint_set
-            .get(handle)
-            .map(|joint| joints::GenericJoint { data: joint.data })
-    }
-    /// Updates a joint.
-    pub fn set_joint(
-        &self,
-        data: impl Into<joints::GenericJoint>,
-        handle: ImpulseJointHandle,
-    ) -> Result<(), NoJointError> {
-        if let Some(joint) = self.physics.lock().impulse_joint_set.get_mut(handle) {
-            joint.data = data.into().data;
-            Ok(())
-        } else {
-            Err(NoJointError)
-        }
-    }
-    /// Removes a joint.
-    pub fn remove_joint(&self, handle: ImpulseJointHandle, wake_up: bool) {
-        self.physics
-            .lock()
-            .impulse_joint_set
-            .remove(handle, wake_up);
-    }
-
     /// Increments the object ID counter by one and returns it.
     pub(crate) fn increment_id(&self) -> usize {
         self.latest_object.fetch_add(1, Ordering::AcqRel) as usize
@@ -333,6 +261,115 @@ impl Layer {
         self.objects_map.lock().insert(id, object.clone());
     }
 
+    /// Moves an object on the given index in it's parents children order.
+    ///
+    /// Returns
+    pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
+        let node = object.as_node();
+        let count = Self::count_children(&node);
+
+        if count < index {
+            return Err(ObjectError::Move(format!(
+                "This object can not be moved to {index}.\nYou can not go above {count}"
+            )));
+        } else {
+            Self::move_object_to(node, index);
+        }
+        Ok(())
+    }
+
+    /// Moves an object one up in it's parents children order.
+    pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node();
+        let parent = Self::get_parent(&node);
+        let index = Self::find_child_index(&parent, &node);
+        if index == 0 {
+            return Err(ObjectError::Move(
+                "Object already on the top of the current layer.".to_string(),
+            ));
+        } else {
+            Self::move_object_to(node, index - 1);
+        }
+        Ok(())
+    }
+
+    /// Moves an object one down in it's parents children order.
+    pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node();
+        let parent = Self::get_parent(&node);
+        let count = Self::count_children(&node);
+        let index = Self::find_child_index(&parent, &node);
+        if count == index {
+            return Err(ObjectError::Move(format!(
+                "Object already at the bottom of the layer: {index}"
+            )));
+        } else {
+            Self::move_object_to(node, count + 1);
+        }
+        Ok(())
+    }
+
+    /// Moves an object all the way to the top of it's parents children list.
+    pub fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node();
+        Self::move_object_to(node, 0);
+        Ok(())
+    }
+
+    /// Moves an object all the way to the bottom of it's parents children list.
+    pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
+        let node = object.as_node();
+        let count = Self::count_children(&node) - 1;
+        Self::move_object_to(node, count);
+        Ok(())
+    }
+
+    fn get_parent(object: &NObject) -> NObject {
+        object.lock().parent.clone().unwrap().upgrade().unwrap()
+    }
+
+    fn find_child_index(parent: &NObject, object: &NObject) -> usize {
+        let parent = parent.lock();
+        parent
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::ptr_eq(&x, object))
+            .unwrap()
+    }
+
+    fn count_children(object: &NObject) -> usize {
+        let parent = Self::get_parent(object);
+        let parent = parent.lock();
+        parent.children.len()
+    }
+
+    /// Moves an object on the given index in it's parents children order.
+    fn move_object_to(src: NObject, dst: usize) {
+        let parent = src.lock().parent.clone().unwrap().upgrade().unwrap();
+        let mut parent = parent.lock();
+        let index = parent
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::ptr_eq(&x, &src))
+            .unwrap();
+        parent.children.swap(index, dst);
+    }
+
+    pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
+        let node = parent.as_node();
+        Ok(Self::count_children(&node))
+    }
+}
+
+#[cfg(feature = "physics")]
+use rapier2d::prelude::*;
+
+/// Physics
+#[cfg_attr(docsrs, doc(cfg(feature = "physics")))]
+#[cfg(feature = "physics")]
+impl Layer {
     /// Returns the nearest collider id from a specific location.
     pub fn query_nearest_collider_at(&self, position: Vec2) -> Option<usize> {
         let mut physics = self.physics.lock();
@@ -452,7 +489,11 @@ impl Layer {
     }
 
     /// Cast a shape and return the first collider intersecting with it.
-    pub fn intersection_with_shape(&self, shape: Shape, position: (Vec2, f32)) -> Option<usize> {
+    pub fn intersection_with_shape(
+        &self,
+        shape: physics::Shape,
+        position: (Vec2, f32),
+    ) -> Option<usize> {
         let mut physics = self.physics.lock();
         physics.update_query_pipeline();
 
@@ -467,7 +508,11 @@ impl Layer {
     }
 
     /// Cast a shape and return the first collider intersecting with it.
-    pub fn intersections_with_shape(&self, shape: Shape, position: (Vec2, f32)) -> Vec<usize> {
+    pub fn intersections_with_shape(
+        &self,
+        shape: physics::Shape,
+        position: (Vec2, f32),
+    ) -> Vec<usize> {
         let mut physics = self.physics.lock();
         physics.update_query_pipeline();
 
@@ -487,106 +532,98 @@ impl Layer {
         );
         intersections
     }
+    pub(crate) fn step_physics(&self, physics_pipeline: &mut PhysicsPipeline) {
+        if self.physics_enabled.load(Ordering::Acquire) {
+            let mut map = self.rigid_body_roots.lock();
 
-    /// Moves an object on the given index in it's parents children order.
-    ///
-    /// Returns
-    pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
-        let node = object.as_node();
-        let count = Self::count_children(&node);
-
-        if count < index {
-            return Err(ObjectError::Move(format!(
-                "This object can not be moved to {index}.\nYou can not go above {count}"
-            )));
-        } else {
-            Self::move_object_to(node, index);
+            let mut physics = self.physics.lock();
+            physics.step(physics_pipeline); // Rapier-side physics iteration run.
+            for (_, object) in map.iter_mut() {
+                let mut node = object.lock();
+                let rigid_body = physics
+                    .rigid_body_set
+                    .get(node.object.rigidbody_handle().unwrap())
+                    .unwrap();
+                node.object.set_isometry(
+                    (*rigid_body.translation()).into(),
+                    rigid_body.rotation().angle(),
+                );
+            }
         }
-        Ok(())
     }
 
-    /// Moves an object one up in it's parents children order.
-    pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
-        let parent = Self::get_parent(&node);
-        let index = Self::find_child_index(&parent, &node);
-        if index == 0 {
-            return Err(ObjectError::Move(
-                "Object already on the top of the current layer.".to_string(),
-            ));
+    /// Gets the gravity parameter.
+    pub fn gravity(&self) -> Vec2 {
+        self.physics.lock().gravity.into()
+    }
+    /// Sets the gravity parameter.
+    pub fn set_gravity(&self, gravity: Vec2) {
+        self.physics.lock().gravity = gravity.into();
+    }
+    /// Returns if physics is enabled.
+    pub fn physics_enabled(&self) -> bool {
+        self.physics_enabled.load(Ordering::Acquire)
+    }
+    /// Set physics to be enabled or disabled.
+    pub fn set_physics_enabled(&self, enabled: bool) {
+        self.physics_enabled.store(enabled, Ordering::Release)
+    }
+    /// Takes the physics simulation parameters.
+    pub fn physics_parameters(&self) -> IntegrationParameters {
+        self.physics.lock().integration_parameters
+    }
+    /// Sets the physics simulation parameters.
+    pub fn set_physics_parameters(&self, parameters: IntegrationParameters) {
+        self.physics.lock().integration_parameters = parameters;
+    }
+    /// Adds a joint between object 1 and 2.
+    pub fn add_joint(
+        &self,
+        object1: &Object,
+        object2: &Object,
+        data: impl Into<joints::GenericJoint>,
+        wake_up: bool,
+    ) -> Result<ImpulseJointHandle, NoRigidBodyError> {
+        if let (Some(handle1), Some(handle2)) =
+            (object1.rigidbody_handle(), object2.rigidbody_handle())
+        {
+            Ok(self.physics.lock().impulse_joint_set.insert(
+                handle1,
+                handle2,
+                data.into().data,
+                wake_up,
+            ))
         } else {
-            Self::move_object_to(node, index - 1);
+            Err(NoRigidBodyError)
         }
-        Ok(())
     }
-
-    /// Moves an object one down in it's parents children order.
-    pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
-        let parent = Self::get_parent(&node);
-        let count = Self::count_children(&node);
-        let index = Self::find_child_index(&parent, &node);
-        if count == index {
-            return Err(ObjectError::Move(format!(
-                "Object already at the bottom of the layer: {index}"
-            )));
+    /// Returns if the joint exists.
+    pub fn get_joint(&self, handle: ImpulseJointHandle) -> Option<joints::GenericJoint> {
+        self.physics
+            .lock()
+            .impulse_joint_set
+            .get(handle)
+            .map(|joint| joints::GenericJoint { data: joint.data })
+    }
+    /// Updates a joint.
+    pub fn set_joint(
+        &self,
+        data: impl Into<joints::GenericJoint>,
+        handle: ImpulseJointHandle,
+    ) -> Result<(), NoJointError> {
+        if let Some(joint) = self.physics.lock().impulse_joint_set.get_mut(handle) {
+            joint.data = data.into().data;
+            Ok(())
         } else {
-            Self::move_object_to(node, count + 1);
+            Err(NoJointError)
         }
-        Ok(())
     }
-
-    /// Moves an object all the way to the top of it's parents children list.
-    pub fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
-        Self::move_object_to(node, 0);
-        Ok(())
-    }
-
-    /// Moves an object all the way to the bottom of it's parents children list.
-    pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
-        let count = Self::count_children(&node) - 1;
-        Self::move_object_to(node, count);
-        Ok(())
-    }
-
-    fn get_parent(object: &NObject) -> NObject {
-        object.lock().parent.clone().unwrap().upgrade().unwrap()
-    }
-
-    fn find_child_index(parent: &NObject, object: &NObject) -> usize {
-        let parent = parent.lock();
-        parent
-            .children
-            .clone()
-            .into_iter()
-            .position(|x| Arc::ptr_eq(&x, object))
-            .unwrap()
-    }
-
-    fn count_children(object: &NObject) -> usize {
-        let parent = Self::get_parent(object);
-        let parent = parent.lock();
-        parent.children.len()
-    }
-
-    /// Moves an object on the given index in it's parents children order.
-    fn move_object_to(src: NObject, dst: usize) {
-        let parent = src.lock().parent.clone().unwrap().upgrade().unwrap();
-        let mut parent = parent.lock();
-        let index = parent
-            .children
-            .clone()
-            .into_iter()
-            .position(|x| Arc::ptr_eq(&x, &src))
-            .unwrap();
-        parent.children.swap(index, dst);
-    }
-
-    pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
-        let node = parent.as_node();
-        Ok(Self::count_children(&node))
+    /// Removes a joint.
+    pub fn remove_joint(&self, handle: ImpulseJointHandle, wake_up: bool) {
+        self.physics
+            .lock()
+            .impulse_joint_set
+            .remove(handle, wake_up);
     }
 }
 

@@ -9,7 +9,7 @@ use derive_builder::Builder;
 use parking_lot::Mutex;
 use spin_sleep::sleep;
 
-use crate::{Game, SCENE, SETTINGS, TIME};
+use crate::{Game, SETTINGS, TIME};
 
 pub(crate) struct TickSystem {
     handle: Option<Mutex<JoinHandle<()>>>,
@@ -37,8 +37,10 @@ impl TickSystem {
             let start_time = SystemTime::now();
             // Run the logic
             game.lock().tick();
+
             // update the physics in case they are active in the tick settings.
-            SCENE.update(settings.update_physics);
+            #[cfg(feature = "physics")]
+            crate::SCENE.update(settings.update_physics);
             // record the elapsed time.
             let elapsed_time = start_time.elapsed().unwrap();
 
@@ -110,6 +112,7 @@ pub struct TickSettings {
     ///
     /// `true`
     #[builder(default = "true")]
+    #[cfg(feature = "physics")]
     pub update_physics: bool,
     /// If there is some reporter it will report about the most recent tick to the given reporter.
     ///
@@ -138,6 +141,7 @@ impl Default for TickSettings {
     fn default() -> Self {
         Self {
             tick_wait: Duration::from_secs_f64(1.0 / 62.0),
+            #[cfg(feature = "physics")]
             update_physics: true,
             timestep_mode: TimeStep::default(),
             reporter: None,
@@ -156,6 +160,7 @@ impl From<TickSettings> for TickSettingsBuilder {
         Self {
             tick_wait: Some(value.tick_wait),
             timestep_mode: Some(value.timestep_mode),
+            #[cfg(feature = "physics")]
             update_physics: Some(value.update_physics),
             reporter: Some(value.reporter),
             paused: Some(value.paused),

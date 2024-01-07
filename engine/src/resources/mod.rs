@@ -3,7 +3,6 @@
 use crate::prelude::*;
 
 use core::panic;
-use crossbeam::channel::Sender;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -21,6 +20,8 @@ pub mod textures;
 pub mod data;
 pub mod materials;
 mod model;
+
+#[cfg(feature = "audio")]
 pub mod sounds;
 pub use model::*;
 
@@ -28,6 +29,7 @@ pub(crate) static RESOURCES: Lazy<Resources> = Lazy::new(|| {
     let vulkan = Vulkan::init().map_err(|e| panic!("{e}")).unwrap();
     Resources::new(vulkan)
 });
+#[cfg(feature = "labels")]
 pub(crate) static LABELIFIER: Lazy<Mutex<Labelifier>> = Lazy::new(|| Mutex::new(Labelifier::new()));
 
 /// All the resources kept in the game engine like textures, fonts, sounds and models.
@@ -35,20 +37,23 @@ pub(crate) static LABELIFIER: Lazy<Mutex<Labelifier>> = Lazy::new(|| Mutex::new(
 pub(crate) struct Resources {
     pub vulkan: Vulkan,
     pub loader: Arc<Mutex<Loader>>,
-    pub audio_server: Sender<AudioUpdate>,
     pub shapes: BasicShapes,
+    #[cfg(feature = "audio")]
+    pub audio_server: crossbeam::channel::Sender<AudioUpdate>,
 }
 
 impl Resources {
     pub(crate) fn new(vulkan: Vulkan) -> Self {
         let loader = Arc::new(Mutex::new(Loader::init(&vulkan).unwrap()));
         let shapes = BasicShapes::new(&loader);
+        #[cfg(feature = "audio")]
         let audio_server = sounds::audio_server();
         Self {
             vulkan,
             loader,
-            audio_server,
             shapes,
+            #[cfg(feature = "audio")]
+            audio_server,
         }
     }
 
@@ -63,63 +68,12 @@ impl Resources {
     }
 }
 
-/// A font to be used with the default label system.
-#[derive(Clone)]
-pub struct Font {
-    font: Arc<rusttype::Font<'static>>,
-    id: usize,
-}
-
-impl Font {
-    /// Loads a font into the resources.
-    ///
-    /// Makes a new font using the bytes of a truetype or opentype font.
-    /// Returns `None` in case the given bytes don't work.
-    pub fn from_bytes(data: &'static [u8]) -> Option<Self> {
-        let labelifier = &LABELIFIER;
-        let font = Arc::new(rusttype::Font::try_from_bytes(data)?);
-        let id = labelifier.lock().increment_id();
-        Some(Self { font, id })
-    }
-
-    /// Loads a font into the resources.
-    ///
-    /// Makes a new font using the bytes in a vec of a truetype or opentype font.
-    /// Returns `None` in case the given bytes don't work.
-    pub fn from_vec(data: impl Into<Vec<u8>>) -> Option<Self> {
-        let labelifier = &LABELIFIER;
-        let font = Arc::new(rusttype::Font::try_from_vec(data.into())?);
-        let id = labelifier.lock().increment_id();
-        Some(Self { font, id })
-    }
-    /// Returns the font ID.
-    pub fn id(&self) -> usize {
-        self.id
-    }
-    /// Returns the rusttype font.
-    pub(crate) fn font(&self) -> &Arc<rusttype::Font<'static>> {
-        &self.font
-    }
-}
-
-// pub struct Sound {
-//     pub data: Arc<[u8]>,
-// }
-
-// /// Not done.
-// #[allow(dead_code)]
-// pub fn load_sound(sound: &[u8]) -> Sound {
-//     Sound {
-//         data: Arc::from(sound.to_vec().into_boxed_slice()),
-//     }
-// }
-
 /// Merges a pipeline cache into the resources potentially making the creation of materials faster.
 ///
 /// # Safety
 ///
 /// Unsafe because vulkan blindly trusts that this data comes from the `get_pipeline_binary` function.
-/// The program will crash if the data provided is not right.
+/// The program will panic if the data provided is not right.
 ///
 /// The binary given to the function must be made with the same hardware and vulkan driver version.
 pub unsafe fn load_pipeline_cache(data: &[u8]) {

@@ -4,9 +4,10 @@
 pub mod appearance;
 #[cfg(feature = "client")]
 pub mod color;
-#[cfg(feature = "client")]
+#[cfg(feature = "labels")]
 pub mod labels;
 
+#[cfg(feature = "physics")]
 pub mod physics;
 pub mod scenes;
 
@@ -22,6 +23,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Weak},
 };
+#[cfg(feature = "physics")]
 type RigidBodyParent = Option<Option<Weak<Mutex<Node<Object>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
 pub(crate) type NObject = Arc<Mutex<Node<Object>>>;
@@ -97,6 +99,7 @@ impl VisualObject {
 pub struct Node<T> {
     pub object: T,
     pub parent: Option<Weak<Mutex<Node<T>>>>,
+    #[cfg(feature = "physics")]
     pub rigid_body_parent: RigidBodyParent,
     pub children: Vec<Arc<Mutex<Node<T>>>>,
 }
@@ -107,7 +110,7 @@ impl PartialEq for Node<Object> {
 }
 
 impl Node<Object> {
-    /// Takes a vector of every object transform and appearance and fills it with the right drawing order based on the root node inserted.
+    /// Takes a vector of every object transform and appearance and fills it with the right client order based on the root node inserted.
     #[cfg(feature = "client")]
     pub(crate) fn order_position(order: &mut Vec<VisualObject>, objects: &Self) {
         for child in objects.children.iter() {
@@ -124,6 +127,7 @@ impl Node<Object> {
             }
         }
     }
+
     /// Iterates to the last child to update all public position held by the Node.
     pub fn update_children_position(&mut self, parent_pos: Transform) {
         self.object.set_parent_transform(parent_pos);
@@ -133,6 +137,7 @@ impl Node<Object> {
                 .update_children_position(self.object.public_transform());
         }
     }
+
     /// Searches for the given object to be removed from the list of children.
     pub fn remove_child(&mut self, object: &NObject) {
         let index = self
@@ -143,17 +148,31 @@ impl Node<Object> {
             .unwrap();
         self.children.remove(index);
     }
+
     /// Removes all children and their children from the layer.
-    pub fn remove_children(&mut self, objects: &mut ObjectsMap, rigid_bodies: &mut ObjectsMap) {
-        let layer = self.object.layer().clone();
-        self.object.physics.remove(layer.physics());
+    pub fn remove_children(
+        &mut self,
+        objects: &mut ObjectsMap,
+        #[cfg(feature = "physics")] rigid_bodies: &mut ObjectsMap,
+    ) {
+        #[cfg(feature = "physics")]
+        {
+            let layer = self.object.layer().clone();
+            self.object.physics.remove(layer.physics());
+        }
         for child in self.children.iter() {
-            child.clone().lock().remove_children(objects, rigid_bodies);
+            child.clone().lock().remove_children(
+                objects,
+                #[cfg(feature = "physics")]
+                rigid_bodies,
+            );
         }
         objects.remove(&self.object.id());
+        #[cfg(feature = "physics")]
         rigid_bodies.remove(&self.object.id());
         self.children = vec![];
     }
+
     /// Returns the public transform of this objects.
     pub fn end_transform(&self) -> Transform {
         if let Some(parent) = &self.parent {
@@ -175,6 +194,7 @@ pub struct NewObject {
     #[cfg(feature = "client")]
     pub appearance: Appearance,
     #[builder(setter(skip))]
+    #[cfg(feature = "physics")]
     pub(crate) physics: ObjectPhysics,
 }
 
@@ -187,6 +207,7 @@ pub struct Object {
     pub appearance: Appearance,
     id: usize,
     node: Option<WeakObject>,
+    #[cfg(feature = "physics")]
     pub(crate) physics: ObjectPhysics,
     layer: Option<Arc<Layer>>,
 }
@@ -228,15 +249,19 @@ impl NewObject {
     pub fn new() -> Self {
         Self::default()
     }
+
     /// Initializes the object into a layer.
     pub fn init(self, layer: &Arc<Layer>) -> Object {
         self.init_with_optional_parent(layer, None)
     }
+
     /// Initializes the object into a layer with a parent object.
     pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Object {
         self.init_with_optional_parent(layer, Some(parent))
     }
+
     /// Initializes the object into a layer with an optional parent object.
+    #[allow(unused_mut)]
     pub fn init_with_optional_parent(
         mut self,
         layer: &Arc<Layer>,
@@ -245,16 +270,24 @@ impl NewObject {
         // Init ID of this object.
         let id = layer.increment_id();
 
+        #[cfg(feature = "physics")]
         let mut rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
             let parent = parent.as_node();
-            rigid_body_parent = parent.lock().rigid_body_parent.clone();
+            #[cfg(feature = "physics")]
+            {
+                rigid_body_parent = parent.lock().rigid_body_parent.clone();
+            }
             parent.clone()
         } else {
-            rigid_body_parent = None;
+            #[cfg(feature = "physics")]
+            {
+                rigid_body_parent = None;
+            }
             layer.root.clone()
         };
         // Updates the physics side and returns the parent position.
+        #[cfg(feature = "physics")]
         let parent_transform = self.physics.update(
             &self.transform,
             &parent,
@@ -262,6 +295,8 @@ impl NewObject {
             id as u128,
             layer.physics(),
         );
+        #[cfg(not(feature = "physics"))]
+        let parent_transform = parent.lock().object.public_transform();
 
         let mut initialized = Object {
             transform: self.transform,
@@ -270,6 +305,7 @@ impl NewObject {
             appearance: self.appearance,
             id,
             node: None,
+            #[cfg(feature = "physics")]
             physics: self.physics,
             layer: Some(layer.clone()),
         };
@@ -278,6 +314,7 @@ impl NewObject {
         let node: NObject = std::sync::Arc::new(Mutex::new(Node {
             object: initialized.clone(),
             parent: Some(std::sync::Arc::downgrade(&parent)),
+            #[cfg(feature = "physics")]
             rigid_body_parent: rigid_body_parent.clone(),
             children: vec![],
         }));
@@ -288,6 +325,7 @@ impl NewObject {
         initialized.node = reference;
 
         // In case there is no rigid body roots make yourself one.
+        #[cfg(feature = "physics")]
         if let Some(value) = &rigid_body_parent {
             if value.is_none() && initialized.physics.rigid_body.is_some() {
                 layer.rigid_body_roots().lock().insert(id, node.clone());
@@ -315,36 +353,48 @@ impl NewObject {
     pub fn appearance(&self) -> &Appearance {
         &self.appearance
     }
+}
 
+/// Physics
+#[cfg(feature = "physics")]
+impl NewObject {
     /// Returns the collider of the object in case it has one.
+    #[cfg(feature = "physics")]
     pub fn collider(&self) -> Option<&Collider> {
         self.physics.collider.as_ref()
     }
     /// Sets the collider of the object.
+    #[cfg(feature = "physics")]
     pub fn set_collider(&mut self, collider: Option<Collider>) {
         self.physics.collider = collider;
     }
     /// Returns a mutable reference to the collider.
+    #[cfg(feature = "physics")]
     pub fn collider_mut(&mut self) -> Option<&mut Collider> {
         self.physics.collider.as_mut()
     }
     /// Returns the rigid bodyh of the object in case it has one.
+    #[cfg(feature = "physics")]
     pub fn rigid_body(&self) -> Option<&RigidBody> {
         self.physics.rigid_body.as_ref()
     }
     /// Sets the rigid body of the object.
+    #[cfg(feature = "physics")]
     pub fn set_rigid_body(&mut self, rigid_body: Option<RigidBody>) {
         self.physics.rigid_body = rigid_body;
     }
     /// Returns a mutable reference to the rigid body.
+    #[cfg(feature = "physics")]
     pub fn rigid_body_mut(&mut self) -> Option<&mut RigidBody> {
         self.physics.rigid_body.as_mut()
     }
     /// Returns the local position of the collider.
+    #[cfg(feature = "physics")]
     pub fn local_collider_position(&self) -> Vec2 {
         self.physics.local_collider_position
     }
     /// Sets the local position of the collider of this object in case it has one.
+    #[cfg(feature = "physics")]
     pub fn set_local_collider_position(&mut self, pos: Vec2) {
         self.physics.local_collider_position = pos;
     }
@@ -359,27 +409,38 @@ impl Object {
             appearance: Appearance::default(),
             id: 0,
             node: None,
+            #[cfg(feature = "physics")]
             physics: ObjectPhysics::default(),
             layer: None,
         }
     }
 
-    pub(crate) fn layer(&self) -> &Arc<Layer> {
+    pub fn layer(&self) -> &Arc<Layer> {
         self.layer.as_ref().unwrap()
     }
 
     /// Removes the object from it's layer.
+    #[allow(unused_mut)]
     pub fn remove(mut self) -> NewObject {
         let layer = self.layer.unwrap();
         let mut map = layer.objects_map.lock();
+        #[cfg(feature = "physics")]
         let mut rigid_bodies = layer.rigid_body_roots().lock();
         let node = map.remove(&self.id).unwrap();
-        rigid_bodies.remove(&self.id);
-        // Remove self from the physics side.
-        self.physics.remove(layer.physics());
+
+        #[cfg(feature = "physics")]
+        {
+            rigid_bodies.remove(&self.id);
+            // Remove self from the physics side.
+            self.physics.remove(layer.physics());
+        }
 
         let mut object = node.lock();
-        object.remove_children(&mut map, &mut rigid_bodies);
+        object.remove_children(
+            &mut map,
+            #[cfg(feature = "physics")]
+            &mut rigid_bodies,
+        );
 
         let parent = object.parent.clone().unwrap().upgrade().unwrap();
         let mut parent = parent.lock();
@@ -389,6 +450,7 @@ impl Object {
             transform: self.transform,
             #[cfg(feature = "client")]
             appearance: self.appearance,
+            #[cfg(feature = "physics")]
             physics: self.physics,
         }
     }
@@ -399,6 +461,7 @@ impl Object {
             transform: self.transform,
             #[cfg(feature = "client")]
             appearance: self.appearance.clone(),
+            #[cfg(feature = "physics")]
             physics: self.physics.clone(),
         }
     }
@@ -406,7 +469,10 @@ impl Object {
     /// Copies the data from a `NewObject` into itself.
     pub fn copy_new(&mut self, object: NewObject) {
         self.transform = object.transform;
-        self.physics = object.physics;
+        #[cfg(feature = "physics")]
+        {
+            self.physics = object.physics;
+        }
         #[cfg(feature = "client")]
         {
             self.appearance = object.appearance;
@@ -445,10 +511,6 @@ impl Object {
         self.node.as_ref().unwrap().upgrade().unwrap()
     }
 
-    pub(crate) fn rigidbody_handle(&self) -> Option<rapier2d::dynamics::RigidBodyHandle> {
-        self.physics.rigid_body_handle
-    }
-
     /// Updates the object to match the object information located inside the system of the layer. Useful when having physics.
     pub fn update(&mut self) {
         // receive
@@ -466,6 +528,7 @@ impl Object {
         // send
         // update public position of all children recursively
         let node = self.as_node().clone();
+        #[cfg(feature = "physics")]
         {
             let mut node = node.lock();
             let layer = self.layer().clone();
@@ -482,6 +545,14 @@ impl Object {
         let arc = self.as_node();
         let mut object = arc.lock();
         object.object = self.clone();
+    }
+}
+
+/// Physics
+#[cfg(feature = "physics")]
+impl Object {
+    pub(crate) fn rigidbody_handle(&self) -> Option<rapier2d::dynamics::RigidBodyHandle> {
+        self.physics.rigid_body_handle
     }
 
     /// Returns the collider of the object in case it has one.

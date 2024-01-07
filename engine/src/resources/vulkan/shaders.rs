@@ -47,6 +47,7 @@ pub fn instanced_texture_array_fragment_shader(device: Arc<Device>) -> Arc<Shade
     )
 }
 
+#[cfg(feature = "labels")]
 pub fn text_fragment_shader(device: Arc<Device>) -> Arc<ShaderModule> {
     from_bytes(include_bytes!("shaders/text_frag.spv"), device)
 }
