@@ -17,8 +17,7 @@ fn main() {
     eprintln!("This example requires you to have the `egui` and `client` feature enabled.");
 }
 
-#[cfg(feature = "egui")]
-#[cfg(feature = "client")]
+#[cfg(all(feature = "egui", feature = "client"))]
 fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
@@ -70,7 +69,7 @@ impl let_engine::Game for Game {
             .appearance
             .set_model(Model::Custom(ModelData::new(make_circle!(30)).unwrap()));
         // Initializes the object to the layer
-        circle.init(&self.layer);
+        circle.init(&self.layer).unwrap();
     }
     fn event(&mut self, event: events::Event) {
         match event {

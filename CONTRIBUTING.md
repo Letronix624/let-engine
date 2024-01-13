@@ -38,7 +38,7 @@ Right now my game engine is focusing on making it work first. Not everything is 
 
 There are a few things that should change and should be practiced on my game engine right now.
 
-The code is a bit messy, there are many unwraps to be removed, documentation to be added (and do not look at the use parts under `game/mod.rs` (actually do and help me)).
+The code is a bit messy, there are many unwraps to be removed, documentation to be added.
 
 I am planning on cleaning all that up, but I will only clean it when I absolutely need to or all my features on my todo list are completed.
 

@@ -1,5 +1,6 @@
 extern crate image;
 extern crate vulkano;
+use anyhow::{Context, Error};
 use std::sync::Arc;
 use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::Device;
@@ -12,33 +13,32 @@ pub fn create_swapchain_and_images(
     physical_device: &Arc<PhysicalDevice>,
     device: &Arc<Device>,
     surface: &Arc<Surface>,
-) -> (Arc<Swapchain>, Vec<Arc<Image>>) {
+) -> anyhow::Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
     let surface_capabilities = device
         .physical_device()
-        .surface_capabilities(surface, Default::default())
-        .unwrap();
+        .surface_capabilities(surface, Default::default())?;
     let image_format = device
         .physical_device()
-        .surface_formats(surface, Default::default())
-        .unwrap()[0]
+        .surface_formats(surface, Default::default())?[0]
         .0;
     let innersize = surface
         .object()
-        .unwrap()
+        .ok_or(Error::msg("Failed to cast the surface to a window."))?
         .downcast_ref::<Window>()
-        .unwrap()
+        .ok_or(Error::msg("Failed to cast the surface to a window."))?
         .inner_size()
         .into();
     let present_mode = physical_device
-        .surface_present_modes(surface, SurfaceInfo::default())
-        .unwrap()
+        .surface_present_modes(surface, SurfaceInfo::default())?
         .min_by_key(|compare| match compare {
             PresentMode::Mailbox => 0,
             PresentMode::Immediate => 1,
             PresentMode::Fifo => 2,
             _ => 3,
         })
-        .unwrap();
+        .ok_or(Error::msg(
+            "Failed to get any presentation mode on this device.",
+        ))?;
     let create_info = SwapchainCreateInfo {
         min_image_count: surface_capabilities.min_image_count,
         image_format,
@@ -49,11 +49,11 @@ pub fn create_swapchain_and_images(
             .supported_composite_alpha
             .into_iter()
             .next()
-            .unwrap(),
+            .ok_or(Error::msg(
+                "Failed to find a supported compositor on this device.",
+            ))?,
         ..Default::default()
     };
-    match Swapchain::new(device.clone(), surface.clone(), create_info) {
-        Ok(t) => t,
-        Err(e) => panic!("{e}"),
-    }
+    Swapchain::new(device.clone(), surface.clone(), create_info)
+        .context("Failed to create a swapchain.")
 }

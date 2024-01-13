@@ -3,6 +3,7 @@ use crate::utils::scale;
 use crate::{error::objects::*, prelude::*};
 
 use super::{NObject, Node, Object, ObjectsMap};
+use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
 use indexmap::{indexset, IndexSet};
 
@@ -27,7 +28,7 @@ pub struct Scene {
 impl Scene {
     /// Updates the scene physics and layers.
     #[cfg(feature = "physics")]
-    pub fn update(&self, physics: bool) {
+    pub fn update(&self, physics: bool) -> Result<()> {
         let layers = self.layers.lock();
 
         let mut pipeline = self.physics_pipeline.lock();
@@ -35,14 +36,15 @@ impl Scene {
             for layer in layers.iter() {
                 layer.step_physics(&mut pipeline);
                 #[cfg(feature = "audio")]
-                layer.update();
+                layer.update()?;
             }
         } else {
             #[cfg(feature = "audio")]
             for layer in layers.iter() {
-                layer.update();
+                layer.update()?;
             }
         }
+        Ok(())
     }
 
     /// Updates all the layers.
@@ -56,7 +58,7 @@ impl Scene {
 
     /// Initializes a new layer into the scene.
     pub fn new_layer(&self) -> Arc<Layer> {
-        let layer = Layer::new();
+        let layer = Layer::new().unwrap();
         self.layers.lock().insert(layer.clone());
 
         layer
@@ -90,9 +92,9 @@ impl Scene {
         self.layers.lock().clone()
     }
 
-    /// Returns a layer by index.
-    pub fn get_layer(&self, index: usize) -> Arc<Layer> {
-        self.layers.lock().get_index(index).unwrap().clone()
+    /// Returns a layer by index in case it exists.
+    pub fn get_layer(&self, index: usize) -> Option<Arc<Layer>> {
+        self.layers.lock().get_index(index).cloned()
     }
 
     //Add support to serialize and deserialize scenes. load and unload.
@@ -129,7 +131,7 @@ pub struct Layer {
 
 impl Layer {
     /// Creates a new layer with the given root.
-    pub(crate) fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Result<Arc<Self>> {
         let root = Arc::new(Mutex::new(Node {
             object: Object::root(),
             parent: None,
@@ -159,10 +161,9 @@ impl Layer {
         #[cfg(feature = "audio")]
         RESOURCES
             .audio_server
-            .send(AudioUpdate::NewLayer(layer.clone()))
-            .unwrap();
+            .send(AudioUpdate::NewLayer(layer.clone()))?;
         #[allow(clippy::let_and_return)]
-        layer
+        Ok(layer)
     }
     /// Used by the proc macro to initialize the physics for an object.
     #[cfg(feature = "physics")]
@@ -231,7 +232,7 @@ impl Layer {
         self.objects_map.lock().contains_key(object_id)
     }
     #[cfg(feature = "audio")]
-    pub(crate) fn update(&self) {
+    pub(crate) fn update(&self) -> Result<()> {
         use glam::Quat;
 
         let mut old_camera = self.old_camera.lock();
@@ -241,16 +242,14 @@ impl Layer {
             if let Some(listener) = self.listener.lock().get_mut() {
                 let cam_transform = self.camera_transform();
                 listener
-                    .set_position(cam_transform.position.extend(0.0), Tween::default().into())
-                    .unwrap();
-                listener
-                    .set_orientation(
-                        Quat::from_rotation_z(cam_transform.rotation),
-                        Tween::default().into(),
-                    )
-                    .unwrap();
+                    .set_position(cam_transform.position.extend(0.0), Tween::default().into())?;
+                listener.set_orientation(
+                    Quat::from_rotation_z(cam_transform.rotation),
+                    Tween::default().into(),
+                )?;
             }
         }
+        Ok(())
     }
     /// Increments the object ID counter by one and returns it.
     pub(crate) fn increment_id(&self) -> usize {
@@ -266,7 +265,7 @@ impl Layer {
     /// Returns
     pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let count = Self::count_children(&node);
+        let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
 
         if count < index {
             return Err(ObjectError::Move(format!(
@@ -281,8 +280,8 @@ impl Layer {
     /// Moves an object one up in it's parents children order.
     pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let parent = Self::get_parent(&node);
-        let index = Self::find_child_index(&parent, &node);
+        let parent = Self::get_parent(&node).ok_or(ObjectError::NoParent)?;
+        let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
         if index == 0 {
             return Err(ObjectError::Move(
                 "Object already on the top of the current layer.".to_string(),
@@ -296,9 +295,9 @@ impl Layer {
     /// Moves an object one down in it's parents children order.
     pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let parent = Self::get_parent(&node);
-        let count = Self::count_children(&node);
-        let index = Self::find_child_index(&parent, &node);
+        let parent = Self::get_parent(&node).ok_or(ObjectError::NoParent)?;
+        let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
+        let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
         if count == index {
             return Err(ObjectError::Move(format!(
                 "Object already at the bottom of the layer: {index}"
@@ -319,29 +318,34 @@ impl Layer {
     /// Moves an object all the way to the bottom of it's parents children list.
     pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let count = Self::count_children(&node) - 1;
+        let count = Self::count_children(&node).ok_or(ObjectError::NoParent)? - 1;
         Self::move_object_to(node, count);
         Ok(())
     }
 
-    fn get_parent(object: &NObject) -> NObject {
-        object.lock().parent.clone().unwrap().upgrade().unwrap()
+    fn get_parent(object: &NObject) -> Option<NObject> {
+        object.lock().parent.clone()?.upgrade()
     }
 
-    fn find_child_index(parent: &NObject, object: &NObject) -> usize {
+    /// Finds the index of the child in the parents children list.
+    ///
+    /// Returns `None` in case the child is not present in the object.
+    fn find_child_index(parent: &NObject, object: &NObject) -> Option<usize> {
         let parent = parent.lock();
         parent
             .children
             .clone()
             .into_iter()
             .position(|x| Arc::ptr_eq(&x, object))
-            .unwrap()
     }
 
-    fn count_children(object: &NObject) -> usize {
-        let parent = Self::get_parent(object);
+    /// Counts the amount of children the parent of the given object has.
+    ///
+    /// Returns none in case there is no parent.
+    fn count_children(object: &NObject) -> Option<usize> {
+        let parent = Self::get_parent(object)?;
         let parent = parent.lock();
-        parent.children.len()
+        Some(parent.children.len())
     }
 
     /// Moves an object on the given index in it's parents children order.
@@ -359,7 +363,7 @@ impl Layer {
 
     pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
         let node = parent.as_node();
-        Ok(Self::count_children(&node))
+        Self::count_children(&node).ok_or(ObjectError::NoParent)
     }
 }
 

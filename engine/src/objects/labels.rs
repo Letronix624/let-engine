@@ -108,8 +108,8 @@ impl Label<NewObject> {
             align: create_info.align,
         }
     }
-    pub fn init(self, layer: &Arc<Layer>) -> Label<Object> {
-        let object = self.object.init(layer);
+    pub fn init(self, layer: &Arc<Layer>) -> Result<Label<Object>> {
+        let object = self.object.init(layer)?;
         let label = Label {
             object,
             font: self.font,
@@ -118,10 +118,10 @@ impl Label<NewObject> {
             align: self.align,
         };
         LABELIFIER.lock().queue(label.clone());
-        label
+        Ok(label)
     }
-    pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Label<Object> {
-        let object = self.object.init_with_parent(layer, parent);
+    pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Result<Label<Object>> {
+        let object = self.object.init_with_parent(layer, parent)?;
         let label = Label {
             object,
             font: self.font,
@@ -130,14 +130,14 @@ impl Label<NewObject> {
             align: self.align,
         };
         LABELIFIER.lock().queue(label.clone());
-        label
+        Ok(label)
     }
     pub fn init_with_optional_parent(
         self,
         layer: &Arc<Layer>,
         parent: Option<&Object>,
-    ) -> Label<Object> {
-        let object = self.object.init_with_optional_parent(layer, parent);
+    ) -> Result<Label<Object>> {
+        let object = self.object.init_with_optional_parent(layer, parent)?;
         let label = Label {
             object,
             font: self.font,
@@ -146,7 +146,7 @@ impl Label<NewObject> {
             align: self.align,
         };
         LABELIFIER.lock().queue(label.clone());
-        label
+        Ok(label)
     }
 }
 impl Label<Object> {
@@ -183,7 +183,7 @@ pub(crate) struct Labelifier {
 
 impl Labelifier {
     /// Makes a new label maker.
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let cache = Cache::builder().build();
         let cache_pixel_buffer = vec![0; (cache.dimensions().0 * cache.dimensions().1) as usize];
 
@@ -194,35 +194,33 @@ impl Labelifier {
         };
 
         // Make the cache a texture.
-        let texture = Texture::from_raw(&cache_pixel_buffer, dimensions, Format::R8, 1, settings);
+        let texture = Texture::from_raw(&cache_pixel_buffer, dimensions, Format::R8, 1, settings)?;
 
         let resources = &RESOURCES;
         let vulkan = resources.vulkan().clone();
         let text_shaders = Shaders::from_modules(
-            vertex_shader(vulkan.device.clone()),
-            text_fragment_shader(vulkan.device.clone()),
+            vertex_shader(vulkan.device.clone())?,
+            text_fragment_shader(vulkan.device.clone())?,
             "main",
         );
 
         let material_settings = MaterialSettingsBuilder::default()
             .texture(texture)
-            .build()
-            .unwrap();
+            .build()?;
 
-        let material =
-            Material::new_with_shaders(material_settings, &text_shaders, false, vec![]).unwrap();
+        let material = Material::new_with_shaders(material_settings, &text_shaders, false, vec![])?;
 
-        Self {
+        Ok(Self {
             material,
             cache,
             cache_pixel_buffer,
             queued: vec![],
             font_id: Arc::new(AtomicUsize::new(0)),
             ready: false,
-        }
+        })
     }
     /// Updates the cache in case a label was changed or added.
-    fn update_cache(&mut self) -> Result<(), rusttype::gpu_cache::CacheWriteErr> {
+    fn update_cache(&mut self) -> Result<()> {
         let dimensions = self.cache.dimensions().0 as usize;
 
         self.cache.cache_queued(|rect, src_data| {
@@ -255,7 +253,7 @@ impl Labelifier {
             Format::R8,
             1,
             settings,
-        ));
+        )?);
         Ok(())
     }
 
@@ -286,7 +284,7 @@ impl Labelifier {
         }
     }
 
-    fn update_each_object(&self) {
+    fn update_each_object(&self) -> Result<()> {
         for task in self.queued.iter() {
             let mut label = task.label.clone();
 
@@ -345,7 +343,7 @@ impl Labelifier {
             let visible = if vertices.is_empty() {
                 false
             } else {
-                let model = ModelData::new(Data::new(vertices, indices)).unwrap();
+                let model = ModelData::new(Data::new(vertices, indices))?;
                 label.object.appearance.set_model(Model::Custom(model));
                 true
             };
@@ -359,20 +357,23 @@ impl Labelifier {
             let mut object = node.lock();
             object.object = label.object.clone();
         }
+        Ok(())
     }
 
     /// Updates everything.
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<()> {
+        // Update the labelifier in case something has changed.
         if !self.ready {
-            return;
+            return Ok(());
         }
 
         Self::update_and_resize_cache(self);
 
-        Self::update_each_object(self);
+        Self::update_each_object(self)?;
 
         self.queued = vec![];
         self.ready = false;
+        Ok(())
     }
     pub fn queue(&mut self, label: Label<Object>) {
         self.ready = true;

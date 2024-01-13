@@ -40,9 +40,12 @@ impl TickSystem {
 
             // update the physics in case they are active in the tick settings.
             #[cfg(feature = "physics")]
-            crate::SCENE.update(settings.update_physics);
+            if crate::SCENE.update(settings.update_physics).is_err() {
+                // Disable physics updating if it fails. Return running this tick system.
+                SETTINGS.tick_settings.lock().update_physics = false;
+            };
             // record the elapsed time.
-            let elapsed_time = start_time.elapsed().unwrap();
+            let elapsed_time = start_time.elapsed().unwrap_or_default();
 
             if TIME.scale() == 0.0 {
                 let mut guard = TIME.zero_cvar.0.lock();

@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Public visibility of the layer new function.
+- A big amount of unwraps inside the engine code giving the object init function a result containing unexpected errors.
 
 ## [0.9.0] - 2023-12-21
 

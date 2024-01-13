@@ -1,5 +1,5 @@
 use super::Vulkan;
-use anyhow::Result;
+use anyhow::{Error, Result};
 use std::sync::Arc;
 use vulkano::{
     buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
@@ -122,13 +122,12 @@ impl Loader {
         layers: u32,
         format: tFormat,
         settings: TextureSettings,
-    ) -> Arc<PersistentDescriptorSet> {
+    ) -> Result<Arc<PersistentDescriptorSet>> {
         let mut uploads = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
+        )?;
 
         let format = if settings.srgb {
             match format {
@@ -161,9 +160,8 @@ impl Loader {
                     .map(|e| e as DeviceSize)
                     .product::<DeviceSize>()
                 * layers as DeviceSize,
-        )
-        .unwrap();
-        upload_buffer.write().unwrap().copy_from_slice(&data);
+        )?;
+        upload_buffer.write()?.copy_from_slice(&data);
 
         let image = Image::new(
             self.memory_allocator.clone(),
@@ -176,15 +174,12 @@ impl Loader {
                 ..Default::default()
             },
             AllocationCreateInfo::default(),
-        )
-        .unwrap();
+        )?;
 
-        uploads
-            .copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
-                upload_buffer,
-                image.clone(),
-            ))
-            .unwrap();
+        uploads.copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
+            upload_buffer,
+            image.clone(),
+        ))?;
 
         let set_layout;
 
@@ -198,7 +193,9 @@ impl Loader {
                         .layout()
                         .set_layouts()
                         .get(1)
-                        .unwrap()
+                        .ok_or(Error::msg(
+                            "failed to get second set of the texture layout.",
+                        ))?
                         .clone();
                     ImageViewType::Dim2d
                 } else {
@@ -208,18 +205,19 @@ impl Loader {
                         .layout()
                         .set_layouts()
                         .get(1)
-                        .unwrap()
+                        .ok_or(Error::msg(
+                            "failed to get second set of the texture layout.",
+                        ))?
                         .clone();
                     ImageViewType::Dim2dArray
                 },
                 ..ImageViewCreateInfo::from_image(&image)
             },
-        )
-        .unwrap();
+        )?;
 
         let samplercreateinfo = settings.sampler.to_vulkano();
 
-        let sampler = Sampler::new(vulkan.device.clone(), samplercreateinfo).unwrap();
+        let sampler = Sampler::new(vulkan.device.clone(), samplercreateinfo)?;
 
         let set = PersistentDescriptorSet::new(
             &self.descriptor_set_allocator,
@@ -230,24 +228,19 @@ impl Loader {
                 sampler,
             )],
             [],
-        )
-        .unwrap();
+        )?;
 
-        let _ = uploads
-            .build()
-            .unwrap()
-            .execute(vulkan.queue.clone())
-            .unwrap();
-        set
+        let _ = uploads.build()?.execute(vulkan.queue.clone())?;
+        Ok(set)
     }
     /// Makes a descriptor write.
     pub fn write_descriptor<T: BufferContents>(
         &self,
         descriptor: T,
         set: u32,
-    ) -> WriteDescriptorSet {
-        let buf = self.object_buffer_allocator.allocate_sized().unwrap();
-        *buf.write().unwrap() = descriptor;
-        WriteDescriptorSet::buffer(set, buf)
+    ) -> Result<WriteDescriptorSet> {
+        let buf = self.object_buffer_allocator.allocate_sized()?;
+        *buf.write()? = descriptor;
+        Ok(WriteDescriptorSet::buffer(set, buf))
     }
 }

@@ -12,6 +12,10 @@ pub enum VulkanError {
     FlushFutureError(String),
     #[error("A Validated error:\n{0}")]
     Validated(Validated<VulkanoError>),
+    #[error("An unexpected error with the shaders occured.")]
+    ShaderError,
+    #[error("An unexpected error occured:\n{0}")]
+    Other(anyhow::Error),
 }
 
 impl From<Validated<VulkanoError>> for VulkanError {

@@ -1,5 +1,6 @@
 //! Holds model related data structures like Vertices and premade models as well as a circle maker macro.
 
+use anyhow::Result;
 use glam::f32::{vec2, Mat4, Vec2, Vec4};
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
@@ -125,11 +126,11 @@ pub(crate) struct BasicShapes {
 }
 
 impl BasicShapes {
-    pub fn new(loader: &Arc<Mutex<Loader>>) -> Self {
-        Self {
-            square: ModelData::new_from_loader(Data::square(), loader).unwrap(),
-            triangle: ModelData::new_from_loader(Data::triangle(), loader).unwrap(),
-        }
+    pub fn new(loader: &Arc<Mutex<Loader>>) -> Result<Self> {
+        Ok(Self {
+            square: ModelData::new_from_loader(Data::square(), loader)?,
+            triangle: ModelData::new_from_loader(Data::triangle(), loader)?,
+        })
     }
 }
 

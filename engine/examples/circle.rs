@@ -67,7 +67,7 @@ impl let_engine::Game for Game {
             .appearance
             .set_model(Model::Custom(ModelData::new(make_circle!(30)).unwrap()));
         // Initializes the object to the layer
-        circle.init(&self.main_layer);
+        circle.init(&self.main_layer).unwrap();
     }
     fn event(&mut self, event: events::Event) {
         match event {

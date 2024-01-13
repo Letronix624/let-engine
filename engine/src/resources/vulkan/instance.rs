@@ -9,13 +9,14 @@ use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 use winit::event_loop::EventLoop;
 
-use crate::error::RequirementError;
+use crate::error::EngineStartError;
 
 /// Initializes a new Vulkan instance.
 pub fn create_instance(
     event_loop: &EventLoop<()>,
-) -> Result<Arc<vulkano::instance::Instance>, RequirementError> {
-    let library = VulkanLibrary::new().map_err(|e| RequirementError(e.to_string()))?;
+) -> Result<Arc<vulkano::instance::Instance>, EngineStartError> {
+    let library =
+        VulkanLibrary::new().map_err(|e| EngineStartError::RequirementError(e.to_string()))?;
     let required_extensions = Surface::required_extensions(event_loop);
 
     let extensions = InstanceExtensions {
@@ -44,7 +45,7 @@ pub fn create_instance(
         ..Default::default()
     };
     vulkano::instance::Instance::new(library, game_info)
-        .map_err(|e| RequirementError(e.to_string()))
+        .map_err(|e| EngineStartError::RequirementError(e.to_string()))
 }
 pub fn create_device_extensions() -> DeviceExtensions {
     DeviceExtensions {
@@ -60,11 +61,15 @@ pub fn create_physical_device(
     device_extensions: DeviceExtensions,
     features: Features,
     surface: &Arc<Surface>,
-) -> Result<(Arc<PhysicalDevice>, u32), RequirementError> {
+) -> Result<(Arc<PhysicalDevice>, u32), EngineStartError> {
     // selects the physical device to be used using this order of preferred devices.
     instance
         .enumerate_physical_devices()
-        .unwrap()
+        .map_err(|e| {
+            EngineStartError::RequirementError(format!(
+                "There was an error enumerating the physical devices of this instance:\n{e}"
+            ))
+        })?
         .filter(|p| p.supported_extensions().contains(&device_extensions))
         .filter(|p| p.supported_features().contains(&features))
         .filter_map(|p| {
@@ -85,7 +90,9 @@ pub fn create_physical_device(
             PhysicalDeviceType::Other => 4,
             _ => 5,
         })
-        .ok_or(RequirementError("No suitable GPU was found.".to_string()))
+        .ok_or(EngineStartError::RequirementError(
+            "No suitable GPU was found.".to_string(),
+        ))
 }
 
 /// Makes the device and queues.
@@ -94,7 +101,7 @@ pub fn create_device_and_queues(
     device_extensions: &DeviceExtensions,
     features: Features,
     queue_family_index: u32,
-) -> Result<(Arc<Device>, Arc<Queue>), RequirementError> {
+) -> Result<(Arc<Device>, Arc<Queue>), EngineStartError> {
     let (device, mut queues) = Device::new(
         physical_device.clone(),
         DeviceCreateInfo {
@@ -108,6 +115,11 @@ pub fn create_device_and_queues(
             ..Default::default()
         },
     )
-    .map_err(|e| RequirementError(e.to_string()))?;
-    Ok((device, queues.next().unwrap()))
+    .map_err(|e| EngineStartError::RequirementError(e.to_string()))?;
+    Ok((
+        device,
+        queues.next().ok_or(EngineStartError::Other(
+            "The graphics queue has no slots.".to_string(),
+        ))?,
+    ))
 }

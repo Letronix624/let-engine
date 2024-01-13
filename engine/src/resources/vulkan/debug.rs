@@ -1,7 +1,8 @@
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::instance::{debug::*, Instance};
 
-pub fn make_debug(instance: &Arc<Instance>) -> DebugUtilsMessenger {
+pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
     unsafe {
         DebugUtilsMessenger::new(
             instance.clone(),
@@ -47,8 +48,6 @@ pub fn make_debug(instance: &Arc<Instance>) -> DebugUtilsMessenger {
                     },
                 ))
             },
-        )
-        .ok()
+        ).context("There was a problem setting up a vulkan debug reporter.\nConsider turning off the `vulkan_debug_utils` feature for this build.")
     }
-    .unwrap()
 }

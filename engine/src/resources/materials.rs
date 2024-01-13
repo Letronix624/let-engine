@@ -1,33 +1,35 @@
 //! Material related settings that determine the way the scene gets rendered.
 
-use crate::error::draw::ShaderError;
-use crate::error::{draw::VulkanError, textures::*};
-use crate::prelude::{InstanceData, Texture, Vertex as GameVertex};
+use crate::{
+    error::{
+        draw::{ShaderError, VulkanError},
+        textures::*,
+    },
+    prelude::{InstanceData, Texture, Vertex as GameVertex},
+};
 
-use anyhow::Result;
+use anyhow::{Error, Result};
 use derive_builder::Builder;
 use std::sync::Arc;
-use vulkano::pipeline::graphics::color_blend::{AttachmentBlend, ColorBlendAttachmentState};
-use vulkano::pipeline::graphics::multisample::MultisampleState;
-use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
-use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
-use vulkano::pipeline::{DynamicState, PipelineLayout, PipelineShaderStageCreateInfo};
-use vulkano::shader::spirv::bytes_to_words;
 
-use vulkano::descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet};
-use vulkano::pipeline::{
-    graphics::{
-        color_blend::ColorBlendState,
-        input_assembly::{InputAssemblyState, PrimitiveTopology},
-        rasterization::RasterizationState,
-        vertex_input::Vertex,
-        viewport::ViewportState,
+use vulkano::{
+    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    pipeline::{
+        graphics::{
+            color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
+            input_assembly::{InputAssemblyState, PrimitiveTopology},
+            multisample::MultisampleState,
+            rasterization::RasterizationState,
+            vertex_input::{Vertex, VertexDefinition},
+            viewport::ViewportState,
+            GraphicsPipelineCreateInfo,
+        },
+        layout::PipelineDescriptorSetLayoutCreateInfo,
+        DynamicState, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
     },
-    GraphicsPipeline, Pipeline,
+    render_pass::Subpass,
+    shader::{spirv::bytes_to_words, ShaderModule, ShaderModuleCreateInfo},
 };
-use vulkano::render_pass::Subpass;
-use vulkano::shader::{ShaderModule, ShaderModuleCreateInfo};
 
 use super::RESOURCES;
 // pub use vulkano::pipeline::graphics::rasterization::LineStipple;
@@ -81,8 +83,12 @@ impl Material {
     ) -> Result<Self, VulkanError> {
         let vs = &shaders.vertex;
         let fs = &shaders.fragment;
-        let vertex = vs.entry_point(&shaders.entry_point).unwrap();
-        let fragment = fs.entry_point(&shaders.entry_point).unwrap();
+        let vertex = vs
+            .entry_point(&shaders.entry_point)
+            .ok_or(VulkanError::ShaderError)?;
+        let fragment = fs
+            .entry_point(&shaders.entry_point)
+            .ok_or(VulkanError::ShaderError)?;
 
         let topology: PrimitiveTopology = match settings.topology {
             Topology::TriangleList => PrimitiveTopology::TriangleList,
@@ -98,7 +104,8 @@ impl Material {
         let loader = resources.loader().lock();
         let vulkan = resources.vulkan();
         let pipeline_cache = loader.pipeline_cache.clone();
-        let subpass = Subpass::from(vulkan.render_pass.clone(), 0).unwrap();
+        let subpass = Subpass::from(vulkan.render_pass.clone(), 0)
+            .ok_or(VulkanError::Other(Error::msg("Failed to make subpass.")))?;
         let allocator = &loader.descriptor_set_allocator;
 
         let input_assembly = InputAssemblyState {
@@ -113,17 +120,17 @@ impl Material {
             vulkan.device.clone(),
             PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
                 .into_pipeline_layout_create_info(vulkan.device.clone())
-                .unwrap(),
+                .map_err(|e| VulkanError::Other(e.into()))?,
         )?;
 
         let vertex_input_state = if instanced {
             [GameVertex::per_vertex(), InstanceData::per_instance()]
                 .definition(&vertex.info().input_interface)
-                .unwrap()
+                .map_err(|e| VulkanError::Validated(e.into()))?
         } else {
             GameVertex::per_vertex()
                 .definition(&vertex.info().input_interface)
-                .unwrap()
+                .map_err(|e| VulkanError::Validated(e.into()))?
         };
 
         let pipeline = GraphicsPipeline::new(
@@ -154,20 +161,19 @@ impl Material {
         )
         .map_err(VulkanError::Validated)?;
         let descriptor = if !writes.is_empty() {
-            Some(
-                PersistentDescriptorSet::new(
-                    allocator,
-                    pipeline
-                        .layout()
-                        .set_layouts()
-                        .get(2) // on set 2
-                        .unwrap()
-                        .clone(),
-                    writes,
-                    [],
-                )
-                .unwrap(),
-            )
+            Some(PersistentDescriptorSet::new(
+                allocator,
+                pipeline
+                    .layout()
+                    .set_layouts()
+                    .get(2) // on set 2
+                    .ok_or(VulkanError::Other(Error::msg(
+                        "Failed to get the second set of the pipeline layout.",
+                    )))?
+                    .clone(),
+                writes,
+                [],
+            )?)
         } else {
             None
         };
@@ -225,22 +231,23 @@ impl Material {
     ///
     /// # Safety
     /// The program will crash in case in case the data input here is not as the shader wants it.
-    pub unsafe fn write(
-        // this has to be changed
-        &mut self,
-        descriptor: Vec<WriteDescriptorSet>,
-    ) {
+    pub unsafe fn write(&mut self, descriptor: Vec<WriteDescriptorSet>) -> Result<()> {
         let resources = &RESOURCES;
         let loader = resources.loader().lock();
-        self.descriptor = Some(
-            PersistentDescriptorSet::new(
-                &loader.descriptor_set_allocator,
-                self.pipeline.layout().set_layouts().get(1).unwrap().clone(),
-                descriptor,
-                [],
-            )
-            .unwrap(),
-        );
+        self.descriptor = Some(PersistentDescriptorSet::new(
+            &loader.descriptor_set_allocator,
+            self.pipeline
+                .layout()
+                .set_layouts()
+                .get(1)
+                .ok_or(Error::msg(
+                    "Could not obtain the second set layout of this write.",
+                ))?
+                .clone(),
+            descriptor,
+            [],
+        )?);
+        Ok(())
     }
 
     /// Sets the layer of the texture in case it has a texture with layers.

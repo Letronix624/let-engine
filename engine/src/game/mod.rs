@@ -1,59 +1,55 @@
-// TODO(Letronix624): Please make this look better, oh no!
-use anyhow::Result;
-use derive_builder::Builder;
-use parking_lot::{Condvar, Mutex};
-use thiserror::Error;
+// mods
 #[cfg(feature = "client")]
 pub mod window;
 #[cfg(feature = "client")]
 pub(crate) use super::draw::Draw;
-#[cfg(feature = "client")]
-pub use winit::event_loop::ControlFlow;
-#[cfg(feature = "client")]
-use winit::{
-    event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent},
-    event_loop::{EventLoop, EventLoopBuilder},
-};
 #[cfg(all(feature = "egui", feature = "client"))]
 mod egui;
 #[cfg(feature = "client")]
+pub mod events;
+#[cfg(feature = "client")]
 pub mod input;
 mod tick_system;
-pub use tick_system::*;
-#[cfg(feature = "client")]
-pub mod events;
 
+use anyhow::Result;
 use atomic_float::AtomicF64;
 use crossbeam::atomic::AtomicCell;
-
-#[cfg(feature = "client")]
-use std::cell::RefCell;
-use std::{
-    sync::{atomic::Ordering, Arc},
-    time::Duration,
-    time::SystemTime,
-};
-
-#[cfg(feature = "audio")]
-use crate::resources::{
-    sounds::{AudioSettings, NoAudioServerError},
-    RESOURCES,
-};
-
-#[cfg(feature = "client")]
-use crate::{error::draw::VulkanError, INPUT};
-use crate::{SETTINGS, TIME};
+use derive_builder::Builder;
+use parking_lot::{Condvar, Mutex};
 
 #[cfg(feature = "client")]
 use self::{
     events::{InputEvent, ScrollDelta},
     window::{Window, WindowBuilder},
 };
+pub use tick_system::*;
+
+// audio feature
+#[cfg(feature = "audio")]
+#[cfg(feature = "client")]
+use crate::resources::{
+    sounds::{AudioSettings, NoAudioServerError},
+    RESOURCES,
+};
+use std::{
+    sync::{atomic::Ordering, Arc},
+    time::Duration,
+    time::SystemTime,
+};
+
+// client feature
+#[cfg(feature = "client")]
+use crate::{error::draw::VulkanError, INPUT};
+use crate::{error::EngineStartError, SETTINGS, TIME};
+
+// Structs imported for the incoming thread local.
+#[cfg(feature = "client")]
+use std::cell::{OnceCell, RefCell};
 
 // The event loop that gets created and executed in the thread where Engine was made.
 #[cfg(feature = "client")]
 thread_local! {
-    pub(crate) static EVENT_LOOP: RefCell<std::cell::OnceCell<EventLoop<()>>> = RefCell::new(std::cell::OnceCell::new());
+    pub(crate) static EVENT_LOOP: RefCell<OnceCell<winit::event_loop::EventLoop<()>>> = RefCell::new(OnceCell::new());
 }
 
 /// Represents the game application with essential methods for a game's lifetime.
@@ -147,8 +143,9 @@ impl Settings {
         }
     }
     #[cfg(feature = "client")]
-    pub(crate) fn set_window(&self, window: Arc<Window>) {
-        self.window.lock().set(window).unwrap();
+    pub(crate) fn set_window(&self, window: Arc<Window>) -> Result<(), Arc<Window>> {
+        self.window.lock().set(window)?;
+        Ok(())
     }
     #[cfg(feature = "client")]
     /// Returns the window of the game in case it is initialized.
@@ -197,16 +194,11 @@ pub struct Engine {
 /// Makes sure the engine struct only gets constructed a single time.
 static INIT: parking_lot::Once = parking_lot::Once::new();
 
-/// Engine can only be made once.
-#[derive(Error, Debug, Clone, Copy)]
-#[error("You can only initialize this game engine one single time.")]
-pub struct EngineInitialized;
-
 impl Engine {
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
     ///
     /// This function can only be called one time. Attempting to make a second one of those will return an error.
-    pub fn new(settings: impl Into<EngineSettings>) -> Result<Self> {
+    pub fn new(settings: impl Into<EngineSettings>) -> Result<Self, EngineStartError> {
         if INIT.state() == parking_lot::OnceState::New {
             INIT.call_once(|| {});
             let settings = settings.into();
@@ -215,12 +207,17 @@ impl Engine {
 
             #[cfg(feature = "client")]
             EVENT_LOOP.with_borrow_mut(|cell| {
-                cell.get_or_init(|| EventLoopBuilder::new().build());
+                cell.get_or_init(|| winit::event_loop::EventLoopBuilder::new().build());
             });
             #[cfg(feature = "client")]
-            let draw = Draw::setup(settings.window_settings);
+            let draw = Draw::setup(settings.window_settings)
+                .map_err(EngineStartError::DrawingBackendError)?;
             #[cfg(feature = "client")]
-            SETTINGS.set_window(draw.get_window().clone());
+            SETTINGS
+                .set_window(draw.get_window().clone())
+                .map_err(|_| {
+                    EngineStartError::Other("Could not make the window object.".to_string())
+                })?;
 
             #[cfg(all(feature = "egui", feature = "client"))]
             let gui = egui::init(&draw);
@@ -234,7 +231,7 @@ impl Engine {
                 draw,
             })
         } else {
-            Err(EngineInitialized.into())
+            Err(EngineStartError::EngineInitialized)
         }
     }
 
@@ -261,6 +258,7 @@ impl Engine {
     /// Client start function running all the methods of the given game object as documented in the [trait](Game).
     #[cfg(feature = "client")]
     pub fn start(mut self, game: impl Game + Send + 'static) {
+        use winit::event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent};
         let game = Arc::new(Mutex::new(game));
 
         EVENT_LOOP.with_borrow_mut(|event_loop| {
@@ -381,7 +379,7 @@ impl Engine {
                             #[cfg(feature = "labels")]
                             {
                                 let labelifier = &crate::resources::LABELIFIER;
-                                labelifier.lock().update();
+                                labelifier.lock().update().unwrap();
                             }
                             match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
@@ -509,8 +507,8 @@ mod tests {
     use crate::prelude::*;
 
     #[test]
-    fn start_engine() {
-        let engine = Engine::new(EngineSettings::default()).unwrap();
+    fn start_engine() -> anyhow::Result<()> {
+        let engine = Engine::new(EngineSettings::default())?;
 
         struct Game {
             number: u32,
@@ -538,5 +536,6 @@ mod tests {
         }
 
         engine.start(Game::new());
+        Ok(())
     }
 }

@@ -4,6 +4,7 @@
 pub mod appearance;
 #[cfg(feature = "client")]
 pub mod color;
+
 #[cfg(feature = "labels")]
 pub mod labels;
 
@@ -13,9 +14,10 @@ pub mod scenes;
 
 use crate::prelude::*;
 
-use derive_builder::Builder;
+use anyhow::{Error, Result};
 use scenes::Layer;
 
+use derive_builder::Builder;
 use glam::f32::{vec2, Vec2};
 use parking_lot::Mutex;
 
@@ -23,6 +25,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Weak},
 };
+
 #[cfg(feature = "physics")]
 type RigidBodyParent = Option<Option<Weak<Mutex<Node<Object>>>>>;
 type ObjectsMap = HashMap<usize, NObject>;
@@ -139,14 +142,17 @@ impl Node<Object> {
     }
 
     /// Searches for the given object to be removed from the list of children.
-    pub fn remove_child(&mut self, object: &NObject) {
+    ///
+    /// In case there is no child it will return an error.
+    pub fn remove_child(&mut self, object: &NObject) -> Result<()> {
         let index = self
             .children
             .clone()
             .into_iter()
             .position(|x| Arc::ptr_eq(&x, object))
-            .unwrap();
+            .ok_or(Error::msg("No child found"))?;
         self.children.remove(index);
+        Ok(())
     }
 
     /// Removes all children and their children from the layer.
@@ -251,12 +257,12 @@ impl NewObject {
     }
 
     /// Initializes the object into a layer.
-    pub fn init(self, layer: &Arc<Layer>) -> Object {
+    pub fn init(self, layer: &Arc<Layer>) -> Result<Object> {
         self.init_with_optional_parent(layer, None)
     }
 
     /// Initializes the object into a layer with a parent object.
-    pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Object {
+    pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Result<Object> {
         self.init_with_optional_parent(layer, Some(parent))
     }
 
@@ -266,7 +272,7 @@ impl NewObject {
         mut self,
         layer: &Arc<Layer>,
         parent: Option<&Object>,
-    ) -> Object {
+    ) -> Result<Object> {
         // Init ID of this object.
         let id = layer.increment_id();
 
@@ -288,13 +294,18 @@ impl NewObject {
         };
         // Updates the physics side and returns the parent position.
         #[cfg(feature = "physics")]
-        let parent_transform = self.physics.update(
-            &self.transform,
-            &parent,
-            &mut rigid_body_parent,
-            id as u128,
-            layer.physics(),
-        );
+        let parent_transform = self
+            .physics
+            .update(
+                &self.transform,
+                &parent,
+                &mut rigid_body_parent,
+                id as u128,
+                layer.physics(),
+            )
+            .ok_or(Error::msg(
+                "Could not update the physics side of this object.",
+            ))?;
         #[cfg(not(feature = "physics"))]
         let parent_transform = parent.lock().object.public_transform();
 
@@ -337,7 +348,7 @@ impl NewObject {
 
         // Add yourself to the list of children of the parent.
         parent.lock().children.push(node.clone());
-        initialized
+        Ok(initialized)
     }
 }
 
@@ -444,7 +455,7 @@ impl Object {
 
         let parent = object.parent.clone().unwrap().upgrade().unwrap();
         let mut parent = parent.lock();
-        parent.remove_child(&node);
+        parent.remove_child(&node).unwrap();
 
         NewObject {
             transform: self.transform,
@@ -532,13 +543,16 @@ impl Object {
         {
             let mut node = node.lock();
             let layer = self.layer().clone();
-            self.parent_transform = self.physics.update(
-                &self.transform,
-                &node.parent.clone().unwrap().upgrade().unwrap(),
-                &mut node.rigid_body_parent,
-                self.id as u128,
-                layer.physics(),
-            );
+            self.parent_transform = self
+                .physics
+                .update(
+                    &self.transform,
+                    &node.parent.clone().unwrap().upgrade().unwrap(),
+                    &mut node.rigid_body_parent,
+                    self.id as u128,
+                    layer.physics(),
+                )
+                .unwrap();
         }
         node.lock()
             .update_children_position(self.public_transform());

@@ -9,7 +9,7 @@ pub(crate) mod window;
 
 use crate::prelude::*;
 use crate::resources::data::Vertex as GameVertex;
-use anyhow::Result;
+use anyhow::{Context, Error, Result};
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
@@ -50,11 +50,11 @@ pub(crate) struct Vulkan {
 impl Vulkan {
     pub fn init() -> Result<Self> {
         EVENT_LOOP.with_borrow(|event_loop| {
-        let instance = instance::create_instance(event_loop.get().unwrap())?;
+        let instance = instance::create_instance(event_loop.get().ok_or(Error::msg("There was a problem getting the event loop."))?)?;
         #[cfg(feature = "vulkan_debug_utils")]
-        let _debug = Arc::new(debug::make_debug(&instance));
+        let _debug = Arc::new(debug::make_debug(&instance)?);
         let (surface, _window) =
-            window::create_window(event_loop.get().unwrap(), &instance, WindowBuilder::new());
+            window::create_window(event_loop.get().ok_or(Error::msg("There was a problem getting the event loop."))?, &instance, WindowBuilder::new())?;
 
         let device_extensions = instance::create_device_extensions();
         let features = Features {
@@ -75,7 +75,7 @@ impl Vulkan {
             device.clone(),
             attachments: {
                 color: {
-                    format: device.physical_device().surface_formats(&surface, Default::default()).unwrap()[0].0,
+                    format: device.physical_device().surface_formats(&surface, Default::default())?[0].0,
                     samples: 1,
                     load_op: Clear,
                     store_op: Store,
@@ -85,23 +85,22 @@ impl Vulkan {
                 color: [color],
                 depth_stencil: {}
             }
-        )
-        .unwrap();
+        )?;
 
-        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+        let subpass = Subpass::from(render_pass.clone(), 0).ok_or(Error::msg("There was a problem making a subpass from the last render pass."))?;
 
         //Materials
-        let vs = vertex_shader(device.clone());
-        let fs = fragment_shader(device.clone());
+        let vs = vertex_shader(device.clone())?;
+        let fs = fragment_shader(device.clone())?;
         let default_shaders = Shaders::from_modules(vs.clone(), fs.clone(), "main");
 
-        let tfs = textured_fragment_shader(device.clone());
-        let tafs = texture_array_fragment_shader(device.clone());
+        let tfs = textured_fragment_shader(device.clone())?;
+        let tafs = texture_array_fragment_shader(device.clone())?;
 
-        let instance_vert = instanced_vertex_shader(device.clone());
-        let instance_frag = instanced_fragment_shader(device.clone());
-        let textured_instance_frag = instanced_textured_fragment_shader(device.clone());
-        let textue_array_instance_frag = instanced_texture_array_fragment_shader(device.clone());
+        let instance_vert = instanced_vertex_shader(device.clone())?;
+        let instance_frag = instanced_fragment_shader(device.clone())?;
+        let textured_instance_frag = instanced_textured_fragment_shader(device.clone())?;
+        let textue_array_instance_frag = instanced_texture_array_fragment_shader(device.clone())?;
 
         let default_instance_shaders =
             Shaders::from_modules(instance_vert.clone(), instance_frag.clone(), "main");
@@ -114,42 +113,42 @@ impl Vulkan {
             &fs,
             subpass.clone(),
             vertex_buffer_description[0].clone(),
-        );
+        )?;
         let textured_pipeline = pipeline::create_pipeline(
             &device,
             &vs,
             &tfs,
             subpass.clone(),
             vertex_buffer_description[0].clone(),
-        );
+        )?;
         let texture_array_pipeline = pipeline::create_pipeline(
             &device,
             &vs,
             &tafs,
             subpass.clone(),
             vertex_buffer_description[0].clone(),
-        );
+        )?;
         let instance_pipeline = pipeline::create_pipeline(
             &device,
             &instance_vert,
             &instance_frag,
             subpass.clone(),
             vertex_buffer_description.clone(),
-        );
+        )?;
         let textured_instance_pipeline = pipeline::create_pipeline(
             &device,
             &instance_vert,
             &textured_instance_frag,
             subpass.clone(),
             vertex_buffer_description.clone(),
-        );
+        )?;
         let texture_array_instance_pipeline = pipeline::create_pipeline(
             &device,
             &instance_vert,
             &textue_array_instance_frag,
             subpass.clone(),
             vertex_buffer_description.clone(),
-        );
+        )?;
 
         let default_material = Material {
             pipeline,
@@ -224,14 +223,15 @@ pub fn window_size_dependent_setup(
     images: &[Arc<Image>],
     render_pass: Arc<RenderPass>,
     viewport: &mut Viewport,
-) -> Vec<Arc<Framebuffer>> {
+) -> Result<Vec<Arc<Framebuffer>>> {
     let dimensions = images[0].extent();
     viewport.extent = [dimensions[0] as f32, dimensions[1] as f32];
 
     images
         .iter()
         .map(|image| {
-            let view = ImageView::new_default(image.clone()).unwrap();
+            let view =
+                ImageView::new_default(image.clone()).context("Could not make a frame texture.")?;
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
@@ -239,7 +239,7 @@ pub fn window_size_dependent_setup(
                     ..Default::default()
                 },
             )
-            .unwrap()
+            .context("Could not make a framebuffer to present to the window.")
         })
-        .collect::<Vec<_>>()
+        .collect()
 }

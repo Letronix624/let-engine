@@ -19,4 +19,7 @@ pub enum TextureError {
     /// new texture.
     #[error("The given format does not match with the bytes provided:\n{0}")]
     InvalidFormat(String),
+    /// If the texture for some reason can not be made.
+    #[error("There was an error loading this texture:\n{0}")]
+    Other(anyhow::Error),
 }

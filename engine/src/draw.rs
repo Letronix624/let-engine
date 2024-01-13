@@ -43,22 +43,22 @@ pub struct Draw {
 }
 
 impl Draw {
-    pub(crate) fn setup(window_builder: WindowBuilder) -> Self {
+    pub(crate) fn setup(window_builder: WindowBuilder) -> Result<Self> {
         let resources = &RESOURCES;
         let vulkan = resources.vulkan().clone();
         let loader = resources.loader().lock();
         let (surface, window) = EVENT_LOOP.with_borrow(|event_loop| {
             return vulkan::window::create_window(
-                event_loop.get().unwrap(),
+                event_loop.get().expect("An unexpected error occured."), // I do not know when this could cause a crash.
                 &resources.vulkan().instance,
                 window_builder,
             );
-        });
+        })?;
 
         let recreate_swapchain = false;
 
         let (swapchain, images) =
-            create_swapchain_and_images(&vulkan.physical_device, &vulkan.device, &surface);
+            create_swapchain_and_images(&vulkan.physical_device, &vulkan.device, &surface)?;
 
         let mut viewport = Viewport {
             offset: [0.0, 0.0],
@@ -67,30 +67,22 @@ impl Draw {
         };
 
         let framebuffers =
-            window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport);
+            window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport)?;
 
         let uploads = AutoCommandBufferBuilder::primary(
             &loader.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
+        )?;
 
-        let previous_frame_end = Some(
-            uploads
-                .build()
-                .unwrap()
-                .execute(vulkan.queue.clone())
-                .unwrap()
-                .boxed(),
-        );
+        let previous_frame_end = Some(uploads.build()?.execute(vulkan.queue.clone())?.boxed());
 
         let dimensions = [0; 2];
 
         let default_pipeline = vulkan.default_material.pipeline.clone();
         let default_instance_pipeline = vulkan.default_instance_material.pipeline.clone();
 
-        Self {
+        Ok(Self {
             surface,
             window,
             recreate_swapchain,
@@ -101,7 +93,7 @@ impl Draw {
             dimensions,
             default_pipeline,
             default_instance_pipeline,
-        }
+        })
     }
 
     pub fn get_window(&self) -> &Arc<Window> {
@@ -127,7 +119,8 @@ impl Draw {
                 &new_images,
                 resources.vulkan().render_pass.clone(),
                 &mut self.viewport,
-            );
+            )
+            .map_err(VulkanError::Other)?;
             self.recreate_swapchain = false;
         };
         Ok(())
@@ -285,11 +278,15 @@ impl Draw {
                 };
 
                 // MVP matrix for the object
-                let objectvert_sub_buffer =
-                    loader.object_buffer_allocator.allocate_sized().unwrap();
+                let objectvert_sub_buffer = loader
+                    .object_buffer_allocator
+                    .allocate_sized()
+                    .map_err(|error| VulkanError::Other(error.into()))?;
                 // Simple color and texture data for the fragment shader.
-                let objectfrag_sub_buffer =
-                    loader.object_buffer_allocator.allocate_sized().unwrap();
+                let objectfrag_sub_buffer = loader
+                    .object_buffer_allocator
+                    .allocate_sized()
+                    .map_err(|error| VulkanError::Other(error.into()))?;
 
                 let (model, view, proj) = Self::make_mvp_matrix(
                     &object,
@@ -298,8 +295,13 @@ impl Draw {
                     layer.camera_settings(),
                 );
 
-                *objectvert_sub_buffer.write().unwrap() = ModelViewProj { model, view, proj };
-                *objectfrag_sub_buffer.write().unwrap() = ObjectFrag {
+                *objectvert_sub_buffer
+                    .write()
+                    .map_err(|error| VulkanError::Other(error.into()))? =
+                    ModelViewProj { model, view, proj };
+                *objectfrag_sub_buffer
+                    .write()
+                    .map_err(|error| VulkanError::Other(error.into()))? = ObjectFrag {
                     color: (*appearance.get_color()).into(),
                     texture_id: if let Some(material) = appearance.get_material() {
                         material.layer
@@ -312,7 +314,12 @@ impl Draw {
                     0,
                     PersistentDescriptorSet::new(
                         &loader.descriptor_set_allocator,
-                        pipeline.layout().set_layouts().first().unwrap().clone(),
+                        pipeline
+                            .layout()
+                            .set_layouts()
+                            .first()
+                            .ok_or(VulkanError::ShaderError)?
+                            .clone(),
                         [
                             WriteDescriptorSet::buffer(0, objectvert_sub_buffer.clone()),
                             WriteDescriptorSet::buffer(1, objectfrag_sub_buffer.clone()),
@@ -332,28 +339,31 @@ impl Draw {
 
                 command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_descriptor_sets(
                         vulkano::pipeline::PipelineBindPoint::Graphics,
                         pipeline.layout().clone(),
                         0,
                         descriptors,
                     )
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_vertex_buffers(0, model.get_vertex_buffer())
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_index_buffer(model.get_index_buffer())
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .draw_indexed(model.get_size() as u32, 1, 0, 0, 0)
-                    .unwrap();
+                    .map_err(|e| VulkanError::Validated(e.into()))?;
             }
             for instance in instances {
                 let mut data = instance.instance_data.lock();
                 let instance_buffer = loader
                     .instance_buffer_allocator
                     .allocate_slice::<InstanceData>(data.len() as u64)
-                    .unwrap();
-                instance_buffer.write().unwrap().copy_from_slice(&data);
+                    .map_err(|e| VulkanError::Other(e.into()))?;
+                instance_buffer
+                    .write()
+                    .map_err(|e| VulkanError::Other(e.into()))?
+                    .copy_from_slice(&data);
 
                 let mut descriptors = vec![];
 
@@ -380,20 +390,20 @@ impl Draw {
 
                 command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_descriptor_sets(
                         vulkano::pipeline::PipelineBindPoint::Graphics,
                         pipeline.layout().clone(),
                         0,
                         descriptors,
                     )
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_vertex_buffers(0, (model.get_vertex_buffer(), instance_buffer))
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_index_buffer(model.get_index_buffer())
-                    .unwrap()
+                    .map_err(|e| VulkanError::Other(e.into()))?
                     .draw_indexed(model.get_size() as u32, data.len() as u32, 0, 0, 0)
-                    .unwrap();
+                    .map_err(|e| VulkanError::Other(e.into()))?;
                 instance.finish_drawing();
                 data.clear();
             }
@@ -413,10 +423,12 @@ impl Draw {
         let future = self
             .previous_frame_end
             .take()
-            .unwrap()
+            .ok_or(VulkanError::FlushFutureError(
+                "Failed to obtain previous frame".to_string(),
+            ))?
             .join(acquire_future)
             .then_execute(vulkan.queue.clone(), command_buffer)
-            .unwrap()
+            .map_err(|e| VulkanError::Other(e.into()))?
             .then_swapchain_present(
                 vulkan.queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_num),
@@ -450,7 +462,12 @@ impl Draw {
         let dimensions = self.window.inner_size();
         self.dimensions = [dimensions.x as u32, dimensions.y as u32];
 
-        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
+        self.previous_frame_end
+            .as_mut()
+            .ok_or(VulkanError::Other(anyhow::Error::msg(
+                "Could not obtain previous frame end.",
+            )))?
+            .cleanup_finished();
 
         if self.dimensions.contains(&0) {
             return Ok(());
@@ -484,7 +501,7 @@ impl Draw {
         Self::write_secondary_command_buffer(self, &SCENE, &mut secondary_builder, &mut loader)?;
 
         builder
-            .execute_commands(secondary_builder.build().unwrap())
+            .execute_commands(secondary_builder.build()?)
             .map_err(|e| VulkanError::Validated(e.into()))?;
 
         #[cfg(feature = "egui")]
@@ -498,7 +515,7 @@ impl Draw {
         builder
             .end_render_pass(Default::default())
             .map_err(|e| VulkanError::Validated(e.into()))?;
-        let command_buffer = builder.build().unwrap();
+        let command_buffer = builder.build()?;
 
         Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)?;
         Ok(())

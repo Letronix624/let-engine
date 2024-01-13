@@ -6,9 +6,13 @@
 //! ```
 //! - imports everything this engine has to offer.
 
-#[cfg(any(feature = "client", feature = "audio"))]
+// Resources only exists if client is enabled.
+#[cfg(feature = "client")]
 pub use crate::resources::*;
+
 pub use crate::{camera::*, directions::*, objects::*, *};
+
+// Client structs
 #[cfg(feature = "client")]
 pub use appearance::*;
 #[cfg(feature = "client")]
@@ -17,20 +21,28 @@ pub use color::*;
 pub use data::*;
 #[cfg(feature = "client")]
 pub use events::*;
-pub use glam;
-pub use glam::{vec2, Vec2};
-#[cfg(feature = "physics")]
-pub use joints::*;
-#[cfg(feature = "labels")]
-pub use labels::*;
 #[cfg(feature = "client")]
 pub use materials::*;
-#[cfg(feature = "physics")]
-pub use physics::*;
-pub use scenes::*;
-#[cfg(feature = "audio")]
-pub use sounds::*;
 #[cfg(feature = "client")]
 pub use textures::*;
 #[cfg(feature = "client")]
 pub use window::*;
+
+// Physics structs
+#[cfg(feature = "physics")]
+pub use joints::*;
+#[cfg(feature = "physics")]
+pub use physics::*;
+
+// Label structs
+#[cfg(feature = "labels")]
+pub use labels::*;
+
+// Audio structs
+#[cfg(feature = "audio")]
+pub use sounds::*;
+
+// Other structs
+pub use glam;
+pub use glam::{vec2, Vec2};
+pub use scenes::*;

@@ -167,21 +167,25 @@ impl Texture {
         format: Format,
         layers: u32,
         settings: TextureSettings,
-    ) -> Texture {
+    ) -> Result<Texture, TextureError> {
         let data: Arc<[u8]> = Arc::from(data.to_vec().into_boxed_slice());
-        Texture {
+        Ok(Texture {
             data: data.clone(),
             dimensions,
             layers,
-            set: RESOURCES.loader().lock().load_texture(
-                RESOURCES.vulkan(),
-                data,
-                dimensions,
-                layers,
-                format,
-                settings,
-            ),
-        }
+            set: RESOURCES
+                .loader()
+                .lock()
+                .load_texture(
+                    RESOURCES.vulkan(),
+                    data,
+                    dimensions,
+                    layers,
+                    format,
+                    settings,
+                )
+                .map_err(TextureError::Other)?,
+        })
     }
 
     /// Loads a texture to the GPU using the given image format.
@@ -271,7 +275,7 @@ impl Texture {
 
         dimensions.1 /= layers;
 
-        Ok(Self::from_raw(&image, dimensions, format, layers, settings))
+        Self::from_raw(&image, dimensions, format, layers, settings)
     }
 }
 /// Accessing

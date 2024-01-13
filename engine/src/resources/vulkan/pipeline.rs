@@ -1,16 +1,18 @@
+use anyhow::{Context, Error, Result};
 use std::sync::Arc;
 use vulkano::device::Device;
-use vulkano::pipeline::graphics::color_blend::{
-    AttachmentBlend, ColorBlendAttachmentState, ColorBlendState,
+use vulkano::pipeline::graphics::{
+    color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
+    multisample::MultisampleState,
+    rasterization::{PolygonMode, RasterizationState},
+    vertex_input::VertexDefinition,
+    GraphicsPipelineCreateInfo,
+    {input_assembly::InputAssemblyState, viewport::ViewportState},
 };
-use vulkano::pipeline::graphics::multisample::MultisampleState;
-use vulkano::pipeline::graphics::rasterization::{PolygonMode, RasterizationState};
-use vulkano::pipeline::graphics::vertex_input::VertexDefinition;
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
-use vulkano::pipeline::graphics::{input_assembly::InputAssemblyState, viewport::ViewportState};
-use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
+
 use vulkano::pipeline::{
-    DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+    layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, PipelineLayout,
+    PipelineShaderStageCreateInfo,
 };
 use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
@@ -22,9 +24,13 @@ pub fn create_pipeline(
     fs: &Arc<ShaderModule>,
     subpass: Subpass,
     vertex_buffer_description: impl VertexDefinition,
-) -> Arc<GraphicsPipeline> {
-    let vertex = vs.entry_point("main").unwrap();
-    let fragment = fs.entry_point("main").unwrap();
+) -> Result<Arc<GraphicsPipeline>> {
+    let vertex = vs.entry_point("main").ok_or(Error::msg(
+        "There is no `main` entry point for the default shaders.",
+    ))?;
+    let fragment = fs.entry_point("main").ok_or(Error::msg(
+        "There is no `main` entry point for the default shaders.",
+    ))?;
     let input_assembly = InputAssemblyState::default();
     let stages = [
         PipelineShaderStageCreateInfo::new(vertex.clone()),
@@ -33,14 +39,11 @@ pub fn create_pipeline(
     let layout = PipelineLayout::new(
         device.clone(),
         PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-            .into_pipeline_layout_create_info(device.clone())
-            .unwrap(),
-    )
-    .unwrap();
+            .into_pipeline_layout_create_info(device.clone())?,
+    )?;
 
-    let vertex_input_state = vertex_buffer_description
-        .definition(&vertex.info().input_interface)
-        .unwrap();
+    let vertex_input_state =
+        vertex_buffer_description.definition(&vertex.info().input_interface)?;
     GraphicsPipeline::new(
         device.clone(),
         None,
@@ -67,5 +70,5 @@ pub fn create_pipeline(
             ..GraphicsPipelineCreateInfo::layout(layout)
         },
     )
-    .unwrap()
+    .context("Could not create a graphics pipeline.")
 }

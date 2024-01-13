@@ -98,7 +98,7 @@ impl Game {
             },
         );
         // initialize this one to the ui
-        let left_score = left_score.init(&ui_layer);
+        let left_score = left_score.init(&ui_layer).unwrap();
 
         // Making a default label for the right side.
         let right_score = Label::new(
@@ -111,7 +111,7 @@ impl Game {
                 scale: vec2(50.0, 50.0),
             },
         );
-        let right_score = right_score.init(&ui_layer);
+        let right_score = right_score.init(&ui_layer).unwrap();
 
         // Just the line in the middle.
         let mut middle_line = NewObject::new();
@@ -136,7 +136,7 @@ impl Game {
             .unwrap();
         let line_material = Material::new(line_material).unwrap();
         middle_line.appearance.set_material(Some(line_material));
-        middle_line.init(&ui_layer);
+        middle_line.init(&ui_layer).unwrap();
 
         Self {
             exit: false,
@@ -223,7 +223,7 @@ impl Paddle {
         object.set_collider(Some(ColliderBuilder::square(0.015, height).build()));
 
         // Initialize the object to the given layer.
-        let object = object.init(layer);
+        let object = object.init(layer).unwrap();
         Self {
             controls,
             object,
@@ -279,7 +279,7 @@ impl Ball {
         let lifetime = SystemTime::now();
         let mut object = NewObject::new();
         object.transform.size = vec2(0.015, 0.015);
-        let object = object.init(layer);
+        let object = object.init(layer).unwrap();
         // make a sound to play when bouncing.
         let mut bounce_sound = Sound::new(
             SoundData::gen_square_wave(777.0, 0.03),
