@@ -31,7 +31,7 @@ indexmap = "2.1"
 atomic_float = "0.1"
 crossbeam = "0.8"
 
-glam = { version = "0.24", features = [ "bytemuck" ] }
+glam = { version = "0.24", features = [ "bytemuck", "mint" ] }
 nalgebra = { version = "0.32", features = [ "convert-glam024" ] }
 
 rapier2d = { version = "0.17.2", features = [ "simd-stable" ], optional = true }
