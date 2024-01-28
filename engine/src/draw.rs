@@ -32,7 +32,6 @@ use glam::{
 pub struct Draw {
     pub surface: Arc<Surface>,
     pub window: Arc<Window>,
-    pub(crate) recreate_swapchain: bool,
     pub(crate) swapchain: Arc<Swapchain>,
     pub(crate) viewport: Viewport,
     pub(crate) framebuffers: Vec<Arc<Framebuffer>>,
@@ -55,10 +54,7 @@ impl Draw {
             );
         })?;
 
-        let recreate_swapchain = false;
-
-        let (swapchain, images) =
-            create_swapchain_and_images(&vulkan.physical_device, &vulkan.device, &surface)?;
+        let (swapchain, images) = create_swapchain_and_images(&vulkan.device, &surface)?;
 
         let mut viewport = Viewport {
             offset: [0.0, 0.0],
@@ -85,7 +81,6 @@ impl Draw {
         Ok(Self {
             surface,
             window,
-            recreate_swapchain,
             swapchain,
             viewport,
             framebuffers,
@@ -102,9 +97,14 @@ impl Draw {
 
     /// Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
     fn recreate_swapchain(&mut self) -> Result<(), VulkanError> {
-        if self.recreate_swapchain {
+        if SETTINGS
+            .graphics
+            .recreate_swapchain
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: self.dimensions,
+                present_mode: SETTINGS.graphics.present_mode().into(),
                 ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
@@ -121,7 +121,10 @@ impl Draw {
                 &mut self.viewport,
             )
             .map_err(VulkanError::Other)?;
-            self.recreate_swapchain = false;
+            SETTINGS
+                .graphics
+                .recreate_swapchain
+                .store(false, std::sync::atomic::Ordering::Release);
         };
         Ok(())
     }
@@ -440,7 +443,10 @@ impl Draw {
                 self.previous_frame_end = Some(future.boxed());
             }
             Err(VulkanoError::OutOfDate) => {
-                self.recreate_swapchain = true;
+                SETTINGS
+                    .graphics
+                    .recreate_swapchain
+                    .store(true, std::sync::atomic::Ordering::Release);
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
             }
             Err(e) => {
@@ -449,6 +455,13 @@ impl Draw {
             }
         }
         Ok(())
+    }
+
+    pub fn mark_swapchain_outdated() {
+        SETTINGS
+            .graphics
+            .recreate_swapchain
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Redraws the scene.
@@ -479,7 +492,7 @@ impl Draw {
             match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {
                 Ok(r) => r,
                 Err(VulkanoError::OutOfDate) => {
-                    self.recreate_swapchain = true;
+                    Self::mark_swapchain_outdated();
                     return Err(VulkanError::SwapchainOutOfDate);
                 }
                 Err(e) => {
@@ -488,7 +501,7 @@ impl Draw {
             };
 
         if suboptimal {
-            self.recreate_swapchain = true;
+            Self::mark_swapchain_outdated();
         }
 
         let (mut builder, mut secondary_builder) = Self::make_command_buffer(

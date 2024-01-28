@@ -9,12 +9,12 @@ mod egui;
 pub mod events;
 #[cfg(feature = "client")]
 pub mod input;
+pub mod settings;
 mod tick_system;
 
 use anyhow::Result;
 use atomic_float::AtomicF64;
 use crossbeam::atomic::AtomicCell;
-use derive_builder::Builder;
 use parking_lot::{Condvar, Mutex};
 
 #[cfg(feature = "client")]
@@ -24,13 +24,6 @@ use self::{
 };
 pub use tick_system::*;
 
-// audio feature
-#[cfg(feature = "audio")]
-#[cfg(feature = "client")]
-use crate::resources::{
-    sounds::{AudioSettings, NoAudioServerError},
-    RESOURCES,
-};
 use std::{
     sync::{atomic::Ordering, Arc},
     time::Duration,
@@ -109,78 +102,6 @@ pub trait Game {
     fn exit(&self) -> bool;
 }
 
-/// The initial settings of this engine.
-#[derive(Clone, Builder, Default)]
-pub struct EngineSettings {
-    /// Settings that determines the look of the window.
-    #[builder(setter(into, strip_option), default)]
-    #[cfg(feature = "client")]
-    pub window_settings: WindowBuilder,
-    /// The initial settings of the tick system.
-    #[builder(setter(into), default)]
-    pub tick_settings: TickSettings,
-}
-
-/// General in game settings built into the game engine.
-pub struct Settings {
-    tick_settings: Mutex<TickSettings>,
-    tick_pause_lock: (Mutex<bool>, Condvar),
-    #[cfg(feature = "client")]
-    window: Mutex<std::sync::OnceLock<Arc<Window>>>,
-    #[cfg(feature = "audio")]
-    audio_settings: Mutex<AudioSettings>,
-}
-
-impl Settings {
-    pub(crate) fn new() -> Self {
-        Self {
-            tick_settings: Mutex::new(TickSettings::default()),
-            tick_pause_lock: (Mutex::new(false), Condvar::new()),
-            #[cfg(feature = "client")]
-            window: Mutex::new(std::sync::OnceLock::new()),
-            #[cfg(feature = "audio")]
-            audio_settings: Mutex::new(AudioSettings::new()),
-        }
-    }
-    #[cfg(feature = "client")]
-    pub(crate) fn set_window(&self, window: Arc<Window>) -> Result<(), Arc<Window>> {
-        self.window.lock().set(window)?;
-        Ok(())
-    }
-    #[cfg(feature = "client")]
-    /// Returns the window of the game in case it is initialized.
-    pub fn window(&self) -> Option<Arc<Window>> {
-        self.window.lock().get().cloned()
-    }
-    /// Returns the engine wide tick settings.
-    pub fn tick_settings(&self) -> TickSettings {
-        self.tick_settings.lock().clone()
-    }
-    /// Sets the tick settings of the game engine.
-    pub fn set_tick_settings(&self, settings: TickSettings) {
-        *self.tick_pause_lock.0.lock() = settings.paused;
-        *self.tick_settings.lock() = settings;
-        self.tick_pause_lock.1.notify_all();
-    }
-    /// Returns the audio settings.
-    #[cfg(feature = "audio")]
-    pub fn audio_settings(&self) -> AudioSettings {
-        *self.audio_settings.lock()
-    }
-    /// Sets the audio settings and refreshes the engine side audio server to use them.
-    #[cfg(feature = "audio")]
-    pub fn set_audio_settings(&self, settings: AudioSettings) -> Result<(), NoAudioServerError> {
-        *self.audio_settings.lock() = settings;
-        RESOURCES
-            .audio_server
-            .send(crate::resources::sounds::AudioUpdate::SettingsChange(
-                settings,
-            ))
-            .ok()
-            .ok_or(NoAudioServerError)
-    }
-}
-
 /// The struct that holds and executes all of the game data.
 pub struct Engine {
     #[cfg(all(feature = "egui", feature = "client"))]
@@ -198,11 +119,11 @@ impl Engine {
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
     ///
     /// This function can only be called one time. Attempting to make a second one of those will return an error.
-    pub fn new(settings: impl Into<EngineSettings>) -> Result<Self, EngineStartError> {
+    pub fn new(settings: impl Into<settings::EngineSettings>) -> Result<Self, EngineStartError> {
         if INIT.state() == parking_lot::OnceState::New {
             INIT.call_once(|| {});
             let settings = settings.into();
-            SETTINGS.set_tick_settings(settings.tick_settings);
+            SETTINGS.tick_system.set(settings.tick_settings);
             let tick_system = TickSystem::new();
 
             #[cfg(feature = "client")]
@@ -277,7 +198,7 @@ impl Engine {
                             self.gui.update(&event);
                             let event = match event {
                                 WindowEvent::Resized(size) => {
-                                    self.draw.recreate_swapchain = true;
+                                    Draw::mark_swapchain_outdated();
                                     events::Event::Window(events::WindowEvent::Resized(size))
                                 }
                                 WindowEvent::ReceivedCharacter(char) => {
@@ -381,16 +302,29 @@ impl Engine {
                                 let labelifier = &crate::resources::LABELIFIER;
                                 labelifier.lock().update().unwrap();
                             }
+
+                            // fps limit logic
+                            let start_time = SystemTime::now();
+
+                            // redraw
                             match self.draw.redraw_event(
                                 #[cfg(feature = "egui")]
                                 &mut self.gui,
                             ) {
                                 Err(VulkanError::SwapchainOutOfDate) => {
-                                    self.draw.recreate_swapchain = true
+                                    Draw::mark_swapchain_outdated();
                                 }
                                 Err(e) => panic!("{e}"),
                                 _ => (),
                             };
+
+                            // sleeps the required time to hit the framerate limit.
+                            spin_sleep::native_sleep(
+                                SETTINGS
+                                    .graphics
+                                    .framerate_limit()
+                                    .saturating_sub(start_time.elapsed().unwrap() * 2),
+                            );
                         }
                         Event::RedrawEventsCleared => {
                             TIME.update();
@@ -409,7 +343,7 @@ impl Engine {
                                 &mut self.gui,
                             ) {
                                 Err(VulkanError::SwapchainOutOfDate) => {
-                                    self.draw.recreate_swapchain = true
+                                    Draw::mark_swapchain_outdated();
                                 }
                                 Err(e) => panic!("{e}"),
                                 _ => (),

@@ -58,4 +58,4 @@ pub static TIME: Lazy<Time> = Lazy::new(Time::default);
 #[cfg(feature = "client")]
 pub static INPUT: Lazy<input::Input> = Lazy::new(input::Input::new);
 /// General settings for the game engine.
-pub static SETTINGS: Lazy<game::Settings> = Lazy::new(game::Settings::new);
+pub static SETTINGS: Lazy<game::settings::Settings> = Lazy::new(game::settings::Settings::new);

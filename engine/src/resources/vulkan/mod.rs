@@ -13,7 +13,7 @@ use anyhow::{Context, Error, Result};
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
-    device::{physical::PhysicalDevice, Device, Features, Queue},
+    device::{Device, Features, Queue},
     image::{view::ImageView, Image},
     pipeline::{
         graphics::{vertex_input::Vertex, viewport::Viewport},
@@ -28,7 +28,6 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(crate) struct Vulkan {
     pub instance: Arc<vulkano::instance::Instance>,
-    pub physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
     pub render_pass: Arc<RenderPass>,
@@ -197,7 +196,6 @@ impl Vulkan {
 
         Ok(Self {
             instance,
-            physical_device,
             device,
             queue,
             render_pass,

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `Sound` struct with `SoundData`, able to play sounds with the help of the kira library.
 - Directional sound by binding an object to the new `Sound` struct
 - Basic rebound sound to the Pong example.
+- Graphics settings with settable display mode and framerate limit
 
 ### Changed
 
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Objects are now in the typestate pattern under the names of `NewObject` and `Object`.
 - With it also the Labels holding the object as a generic now.
 - Made the game engine more modular by making physics, audio, labels and client their own separate features.
+- Settings struct to be more modular
 
 ### Removed
 

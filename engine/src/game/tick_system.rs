@@ -7,7 +7,6 @@ use std::{
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
 use parking_lot::Mutex;
-use spin_sleep::sleep;
 
 use crate::{Game, SETTINGS, TIME};
 
@@ -23,16 +22,18 @@ impl TickSystem {
             stop: Arc::new(AtomicBool::new(false)),
         }
     }
+    /// Runs the games `tick` function after every iteration.
     pub fn run(&mut self, game: Arc<Mutex<impl Game + Send + 'static>>) {
         let mut index: usize = 0;
         let stop = self.stop.clone();
         self.handle = Some(Mutex::new(thread::spawn(move || loop {
             // wait if paused
             SETTINGS
+                .tick_system
                 .tick_pause_lock
                 .1
-                .wait_while(&mut SETTINGS.tick_pause_lock.0.lock(), |x| *x);
-            let settings = SETTINGS.tick_settings();
+                .wait_while(&mut SETTINGS.tick_system.tick_pause_lock.0.lock(), |x| *x);
+            let settings = SETTINGS.tick_system.get();
             // capture tick start time.
             let start_time = SystemTime::now();
             // Run the logic
@@ -42,11 +43,12 @@ impl TickSystem {
             #[cfg(feature = "physics")]
             if crate::SCENE.update(settings.update_physics).is_err() {
                 // Disable physics updating if it fails. Return running this tick system.
-                SETTINGS.tick_settings.lock().update_physics = false;
+                SETTINGS.tick_system.tick_settings.lock().update_physics = false;
             };
             // record the elapsed time.
             let elapsed_time = start_time.elapsed().unwrap_or_default();
 
+            // Lock the thread in case the time scale is 0.
             if TIME.scale() == 0.0 {
                 let mut guard = TIME.zero_cvar.0.lock();
                 TIME.zero_cvar.1.wait(&mut guard);
@@ -68,8 +70,8 @@ impl TickSystem {
                 tick_wait
             };
 
-            // Spin sleep, so windows users with their lower quality sleep functions get the same sleep duration
-            sleep(waiting_time);
+            // Spin sleep so windows users with their lower quality sleep functions get the same sleep duration
+            spin_sleep::sleep(waiting_time);
 
             // report tick in case a reporter is active
             if let Some(ref reporter) = settings.reporter {
@@ -81,7 +83,6 @@ impl TickSystem {
             }
             index += 1;
             if stop.load(std::sync::atomic::Ordering::Acquire) {
-                dbg!("breaking tick");
                 break;
             }
         })));

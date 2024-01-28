@@ -37,7 +37,7 @@ pub(crate) fn audio_server() -> Sender<AudioUpdate> {
     thread::spawn(|| {
         let recv = recv;
 
-        let (manager_settings, scene_settings) = SETTINGS.audio_settings().make();
+        let (manager_settings, scene_settings) = SETTINGS.audio.get().make();
 
         let mut audio_manager = AudioManager::<DefaultBackend>::new(manager_settings);
         if let Ok(audio_manager) = audio_manager.as_mut() {

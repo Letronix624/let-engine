@@ -2,15 +2,15 @@ extern crate image;
 extern crate vulkano;
 use anyhow::{Context, Error};
 use std::sync::Arc;
-use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::Device;
 use vulkano::image::{Image, ImageUsage};
 use vulkano::swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo};
 use winit::window::Window;
 
+use crate::SETTINGS;
+
 // Creates the swapchain.
 pub fn create_swapchain_and_images(
-    physical_device: &Arc<PhysicalDevice>,
     device: &Arc<Device>,
     surface: &Arc<Surface>,
 ) -> anyhow::Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
@@ -28,7 +28,8 @@ pub fn create_swapchain_and_images(
         .ok_or(Error::msg("Failed to cast the surface to a window."))?
         .inner_size()
         .into();
-    let present_mode = physical_device
+    let present_mode = device
+        .physical_device()
         .surface_present_modes(surface, SurfaceInfo::default())?
         .min_by_key(|compare| match compare {
             PresentMode::Mailbox => 0,
@@ -39,6 +40,22 @@ pub fn create_swapchain_and_images(
         .ok_or(Error::msg(
             "Failed to get any presentation mode on this device.",
         ))?;
+
+    // Set the present mode of the game engine to this.
+    *SETTINGS.graphics.present_mode.lock() = present_mode.into();
+
+    // Give available present modes
+    let mut present_modes: Vec<_> = device
+        .physical_device()
+        .surface_present_modes(surface, SurfaceInfo::default())?
+        .map(|x| x.into())
+        .collect();
+    present_modes.dedup();
+    SETTINGS
+        .graphics
+        .available_present_modes
+        .get_or_init(|| present_modes);
+
     let create_info = SwapchainCreateInfo {
         min_image_count: surface_capabilities.min_image_count,
         image_format,

@@ -24,6 +24,8 @@ pub use events::*;
 #[cfg(feature = "client")]
 pub use materials::*;
 #[cfg(feature = "client")]
+pub use settings::PresentMode;
+#[cfg(feature = "client")]
 pub use textures::*;
 #[cfg(feature = "client")]
 pub use window::*;
@@ -46,3 +48,4 @@ pub use sounds::*;
 pub use glam;
 pub use glam::{vec2, Vec2};
 pub use scenes::*;
+pub use settings::{EngineSettings, EngineSettingsBuilder, EngineSettingsBuilderError};
