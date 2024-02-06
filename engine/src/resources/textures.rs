@@ -16,13 +16,14 @@ use super::RESOURCES;
 
 /// Formats for the texture from raw data.
 #[derive(Clone, Copy, Debug)]
+#[repr(u32)]
 pub enum Format {
     /// 8 bits red
-    R8,
+    R8 = 1,
     /// 8 bits red green blue alpha
-    RGBA8,
+    RGBA8 = 4,
     /// 16 bits red green blue alpha
-    RGBA16,
+    RGBA16 = 8,
 }
 
 /// Filtering mode

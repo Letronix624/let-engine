@@ -3,9 +3,10 @@
 use ab_glyph::FontArc;
 use glyph_brush::ab_glyph::PxScale;
 use glyph_brush::{
-    ab_glyph, BrushAction, DefaultSectionHasher, FontId, GlyphBrush, GlyphBrushBuilder,
+    ab_glyph, BrushAction, BrushError, DefaultSectionHasher, FontId, GlyphBrush, GlyphBrushBuilder,
     HorizontalAlign, Layout, OwnedSection, OwnedText, VerticalAlign,
 };
+use image::{ImageBuffer, Luma};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -260,7 +261,7 @@ pub(crate) struct Labelifier {
     /// RustType font cache,
     glyph_brush: GlyphBrush<TextVertex, Extra, FontArc, DefaultSectionHasher>,
     /// the global font texture,
-    cache_pixel_buffer: Vec<u8>,
+    cache_pixel_buffer: ImageBuffer<Luma<u8>, Vec<u8>>,
     /// tasks to be executed on next update,
     queued: Vec<DrawTask>,
     /// the amount of tasks
@@ -273,11 +274,16 @@ impl Labelifier {
     /// Makes a new label maker.
     pub fn new() -> Result<Self> {
         let glyph_brush = GlyphBrushBuilder::using_fonts(vec![]).build(); // beginning fonts
-        let cache_pixel_buffer = vec![
-            0;
-            (glyph_brush.texture_dimensions().0 * glyph_brush.texture_dimensions().1)
-                as usize
-        ];
+        let cache_pixel_buffer = ImageBuffer::from_pixel(
+            glyph_brush.texture_dimensions().0,
+            glyph_brush.texture_dimensions().1,
+            image::Luma([0u8]),
+        );
+        // vec![
+        //     0;
+        //     (glyph_brush.texture_dimensions().0 * glyph_brush.texture_dimensions().1)
+        //         as usize
+        // ];
 
         let dimensions = glyph_brush.texture_dimensions();
         let settings = TextureSettings {
@@ -286,7 +292,13 @@ impl Labelifier {
         };
 
         // Make the cache a texture.
-        let texture = Texture::from_raw(&cache_pixel_buffer, dimensions, Format::R8, 1, settings)?;
+        let texture = Texture::from_raw(
+            cache_pixel_buffer.as_raw(),
+            dimensions,
+            Format::R8,
+            1,
+            settings,
+        )?;
 
         let resources = &RESOURCES;
         let vulkan = resources.vulkan().clone();
@@ -342,7 +354,7 @@ impl Labelifier {
 
         // Make the cache a texture.
         self.material.texture = Some(Texture::from_raw(
-            &self.cache_pixel_buffer,
+            self.cache_pixel_buffer.as_raw(),
             self.glyph_brush.texture_dimensions(),
             Format::R8,
             1,
@@ -381,26 +393,58 @@ impl Labelifier {
             return Ok(());
         }
 
-        let dimensions = self.glyph_brush.texture_dimensions();
-        let brush_action = self.glyph_brush.process_queued(
-            |rect, src_data| {
-                let width = (rect.max[0] - rect.min[0]) as usize;
-                let height = (rect.max[1] - rect.min[1]) as usize;
-                let mut dst_index = (rect.min[1] * dimensions.0 + rect.min[0]) as usize;
-                let mut src_index = 0;
-                for _ in 0..height {
-                    let dst_slice = &mut self.cache_pixel_buffer[dst_index..dst_index + width];
-                    let src_slice = &src_data[src_index..src_index + width];
-                    dst_slice.copy_from_slice(src_slice);
+        // let dimensions = self.glyph_brush.texture_dimensions();
+        let brush_action: glyph_brush::BrushAction<TextVertex> = loop {
+            let result = self.glyph_brush.process_queued(
+                |rect, src_data| {
+                    let width = (rect.max[0] - rect.min[0]) as usize;
+                    let height = (rect.max[1] - rect.min[1]) as usize;
 
-                    dst_index += dimensions.0 as usize;
-                    src_index += width;
+                    for y in 0..height {
+                        for x in 0..width {
+                            let src_index = y * width + x;
+                            let pixel = Luma([src_data[src_index]]);
+                            self.cache_pixel_buffer.put_pixel(
+                                rect.min[0] + x as u32,
+                                rect.min[1] + y as u32,
+                                pixel,
+                            )
+                        }
+                    }
+                    // let mut dst_index = (rect.min[1] * dimensions.0 + rect.min[0]) as usize;
+                    // let mut src_index = 0;
+                    // for _ in 0..height {
+                    //     let dst_slice = &mut self.cache_pixel_buffer[dst_index..dst_index + width];
+                    //     let src_slice = &src_data[src_index..src_index + width];
+                    //     dst_slice.copy_from_slice(src_slice);
+
+                    //     dst_index += dimensions.0 as usize;
+                    //     src_index += width;
+                    // }
+                },
+                to_vertex,
+            );
+            match result {
+                Ok(brush_action) => {
+                    break brush_action;
                 }
-            },
-            to_vertex,
-        );
+                Err(BrushError::TextureTooSmall { suggested }) => {
+                    dbg!(suggested);
+                    self.glyph_brush.resize_texture(suggested.0, suggested.1);
+                    let mut new_buffer =
+                        ImageBuffer::from_pixel(suggested.0, suggested.1, Luma([0u8]));
+                    for y in 0..self.cache_pixel_buffer.height() {
+                        for x in 0..self.cache_pixel_buffer.width() {
+                            let pixel = self.cache_pixel_buffer.get_pixel(x, y);
+                            new_buffer.put_pixel(x, y, *pixel);
+                        }
+                    }
+                    self.cache_pixel_buffer = new_buffer;
+                }
+            }
+        };
 
-        Self::update_each_object(self, brush_action.unwrap())?;
+        Self::update_each_object(self, brush_action)?;
 
         self.tasks = 0;
         self.queued = vec![];

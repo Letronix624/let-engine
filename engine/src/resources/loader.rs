@@ -123,6 +123,11 @@ impl Loader {
         format: tFormat,
         settings: TextureSettings,
     ) -> Result<Arc<PersistentDescriptorSet>> {
+        if dimensions.0 * dimensions.1 * format as u32 > data.len() as u32 {
+            return Err(Error::msg(
+                "The size of the texture is smaller than the provided texture dimensions.",
+            ));
+        }
         let mut uploads = AutoCommandBufferBuilder::primary(
             &self.command_buffer_allocator,
             vulkan.queue.queue_family_index(),
