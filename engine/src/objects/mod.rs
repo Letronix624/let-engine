@@ -1,9 +1,13 @@
 //! Objects to be drawn to the screen.
 
 #[cfg(feature = "client")]
-pub mod appearance;
+mod appearance;
 #[cfg(feature = "client")]
-pub mod color;
+mod color;
+#[cfg(feature = "client")]
+pub use appearance::*;
+#[cfg(feature = "client")]
+pub use color::Color;
 
 #[cfg(feature = "labels")]
 pub mod labels;
@@ -99,7 +103,7 @@ impl VisualObject {
 }
 
 /// Node structure for the layer.
-pub struct Node<T> {
+pub(crate) struct Node<T> {
     pub object: T,
     pub parent: Option<Weak<Mutex<Node<T>>>>,
     #[cfg(feature = "physics")]
@@ -177,17 +181,6 @@ impl Node<Object> {
         #[cfg(feature = "physics")]
         rigid_bodies.remove(&self.object.id());
         self.children = vec![];
-    }
-
-    /// Returns the public transform of this objects.
-    pub fn end_transform(&self) -> Transform {
-        if let Some(parent) = &self.parent {
-            let parent = parent.upgrade().unwrap();
-            let parent = parent.lock();
-            parent.end_transform().combine(self.object.transform)
-        } else {
-            self.object.transform
-        }
     }
 }
 

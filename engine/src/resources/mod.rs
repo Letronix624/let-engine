@@ -102,7 +102,7 @@ pub unsafe fn load_pipeline_cache(data: &[u8]) -> Result<()> {
 /// Returns the binary of the pipeline cache.
 ///
 /// Allows this binary to be loaded with the `load_pipeline_cache` function to make loading materials potentially faster.
-pub fn get_pipeline_binary() -> Result<Vec<u8>> {
+pub fn pipeline_binary() -> Result<Vec<u8>> {
     Ok(RESOURCES.loader().lock().pipeline_cache.get_data()?)
 }
 

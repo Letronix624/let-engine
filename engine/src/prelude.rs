@@ -14,10 +14,6 @@ pub use crate::{camera::*, objects::*, *};
 
 // Client structs
 #[cfg(feature = "client")]
-pub use appearance::*;
-#[cfg(feature = "client")]
-pub use color::*;
-#[cfg(feature = "client")]
 pub use data::*;
 #[cfg(feature = "client")]
 pub use events::*;

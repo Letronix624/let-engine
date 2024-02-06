@@ -87,12 +87,12 @@ impl Scene {
     }
 
     /// Returns an IndexSet of all layers.
-    pub fn get_layers(&self) -> IndexSet<Arc<Layer>> {
+    pub fn layers(&self) -> IndexSet<Arc<Layer>> {
         self.layers.lock().clone()
     }
 
     /// Returns a layer by index in case it exists.
-    pub fn get_layer(&self, index: usize) -> Option<Arc<Layer>> {
+    pub fn layer(&self, index: usize) -> Option<Arc<Layer>> {
         self.layers.lock().get_index(index).cloned()
     }
 
@@ -211,6 +211,10 @@ impl Layer {
     }
 
     /// Returns the position of a given side with given window dimensions to world space.
+    ///
+    /// x -1.0 to 1.0 for left to right
+    ///
+    /// y -1.0 to 1.0 for up to down
     #[cfg(feature = "client")]
     pub fn side_to_world(&self, direction: Vec2, dimensions: Vec2) -> Vec2 {
         // Change this to remove dimensions.
@@ -219,7 +223,7 @@ impl Layer {
         let zoom = 1.0 / Self::zoom(self);
         vec2(
             direction[0] * (dimensions.x * zoom) + camera.position.x * 2.0,
-            direction[1] * (dimensions.y * zoom) + camera.position.y * 2.0,
+            -direction[1] * (dimensions.y * zoom) + camera.position.y * 2.0,
         )
     }
 
@@ -276,7 +280,7 @@ impl Layer {
     /// Moves an object one up in it's parents children order.
     pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let parent = Self::get_parent(&node).ok_or(ObjectError::NoParent)?;
+        let parent = Self::parent(&node).ok_or(ObjectError::NoParent)?;
         let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
         if index == 0 {
             return Err(ObjectError::Move(
@@ -291,7 +295,7 @@ impl Layer {
     /// Moves an object one down in it's parents children order.
     pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let parent = Self::get_parent(&node).ok_or(ObjectError::NoParent)?;
+        let parent = Self::parent(&node).ok_or(ObjectError::NoParent)?;
         let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
         let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
         if count == index {
@@ -319,7 +323,7 @@ impl Layer {
         Ok(())
     }
 
-    fn get_parent(object: &NObject) -> Option<NObject> {
+    fn parent(object: &NObject) -> Option<NObject> {
         object.lock().parent.clone()?.upgrade()
     }
 
@@ -339,7 +343,7 @@ impl Layer {
     ///
     /// Returns none in case there is no parent.
     fn count_children(object: &NObject) -> Option<usize> {
-        let parent = Self::get_parent(object)?;
+        let parent = Self::parent(object)?;
         let parent = parent.lock();
         Some(parent.children.len())
     }
@@ -598,7 +602,7 @@ impl Layer {
         }
     }
     /// Returns if the joint exists.
-    pub fn get_joint(&self, handle: ImpulseJointHandle) -> Option<joints::GenericJoint> {
+    pub fn joint(&self, handle: ImpulseJointHandle) -> Option<joints::GenericJoint> {
         self.physics
             .lock()
             .impulse_joint_set

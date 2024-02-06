@@ -151,7 +151,7 @@ impl Appearance {
     }
 
     /// Returns the layer of the texture in case there is a material.
-    pub fn get_layer(&self) -> Option<u32> {
+    pub fn layer(&self) -> Option<u32> {
         Some(self.instance.material.as_ref()?.layer)
     }
 

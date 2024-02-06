@@ -519,7 +519,7 @@ impl Sound {
     }
 
     /// Returns the object bound to this sound.
-    pub fn get_object(&self) -> Option<&Object> {
+    pub fn object(&self) -> Option<&Object> {
         self.object.as_ref()
     }
 

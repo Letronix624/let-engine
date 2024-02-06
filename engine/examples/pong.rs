@@ -303,10 +303,12 @@ impl Ball {
         if self.new_round.elapsed().unwrap().as_secs() > 0 {
             let position = self.object.transform.position;
 
+            // Check if the ball is touching a paddle.
             let touching_paddle = self
                 .layer
                 .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
+            // Check if the top side or bottom side are touched by checking if the ball position is below or above the screen edges +- the ball size.
             let touching_floor =
                 position.y < self.layer.side_to_world(vec2(0.0, 1.0), RESOLUTION).y + 0.015;
             let touching_roof =

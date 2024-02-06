@@ -25,7 +25,7 @@ pub struct LabelCreateInfo {
     pub text: String,
     /// The scale of the text area.
     pub scale: Vec2,
-    /// The align of where the text gets rendered. Takes either 0.0 to 1.0 uv coordinates or one of the [direction](crate::directions) presets.
+    /// The align of where the text gets rendered.
     pub align: Direction,
 }
 impl LabelCreateInfo {

@@ -134,11 +134,9 @@ impl Engine {
             let draw = Draw::setup(settings.window_settings)
                 .map_err(EngineStartError::DrawingBackendError)?;
             #[cfg(feature = "client")]
-            SETTINGS
-                .set_window(draw.get_window().clone())
-                .map_err(|_| {
-                    EngineStartError::Other("Could not make the window object.".to_string())
-                })?;
+            SETTINGS.set_window(draw.window().clone()).map_err(|_| {
+                EngineStartError::Other("Could not make the window object.".to_string())
+            })?;
 
             #[cfg(all(feature = "egui", feature = "client"))]
             let gui = egui::init(&draw);
@@ -159,7 +157,7 @@ impl Engine {
     /// Returns the window of the game.
     #[cfg(feature = "client")]
     pub fn get_window(&self) -> &Window {
-        self.draw.get_window()
+        self.draw.window()
     }
     /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
     #[cfg(not(feature = "client"))]

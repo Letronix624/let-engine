@@ -91,7 +91,7 @@ impl Draw {
         })
     }
 
-    pub fn get_window(&self) -> &Arc<Window> {
+    pub fn window(&self) -> &Arc<Window> {
         &self.window
     }
 
@@ -231,7 +231,7 @@ impl Draw {
         command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
         loader: &mut Loader,
     ) -> Result<(), VulkanError> {
-        for layer in SCENE.get_layers().iter() {
+        for layer in SCENE.layers().iter() {
             let mut order: Vec<VisualObject> = Vec::with_capacity(layer.objects_map.lock().len());
             let mut instances: Vec<Instance> = vec![];
 
@@ -258,7 +258,7 @@ impl Draw {
                         view,
                         proj,
                         color: (*appearance.get_color()).into(),
-                        layer: appearance.get_layer().unwrap_or(0),
+                        layer: appearance.layer().unwrap_or(0),
                     };
                     data.push(instance_data);
                     continue;

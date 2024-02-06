@@ -268,7 +268,7 @@ impl Material {
     }
 
     /// Returns the layer of the texture in case the material is textured.
-    pub fn get_layer(&self) -> u32 {
+    pub fn layer(&self) -> u32 {
         self.layer
     }
 
@@ -307,7 +307,7 @@ impl Material {
     }
 
     /// Returns the texture.
-    pub fn get_texture(&self) -> Option<Texture> {
+    pub fn texture(&self) -> Option<Texture> {
         self.texture.clone()
     }
 
