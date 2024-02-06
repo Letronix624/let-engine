@@ -10,7 +10,7 @@
 #[cfg(feature = "client")]
 pub use crate::resources::*;
 
-pub use crate::{camera::*, directions::*, objects::*, *};
+pub use crate::{camera::*, objects::*, *};
 
 // Client structs
 #[cfg(feature = "client")]

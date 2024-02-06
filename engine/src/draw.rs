@@ -228,11 +228,10 @@ impl Draw {
     /// Draws the Game Scene on the given command buffer.
     fn write_secondary_command_buffer(
         &self,
-        scene: &Scene,
         command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
         loader: &mut Loader,
     ) -> Result<(), VulkanError> {
-        for layer in scene.get_layers().iter() {
+        for layer in SCENE.get_layers().iter() {
             let mut order: Vec<VisualObject> = Vec::with_capacity(layer.objects_map.lock().len());
             let mut instances: Vec<Instance> = vec![];
 
@@ -350,11 +349,11 @@ impl Draw {
                         descriptors,
                     )
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .bind_vertex_buffers(0, model.get_vertex_buffer())
+                    .bind_vertex_buffers(0, model.vertex_buffer())
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .bind_index_buffer(model.get_index_buffer())
+                    .bind_index_buffer(model.index_buffer())
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .draw_indexed(model.get_size() as u32, 1, 0, 0, 0)
+                    .draw_indexed(model.size() as u32, 1, 0, 0, 0)
                     .map_err(|e| VulkanError::Validated(e.into()))?;
             }
             for instance in instances {
@@ -401,11 +400,11 @@ impl Draw {
                         descriptors,
                     )
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .bind_vertex_buffers(0, (model.get_vertex_buffer(), instance_buffer))
+                    .bind_vertex_buffers(0, (model.vertex_buffer(), instance_buffer))
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .bind_index_buffer(model.get_index_buffer())
+                    .bind_index_buffer(model.index_buffer())
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .draw_indexed(model.get_size() as u32, data.len() as u32, 0, 0, 0)
+                    .draw_indexed(model.size() as u32, data.len() as u32, 0, 0, 0)
                     .map_err(|e| VulkanError::Other(e.into()))?;
                 instance.finish_drawing();
                 data.clear();
@@ -511,7 +510,7 @@ impl Draw {
             &loader,
         )?;
 
-        Self::write_secondary_command_buffer(self, &SCENE, &mut secondary_builder, &mut loader)?;
+        Self::write_secondary_command_buffer(self, &mut secondary_builder, &mut loader)?;
 
         builder
             .execute_commands(secondary_builder.build()?)

@@ -37,17 +37,47 @@ use once_cell::sync::Lazy;
 #[cfg(feature = "physics")]
 pub use rapier2d::prelude::CoefficientCombineRule;
 
-/// Cardinal directions
-pub mod directions {
-    pub const CENTER: [f32; 2] = [0.5; 2];
-    pub const N: [f32; 2] = [0.5, 0.0];
-    pub const NO: [f32; 2] = [1.0, 0.0];
-    pub const O: [f32; 2] = [1.0, 0.5];
-    pub const SO: [f32; 2] = [1.0; 2];
-    pub const S: [f32; 2] = [0.5, 1.0];
-    pub const SW: [f32; 2] = [0.0, 1.0];
-    pub const W: [f32; 2] = [0.0, 0.5];
-    pub const NW: [f32; 2] = [0.0; 2];
+/// Cardinal direction
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Direction {
+    Center,
+    N,
+    No,
+    O,
+    So,
+    S,
+    Sw,
+    W,
+    Nw,
+}
+impl From<Direction> for (glyph_brush::HorizontalAlign, glyph_brush::VerticalAlign) {
+    fn from(value: Direction) -> Self {
+        use glyph_brush::{HorizontalAlign, VerticalAlign};
+        let horizontal = match value {
+            Direction::Center => HorizontalAlign::Center,
+            Direction::N => HorizontalAlign::Center,
+            Direction::No => HorizontalAlign::Right,
+            Direction::O => HorizontalAlign::Right,
+            Direction::So => HorizontalAlign::Right,
+            Direction::S => HorizontalAlign::Center,
+            Direction::Sw => HorizontalAlign::Left,
+            Direction::W => HorizontalAlign::Left,
+            Direction::Nw => HorizontalAlign::Left,
+        };
+
+        let vertical = match value {
+            Direction::Center => VerticalAlign::Center,
+            Direction::N => VerticalAlign::Top,
+            Direction::No => VerticalAlign::Top,
+            Direction::O => VerticalAlign::Center,
+            Direction::So => VerticalAlign::Bottom,
+            Direction::S => VerticalAlign::Bottom,
+            Direction::Sw => VerticalAlign::Bottom,
+            Direction::W => VerticalAlign::Center,
+            Direction::Nw => VerticalAlign::Top,
+        };
+        (horizontal, vertical)
+    }
 }
 
 /// The engine wide scene holding all objects in layers.

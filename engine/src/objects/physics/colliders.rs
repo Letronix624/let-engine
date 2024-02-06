@@ -464,11 +464,11 @@ impl Shape {
     #[cfg(feature = "client")]
     pub fn trimesh(data: Data) -> Self {
         Self(SharedShape::trimesh(
-            data.vertices
-                .into_iter()
-                .map(|x| x.position.into())
+            data.vertices().iter().map(|x| x.position.into()).collect(),
+            data.indices()
+                .chunks(3)
+                .map(|x| [x[0], x[1], x[2]])
                 .collect(),
-            data.indices.chunks(3).map(|x| [x[0], x[1], x[2]]).collect(),
         ))
     }
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.

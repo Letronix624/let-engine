@@ -68,7 +68,7 @@ impl Scene {
     pub fn remove_layer(&self, layer: &mut Layer) -> Result<(), NoLayerError> {
         let node: NObject;
         let mut layers = self.layers.lock();
-        if layers.remove(layer) {
+        if layers.shift_remove(layer) {
             node = layer.root.clone();
         } else {
             return Err(NoLayerError);
@@ -81,8 +81,7 @@ impl Scene {
             #[cfg(feature = "physics")]
             &mut layer.rigid_body_roots.lock(),
         );
-        //finish him!
-        layers.remove(layer);
+        layers.shift_remove(layer);
 
         Ok(())
     }
@@ -212,13 +211,10 @@ impl Layer {
     }
 
     /// Returns the position of a given side with given window dimensions to world space.
-    ///
-    /// Be careful! Don't use this when the camera is locked.
     #[cfg(feature = "client")]
-    pub fn side_to_world(&self, direction: [f32; 2], dimensions: Vec2) -> Vec2 {
+    pub fn side_to_world(&self, direction: Vec2, dimensions: Vec2) -> Vec2 {
         // Change this to remove dimensions.
         let camera = self.camera_transform();
-        let direction = [direction[0] * 2.0 - 1.0, direction[1] * 2.0 - 1.0];
         let dimensions = scale(Self::camera_scaling(self), dimensions);
         let zoom = 1.0 / Self::zoom(self);
         vec2(

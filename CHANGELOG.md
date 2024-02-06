@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - With it also the Labels holding the object as a generic now.
 - Made the game engine more modular by making physics, audio, labels and client their own separate features.
 - Settings struct to be more modular
+- Switched `rusttype` with `glyph_brush`.
+- Cardinal directions are now an enum.
 
 ### Removed
 

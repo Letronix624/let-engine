@@ -83,7 +83,7 @@ impl Game {
         let ball = Ball::new(&game_layer);
 
         // Loading the font for the score.
-        let font = Font::from_bytes(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
+        let font = Font::from_slice(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
             .expect("Font is invalid.");
 
         // Making a default label for the left side.
@@ -92,7 +92,7 @@ impl Game {
             LabelCreateInfo {
                 appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
                 text: "0".to_string(),
-                align: directions::NO,
+                align: Direction::No,
                 transform: Transform::default().position(vec2(-0.55, 0.0)),
                 scale: vec2(50.0, 50.0),
             },
@@ -106,7 +106,7 @@ impl Game {
             LabelCreateInfo {
                 appearance: Appearance::new().transform(Transform::default().size(vec2(0.5, 0.7))),
                 text: "0".to_string(),
-                align: directions::NW,
+                align: Direction::Nw,
                 transform: Transform::default().position(vec2(0.55, 0.0)),
                 scale: vec2(50.0, 50.0),
             },
@@ -115,19 +115,20 @@ impl Game {
 
         // Just the line in the middle.
         let mut middle_line = NewObject::new();
-        // Make a custom model that is just a stippled line going from 1 to -1.
-        middle_line.appearance.set_model(Model::Custom(
-            ModelData::new(Data {
-                vertices: vec![
-                    vert(0.0, 0.7),
-                    vert(0.0, 0.3),
-                    vert(0.0, -0.3),
-                    vert(0.0, -0.7),
-                ],
-                indices: vec![0, 1, 2, 3],
-            })
-            .unwrap(),
-        ));
+
+        // Make a custom model that is just 2 lines.
+        const MIDDLE_DATA: Data = Data::new_fixed(
+            &[
+                vert(0.0, 0.7),
+                vert(0.0, 0.3),
+                vert(0.0, -0.3),
+                vert(0.0, -0.7),
+            ],
+            &[0, 1, 2, 3],
+        );
+        middle_line
+            .appearance
+            .set_model(Model::Custom(ModelData::new(MIDDLE_DATA).unwrap()));
         // A description of how the line should look like.
         let line_material = MaterialSettingsBuilder::default()
             .line_width(10.0)
@@ -307,9 +308,9 @@ impl Ball {
                 .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
             let touching_floor =
-                position.y < self.layer.side_to_world(directions::N, RESOLUTION).y + 0.015;
+                position.y < self.layer.side_to_world(vec2(0.0, 1.0), RESOLUTION).y + 0.015;
             let touching_roof =
-                position.y > self.layer.side_to_world(directions::S, RESOLUTION).y - 0.015;
+                position.y > self.layer.side_to_world(vec2(0.0, -1.0), RESOLUTION).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle

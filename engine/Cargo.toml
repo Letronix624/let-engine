@@ -18,7 +18,7 @@ license = "Apache-2.0"
 vulkano = { version = "0.34", optional = true }
 winit = { version = "0.28", optional = true }
 image = { version = "0.24", optional = true }
-rusttype = { version = "0.9.3", features = [ "gpu_cache" ], optional = true }
+glyph_brush = { version = "0.7.8", optional = true }
 egui_winit_vulkano = { version = "0.27", optional = true }
 kira = { version = "0.8", optional = true}
 
@@ -49,7 +49,7 @@ egui = ["dep:egui_winit_vulkano"]
 vulkan_debug_utils = []
 
 client = [ "dep:vulkano", "dep:winit", "dep:image" ]
-labels = [ "dep:rusttype" ]
+labels = [ "dep:glyph_brush" ]
 
 audio = [ "dep:kira" ]
 

@@ -90,32 +90,68 @@ impl Default for ObjectFrag {
 /// up is -y, down is +y.
 /// right is +x und left is -x.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Data {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+pub enum Data {
+    /// Never changing model data
+    Fixed {
+        vertices: &'static [Vertex],
+        indices: &'static [u32],
+    },
+    /// Model data that may change
+    Dynamic {
+        vertices: Vec<Vertex>,
+        indices: Vec<u32>,
+    },
 }
 
 impl Data {
-    pub const fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
-        Self { vertices, indices }
+    /// Creates new dynamically resizable modeldata with the given vertices and indices.
+    pub const fn new_dynamic(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+        Self::Dynamic { vertices, indices }
     }
+
+    /// Creates new fixed sized modeldata with the given vertices and indices.
+    pub const fn new_fixed(vertices: &'static [Vertex], indices: &'static [u32]) -> Self {
+        Self::Fixed { vertices, indices }
+    }
+
     /// Returns the data of a square that goes from `-1.0` to `1.0` in both X and Y.
     pub fn square() -> Self {
-        Data {
-            vertices: SQUARE.into(),
-            indices: SQUARE_ID.into(),
+        Data::Fixed {
+            vertices: &SQUARE,
+            indices: &SQUARE_ID,
         }
     }
+
     /// Returns the data of a triangle with the points `[0.0, -1.0], [-1.0, 1.0], [1.0, 1.0]`.
     pub fn triangle() -> Self {
-        Data {
-            vertices: TRIANGLE.into(),
-            indices: TRIANGLE_ID.into(),
+        Data::Fixed {
+            vertices: &TRIANGLE,
+            indices: &TRIANGLE_ID,
         }
     }
+
     /// Returns if the data has an empty field.
     pub fn is_empty(&self) -> bool {
-        self.vertices.is_empty() || self.indices.is_empty()
+        match self {
+            Self::Fixed { vertices, indices } => vertices.is_empty() || indices.is_empty(),
+            Self::Dynamic { vertices, indices } => vertices.is_empty() || indices.is_empty(),
+        }
+    }
+
+    /// Returns a slice of bytes of the vertices of this data.
+    pub fn vertices(&self) -> &[Vertex] {
+        match self {
+            Self::Fixed { vertices, .. } => vertices,
+            Self::Dynamic { vertices, .. } => vertices,
+        }
+    }
+
+    /// Returns a slice of bytes of the indices of this data.
+    pub fn indices(&self) -> &[u32] {
+        match self {
+            Self::Fixed { indices, .. } => indices,
+            Self::Dynamic { indices, .. } => indices,
+        }
     }
 }
 
@@ -193,7 +229,7 @@ macro_rules! make_circle {
         }
         // Completing the indices by setting the last 2 indices to the last point and the first point of the circle.
         indices.extend([0, corners, 1]);
-        Data { vertices, indices }
+        Data::Dynamic { vertices, indices }
     }};
     ($corners:expr, $percent:expr) => {{ // Make a pie circle fan with the amount of edges and completeness of the circle.
         use core::f64::consts::TAU;
@@ -219,6 +255,6 @@ macro_rules! make_circle {
             indices.extend([0, i + 1, i + 2]);
         }
 
-        Data { vertices, indices }
+        Data::Dynamic { vertices, indices }
     }};
 }
