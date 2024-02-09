@@ -50,6 +50,8 @@ pub enum Direction {
     W,
     Nw,
 }
+
+#[cfg(feature = "labels")]
 impl From<Direction> for (glyph_brush::HorizontalAlign, glyph_brush::VerticalAlign) {
     fn from(value: Direction) -> Self {
         use glyph_brush::{HorizontalAlign, VerticalAlign};

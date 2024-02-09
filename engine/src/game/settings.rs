@@ -1,6 +1,5 @@
 //! Engine wide settings that are applicable using the [Settings](crate::settings::Settings) struct.
 
-use anyhow::Result;
 use derive_builder::Builder;
 
 // audio feature

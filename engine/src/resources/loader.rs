@@ -235,6 +235,7 @@ impl Loader {
             [],
         )?;
 
+        // Upload to gpu.
         let _ = uploads.build()?.execute(vulkan.queue.clone())?;
         Ok(set)
     }
