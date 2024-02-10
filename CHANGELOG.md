@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2024-2-10
+
 ### Added
 
 - A brand new changelog.
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings struct to be more modular
 - Switched `rusttype` with `glyph_brush`.
 - Cardinal directions are now an enum.
+- Rapier version 0.17 -> 0.18
 
 ### Removed
 
@@ -58,5 +61,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Window appearing before the scene is ready, making it flash on start.
 - Docs.rs works again, removing the need to host the docs on my own website.
 
-[unreleased]: https://github.com/Letronix624/let-engine/compare/0.9.0...main
+[unreleased]: https://github.com/Letronix624/let-engine/compare/0.10.0...main
+[0.10.0]: https://github.com/Letronix624/let-engine/compare/0.9.0...0.10.0
 [0.9.0]: https://github.com/Letronix624/let-engine/releases/tag/0.9.0

@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.9.0"
+version = "0.10.0"
 authors = ["Let"]
 edition = "2021"
 description = "game engine"
@@ -26,18 +26,18 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 parking_lot = "0.12"
-derive_builder = "0.12"
-indexmap = "2.1"
+derive_builder = "0.13"
+indexmap = "2.2"
 atomic_float = "0.1"
 crossbeam = "0.8"
 
 glam = { version = "0.24", features = [ "bytemuck", "mint" ] }
 nalgebra = { version = "0.32", features = [ "convert-glam024" ] }
 
-rapier2d = { version = "0.17.2", features = [ "simd-stable" ], optional = true }
+rapier2d = { version = "0.18", features = [ "simd-stable" ], optional = true }
 paste = "1.0.14"
-spin_sleep = "1.1.1"
-once_cell = "1.19.0"
+spin_sleep = "1.2"
+once_cell = "1.19"
 
 [dev-dependencies]
 

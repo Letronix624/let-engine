@@ -52,24 +52,25 @@ impl ModelData {
         self.data.indices().len()
     }
 
-    /// Writes data into the model influencing the model data of every instance of this model.
-    ///
-    /// Returns an error if the data given is bigger than the size of this objects vertices and indices.
-    pub fn write(&self, data: Data) -> Result<()> {
-        if self.vertex_sub_buffer.len() < data.vertices().len() as u64
-            || self.index_sub_buffer.len() < data.indices().len() as u64
-        {
-            return Err(anyhow::Error::msg("Writing into a model requires the given data size to match with the current data size. Load a new model instead."));
-        }
+    //TODO(Letronix624): This along with texture updates comes in the future when we optimize.
+    // /// Writes data into the model influencing the model data of every instance of this model.
+    // ///
+    // /// Returns an error if the data given is bigger than the size of this objects vertices and indices.
+    // pub fn write(&self, data: Data) -> Result<()> {
+    //     if self.vertex_sub_buffer.len() < data.vertices().len() as u64
+    //         || self.index_sub_buffer.len() < data.indices().len() as u64
+    //     {
+    //         return Err(anyhow::Error::msg("Writing into a model requires the given data size to match with the current data size. Load a new model instead."));
+    //     }
 
-        self.vertex_sub_buffer
-            .write()?
-            .copy_from_slice(data.vertices());
-        self.index_sub_buffer
-            .write()?
-            .copy_from_slice(data.indices());
-        Ok(())
-    }
+    //     self.vertex_sub_buffer
+    //         .write()?
+    //         .copy_from_slice(data.vertices());
+    //     self.index_sub_buffer
+    //         .write()?
+    //         .copy_from_slice(data.indices());
+    //     Ok(())
+    // }
 
     pub(crate) fn vertex_buffer(&self) -> Subbuffer<[Vertex]> {
         self.vertex_sub_buffer.clone()
