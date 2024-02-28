@@ -302,36 +302,34 @@ impl NewObject {
         #[cfg(not(feature = "physics"))]
         let parent_transform = parent.lock().object.public_transform();
 
-        let mut initialized = Object {
-            transform: self.transform,
-            parent_transform,
-            #[cfg(feature = "client")]
-            appearance: self.appearance,
-            id,
-            node: None,
-            #[cfg(feature = "physics")]
-            physics: self.physics,
-            layer: Some(layer.clone()),
-        };
-
         // Make yourself to a node.
-        let node: NObject = std::sync::Arc::new(Mutex::new(Node {
-            object: initialized.clone(),
-            parent: Some(std::sync::Arc::downgrade(&parent)),
-            #[cfg(feature = "physics")]
-            rigid_body_parent: rigid_body_parent.clone(),
-            children: vec![],
-        }));
+        let node: NObject = std::sync::Arc::new_cyclic(|weak| {
+            let object = Object {
+                transform: self.transform,
+                parent_transform,
+                #[cfg(feature = "client")]
+                appearance: self.appearance,
+                id,
+                node: Some(weak.clone()),
+                #[cfg(feature = "physics")]
+                physics: self.physics,
+                layer: Some(layer.clone()),
+            };
+            Mutex::new(Node {
+                object,
+                parent: Some(std::sync::Arc::downgrade(&parent)),
+                #[cfg(feature = "physics")]
+                rigid_body_parent: rigid_body_parent.clone(),
+                children: vec![],
+            })
+        });
 
-        // set reference to own node to manipulate.
-        let reference = Some(std::sync::Arc::downgrade(&node));
-        node.lock().object.node = reference.clone();
-        initialized.node = reference;
+        let object = node.lock().object.clone();
 
         // In case there is no rigid body roots make yourself one.
         #[cfg(feature = "physics")]
         if let Some(value) = &rigid_body_parent {
-            if value.is_none() && initialized.physics.rigid_body.is_some() {
+            if value.is_none() && object.physics.rigid_body.is_some() {
                 layer.rigid_body_roots().lock().insert(id, node.clone());
             }
         }
@@ -341,7 +339,7 @@ impl NewObject {
 
         // Add yourself to the list of children of the parent.
         parent.lock().children.push(node.clone());
-        Ok(initialized)
+        Ok(object)
     }
 }
 

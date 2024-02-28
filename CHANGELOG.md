@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A new asset system for managing and loading resources from the disk with ease.
+
+### Changed
+
+- `CoefficientCombineRule's` location to `objects::physics`
+
 ## [0.10.0] - 2024-2-10
 
 ### Added

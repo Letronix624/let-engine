@@ -42,7 +42,7 @@ use std::cell::{OnceCell, RefCell};
 // The event loop that gets created and executed in the thread where Engine was made.
 #[cfg(feature = "client")]
 thread_local! {
-    pub(crate) static EVENT_LOOP: RefCell<OnceCell<winit::event_loop::EventLoop<()>>> = RefCell::new(OnceCell::new());
+    pub(crate) static EVENT_LOOP: RefCell<OnceCell<winit::event_loop::EventLoop<()>>> = const { RefCell::new(OnceCell::new()) };
 }
 
 /// Represents the game application with essential methods for a game's lifetime.

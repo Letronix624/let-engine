@@ -165,6 +165,10 @@ impl Graphics {
     }
 
     /// Sets and applies the present mode of the game.
+    ///
+    /// Returns an error in case the present mode given is not supported by the device.
+    ///
+    /// Find out which present modes work using the [get_supported_present_modes](Graphics::get_supported_present_modes) function.
     pub fn set_present_mode(&self, mode: PresentMode) -> anyhow::Result<()> {
         if self.get_supported_present_modes().contains(&mode) {
             *self.present_mode.lock() = mode;

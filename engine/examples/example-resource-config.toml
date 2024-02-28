@@ -1,0 +1,46 @@
+# example config.toml located in the assets folder when the assets-system feature is enabled.
+
+# biggest size in bytes before splitting the resources into the next file
+max_size = 30_000_000
+
+# the compression used for lowering file sizes for the cost of loading times.
+# 
+#
+# the options are:
+# deflate - balanzed speed and size / known for zip and gzip
+# bwt - slower but more effectively compressed / known for bzip2
+# zstd - very fast decompression
+# lzma - high compression but slow
+# lz4 - very fast but low compression ratio
+#
+# leaving this line out removes compression.
+compression = "zstd"
+
+# from fastest with least compression to slowest with most compression.
+# any numbest outside those bounds automatically get clamped to their highest or lowest level.
+# deflate - 0 - 9
+# bwt - 0 - 9
+# zstd - 1 - 22, giving 0 is the same as giving 3.
+# lzma - 0 - 9
+# lz4 - 0 - 16
+compression_level = 10
+
+# file names of the resource files
+# %g - group
+# %i - index
+naming = "%gs%i"
+
+# Excludes specific files or directories from being packed
+exclude = []
+
+# The path relative where the binary gets compiled to.
+output = "."
+
+# groups and paths to folders where those groups get defined
+[groups]
+texture = "textures"
+sound = "sounds"
+font = "fonts"
+material = "materials"
+model = "models"
+

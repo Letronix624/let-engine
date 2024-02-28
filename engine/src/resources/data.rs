@@ -201,7 +201,8 @@ const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];
 ///
 /// let hexagon: Data = make_circle!(6); // Makes a hexagon.
 ///
-/// let pie: Data = make_circle!(20, 0.75); // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
+/// // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
+/// let pie: Data = make_circle!(20, 0.75);
 /// ```
 #[macro_export]
 macro_rules! make_circle {

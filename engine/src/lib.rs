@@ -10,6 +10,8 @@ pub(crate) mod draw;
 pub mod error;
 mod game;
 pub use game::*;
+#[cfg(feature = "asset_system")]
+pub mod assets;
 pub mod objects;
 pub mod prelude;
 #[cfg(feature = "client")]
@@ -34,8 +36,6 @@ mod check_feature_dependency {
 pub use egui_winit_vulkano::egui;
 
 use once_cell::sync::Lazy;
-#[cfg(feature = "physics")]
-pub use rapier2d::prelude::CoefficientCombineRule;
 
 /// Cardinal direction
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

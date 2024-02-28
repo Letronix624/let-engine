@@ -13,7 +13,8 @@ pub use colliders::{Collider, ColliderBuilder, Shape};
 pub use rigid_bodies::{RigidBody, RigidBodyBuilder};
 
 pub use rapier2d::dynamics::{
-    ImpulseJointHandle, IntegrationParameters, LockedAxes, RigidBodyActivation, RigidBodyType,
+    CoefficientCombineRule, ImpulseJointHandle, IntegrationParameters, LockedAxes,
+    RigidBodyActivation, RigidBodyType,
 };
 
 /// Physics stuff.
