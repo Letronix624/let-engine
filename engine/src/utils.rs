@@ -32,6 +32,7 @@ pub fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
 /// Scales the given dimensions using the given scaling algorithm.
 pub fn scale(mode: CameraScaling, dimensions: Vec2) -> Vec2 {
     match mode {
+        // Camera view x1 and y1 max and min.
         CameraScaling::Stretch => vec2(1.0, 1.0),
         CameraScaling::Linear => vec2(
             0.5 / (dimensions.y / (dimensions.x + dimensions.y)),
@@ -46,5 +47,7 @@ pub fn scale(mode: CameraScaling, dimensions: Vec2) -> Vec2 {
             1.0 / (dimensions.x / dimensions.y.clamp(0.0, dimensions.x)),
         ),
         CameraScaling::Expand => vec2(dimensions.x * 0.001, dimensions.y * 0.001),
+        CameraScaling::KeepHorizontal => vec2(1.0, 1.0 / (dimensions.x / dimensions.y)),
+        CameraScaling::KeepVertical => vec2(1.0 / (dimensions.y / dimensions.x), 1.0),
     }
 }

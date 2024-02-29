@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `CoefficientCombineRule's` location to `objects::physics`
+- Layer's `size_to_world` function does not require dimensions anymore.
+
+### Fixed
+
+- Deadlock when running the object `sync`
+- Default of 0 waiting time in tick settings.
 
 ## [0.10.0] - 2024-2-10
 

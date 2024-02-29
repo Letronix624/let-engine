@@ -17,6 +17,8 @@ pub use rapier2d::dynamics::{
     RigidBodyActivation, RigidBodyType,
 };
 
+use super::{Node, Object};
+
 /// Physics stuff.
 pub(crate) struct Physics {
     pub rigid_body_set: RigidBodySet,
@@ -167,16 +169,14 @@ impl ObjectPhysics {
     pub fn update(
         &mut self,
         transform: &Transform,
-        parent: &super::NObject,
+        parent: &mut Node<Object>,
         rigid_body_object: &mut crate::objects::RigidBodyParent,
         id: u128,
-        physics: &Mutex<Physics>,
+        physics: &mut Physics,
     ) -> Option<Transform> {
-        let parent = parent.lock();
         let parent_transform = parent.object.transform;
         let public_transform = transform.combine(parent_transform);
 
-        let mut physics = physics.lock();
         physics.query_pipeline_out_of_date = true;
 
         // What happens in every combination.

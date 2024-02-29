@@ -105,7 +105,7 @@ impl VisualObject {
 /// Node structure for the layer.
 pub(crate) struct Node<T> {
     pub object: T,
-    pub parent: Option<Weak<Mutex<Node<T>>>>,
+    // pub parent: Option<Weak<Mutex<Node<T>>>>,
     #[cfg(feature = "physics")]
     pub rigid_body_parent: RigidBodyParent,
     pub children: Vec<Arc<Mutex<Node<T>>>>,
@@ -205,7 +205,9 @@ pub struct Object {
     #[cfg(feature = "client")]
     pub appearance: Appearance,
     id: usize,
-    node: Option<WeakObject>,
+    node: WeakObject,
+    #[cfg(feature = "physics")]
+    parent_node: Option<WeakObject>,
     #[cfg(feature = "physics")]
     pub(crate) physics: ObjectPhysics,
     layer: Option<Arc<Layer>>,
@@ -291,10 +293,10 @@ impl NewObject {
             .physics
             .update(
                 &self.transform,
-                &parent,
+                &mut parent.lock(),
                 &mut rigid_body_parent,
                 id as u128,
-                layer.physics(),
+                &mut layer.physics().lock(),
             )
             .ok_or(Error::msg(
                 "Could not update the physics side of this object.",
@@ -304,20 +306,23 @@ impl NewObject {
 
         // Make yourself to a node.
         let node: NObject = std::sync::Arc::new_cyclic(|weak| {
+            let parent = Some(std::sync::Arc::downgrade(&parent));
             let object = Object {
                 transform: self.transform,
                 parent_transform,
                 #[cfg(feature = "client")]
                 appearance: self.appearance,
                 id,
-                node: Some(weak.clone()),
+                node: weak.clone(),
+                #[cfg(feature = "physics")]
+                parent_node: parent.clone(),
                 #[cfg(feature = "physics")]
                 physics: self.physics,
                 layer: Some(layer.clone()),
             };
             Mutex::new(Node {
                 object,
-                parent: Some(std::sync::Arc::downgrade(&parent)),
+                // parent: parent.clone(),
                 #[cfg(feature = "physics")]
                 rigid_body_parent: rigid_body_parent.clone(),
                 children: vec![],
@@ -403,14 +408,16 @@ impl NewObject {
 }
 
 impl Object {
-    pub(crate) fn root() -> Self {
+    pub(crate) fn root(node: WeakObject) -> Self {
         Self {
             transform: Transform::default(),
             parent_transform: Transform::default(),
             #[cfg(feature = "client")]
             appearance: Appearance::default(),
             id: 0,
-            node: None,
+            node,
+            #[cfg(feature = "physics")]
+            parent_node: None,
             #[cfg(feature = "physics")]
             physics: ObjectPhysics::default(),
             layer: None,
@@ -421,10 +428,14 @@ impl Object {
         self.layer.as_ref().unwrap()
     }
 
+    pub(crate) fn parent_node(&self) -> NObject {
+        self.parent_node.as_ref().unwrap().upgrade().unwrap()
+    }
+
     /// Removes the object from it's layer.
     #[allow(unused_mut)]
     pub fn remove(mut self) -> NewObject {
-        let layer = self.layer.unwrap();
+        let layer = self.layer.as_ref().unwrap();
         let mut map = layer.objects_map.lock();
         #[cfg(feature = "physics")]
         let mut rigid_bodies = layer.rigid_body_roots().lock();
@@ -444,9 +455,8 @@ impl Object {
             &mut rigid_bodies,
         );
 
-        let parent = object.parent.clone().unwrap().upgrade().unwrap();
-        let mut parent = parent.lock();
-        parent.remove_child(&node).unwrap();
+        let mut parent_node = self.parent_node();
+        parent_node.lock().remove_child(&node).unwrap();
 
         NewObject {
             transform: self.transform,
@@ -510,7 +520,7 @@ impl Object {
     }
 
     pub(crate) fn as_node(&self) -> NObject {
-        self.node.as_ref().unwrap().upgrade().unwrap()
+        self.node.upgrade().unwrap()
     }
 
     /// Updates the object to match the object information located inside the system of the layer. Useful when having physics.
@@ -532,24 +542,25 @@ impl Object {
         let node = self.as_node().clone();
         #[cfg(feature = "physics")]
         {
-            let mut node = node.lock();
             let layer = self.layer().clone();
+            let parent_node = self.parent_node();
+            let mut parent = parent_node.lock();
+            let mut node = node.lock();
+            let mut physics = layer.physics().lock();
             self.parent_transform = self
                 .physics
                 .update(
                     &self.transform,
-                    &node.parent.clone().unwrap().upgrade().unwrap(),
+                    &mut parent,
                     &mut node.rigid_body_parent,
                     self.id as u128,
-                    layer.physics(),
+                    &mut physics,
                 )
                 .unwrap();
         }
-        node.lock()
-            .update_children_position(self.public_transform());
-        let arc = self.as_node();
-        let mut object = arc.lock();
-        object.object = self.clone();
+        let mut node = node.lock();
+        node.update_children_position(self.public_transform());
+        node.object = self.clone();
     }
 }
 
