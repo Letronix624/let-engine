@@ -2,6 +2,9 @@
 
 /// The 4 Camera scaling modes determine how far you can see when the window changes scale.
 /// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it's not on stretch mode.
+///
+/// The view size can be bigger or smaller depending on the zoom value. When -1 or 1 is mentioned we are talking about the default zoom of 1.
+///
 /// Those are the options in this game engine:
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -15,7 +18,13 @@ pub enum CameraScaling {
     /// The biggest side is always -1 to 1. Simple and more unfair the tighter your window is.
     Limited = 4,
     /// The bigger the window is the more you can see. Good for HUDs, text and textures.
+    ///
+    /// A window size of 1000 pixels gives a view from -1 to 1.
     Expand = 5,
+    /// The horizontal view area is kept at -1 to 1, but y can expand or shrink giving more or less vertical view.
+    KeepHorizontal,
+    /// The vertical view area is kept at -1 to 1, but x can expand or shrink giving more or less horizontal view.
+    KeepVertical,
 }
 
 impl Default for CameraScaling {

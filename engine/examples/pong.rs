@@ -309,10 +309,8 @@ impl Ball {
                 .intersection_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_some();
             // Check if the top side or bottom side are touched by checking if the ball position is below or above the screen edges +- the ball size.
-            let touching_floor =
-                position.y < self.layer.side_to_world(vec2(0.0, 1.0), RESOLUTION).y + 0.015;
-            let touching_roof =
-                position.y > self.layer.side_to_world(vec2(0.0, -1.0), RESOLUTION).y - 0.015;
+            let touching_floor = position.y < self.layer.side_to_world(vec2(0.0, 1.0)).y + 0.015;
+            let touching_roof = position.y > self.layer.side_to_world(vec2(0.0, -1.0)).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle

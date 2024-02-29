@@ -131,13 +131,15 @@ pub struct Layer {
 impl Layer {
     /// Creates a new layer with the given root.
     pub(crate) fn new() -> Result<Arc<Self>> {
-        let root = Arc::new(Mutex::new(Node {
-            object: Object::root(),
-            parent: None,
-            #[cfg(feature = "physics")]
-            rigid_body_parent: None,
-            children: vec![],
-        }));
+        let root = Arc::new_cyclic(|weak| {
+            Mutex::new(Node {
+                object: Object::root(weak.clone()),
+                // parent: None,
+                #[cfg(feature = "physics")]
+                rigid_body_parent: None,
+                children: vec![],
+            })
+        });
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
         let layer = Arc::new(Self {
@@ -216,9 +218,14 @@ impl Layer {
     ///
     /// y -1.0 to 1.0 for up to down
     #[cfg(feature = "client")]
-    pub fn side_to_world(&self, direction: Vec2, dimensions: Vec2) -> Vec2 {
+    pub fn side_to_world(&self, direction: Vec2) -> Vec2 {
         // Change this to remove dimensions.
         let camera = self.camera_transform();
+        let dimensions = if let Some(window) = SETTINGS.window() {
+            window.inner_size()
+        } else {
+            vec2(1000.0, 1000.0)
+        };
         let dimensions = scale(Self::camera_scaling(self), dimensions);
         let zoom = 1.0 / Self::zoom(self);
         vec2(
@@ -280,7 +287,10 @@ impl Layer {
     /// Moves an object one up in it's parents children order.
     pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let parent = Self::parent(&node).ok_or(ObjectError::NoParent)?;
+        if Arc::ptr_eq(&node, &self.root) {
+            return Err(ObjectError::NoParent);
+        }
+        let parent = node.lock().object.parent_node();
         let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
         if index == 0 {
             return Err(ObjectError::Move(
@@ -295,7 +305,10 @@ impl Layer {
     /// Moves an object one down in it's parents children order.
     pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node();
-        let parent = Self::parent(&node).ok_or(ObjectError::NoParent)?;
+        if Arc::ptr_eq(&node, &self.root) {
+            return Err(ObjectError::NoParent);
+        }
+        let parent = node.lock().object.parent_node();
         let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
         let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
         if count == index {
@@ -323,10 +336,6 @@ impl Layer {
         Ok(())
     }
 
-    fn parent(object: &NObject) -> Option<NObject> {
-        object.lock().parent.clone()?.upgrade()
-    }
-
     /// Finds the index of the child in the parents children list.
     ///
     /// Returns `None` in case the child is not present in the object.
@@ -343,14 +352,14 @@ impl Layer {
     ///
     /// Returns none in case there is no parent.
     fn count_children(object: &NObject) -> Option<usize> {
-        let parent = Self::parent(object)?;
+        let parent = object.lock().object.parent_node();
         let parent = parent.lock();
         Some(parent.children.len())
     }
 
     /// Moves an object on the given index in it's parents children order.
     fn move_object_to(src: NObject, dst: usize) {
-        let parent = src.lock().parent.clone().unwrap().upgrade().unwrap();
+        let parent = src.lock().object.parent_node();
         let mut parent = parent.lock();
         let index = parent
             .children
