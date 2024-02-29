@@ -56,6 +56,14 @@ sudo apt install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev buil
 ```bash
 sudo pacman -Sy vulkan-devel 
 ```
+
+### Zypper based dependencies
+
+```
+sudo zypper install alsa-devel
+sudo zypper install --type pattern devel_base devel_C_C++ devel_vulkan
+```
+
 ## Examples
 
 run by doing

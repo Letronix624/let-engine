@@ -40,6 +40,10 @@ pub use labels::*;
 #[cfg(feature = "audio")]
 pub use sounds::*;
 
+// Asset system
+#[cfg(feature = "asset_system")]
+pub use assets::*;
+
 // Other structs
 pub use glam;
 pub use glam::{vec2, Vec2};
