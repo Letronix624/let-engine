@@ -58,11 +58,14 @@ fn main() -> Result<()> {
         let group_config = {
             let contents = std::fs::read_to_string(group_path.join("config.toml")).ok();
             if let Some(contents) = contents {
-                toml::from_str::<Config>(&contents).ok()
+                println!("Group config for {group_path:?} found.");
+                Some(toml::from_str::<GroupConfig>(&contents)?)
             } else {
+                println!("Group config for {group_path:?} not found.");
                 None
             }
         };
+        println!("Content is {:?}.", group_config);
         let compression: Compression = {
             if let Some(config) = group_config.clone() {
                 config
@@ -75,11 +78,9 @@ fn main() -> Result<()> {
         };
         let compression_level = {
             if let Some(group_config) = &group_config {
-                group_config
-                    .compression_level
-                    .unwrap_or(config.compression_level.unwrap_or_default())
+                group_config.compression_level.unwrap_or_default()
             } else {
-                config.compression_level.unwrap_or_default()
+                3
             }
         };
         let compression_level = clamp_to_compression_level(compression_level, &compression);
@@ -168,8 +169,6 @@ fn sort_groups(groups: Vec<(PathBuf, usize)>, threshold: usize) -> Vec<Vec<PathB
 #[derive(Deserialize, Clone, Debug)]
 struct Config {
     pub max_size: Option<usize>,
-    pub compression: Option<String>,
-    pub compression_level: Option<u32>,
     pub naming: Option<String>,
     pub exclude: Option<Vec<PathBuf>>,
     pub output: Option<PathBuf>,
@@ -180,12 +179,30 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             max_size: Some(30_000_000),
-            compression: None,
-            compression_level: Some(5),
             naming: Some(String::from("%g%i")),
             exclude: None,
             output: Some(".".into()),
             groups: Map::new(),
+        }
+    }
+}
+
+/// Configuration file for assets.
+#[derive(Deserialize, Clone, Debug)]
+struct GroupConfig {
+    pub max_size: Option<usize>,
+    pub compression: Option<String>,
+    pub compression_level: Option<u32>,
+    pub naming: Option<String>,
+}
+
+impl Default for GroupConfig {
+    fn default() -> Self {
+        Self {
+            compression: None,
+            compression_level: Some(5),
+            naming: Some(String::from("%g%i")),
+            max_size: Some(30_000_000),
         }
     }
 }
@@ -207,7 +224,9 @@ enum Compression {
 }
 
 impl Compression {
+    #[allow(unused_variables)]
     pub fn compress(&self, buffer: &[u8], compression_level: u32) -> Result<Vec<u8>> {
+        #[allow(unused_assignments)]
         let mut compressed = vec![];
         match self {
             Compression::None => {
@@ -215,12 +234,12 @@ impl Compression {
             }
             #[cfg(feature = "deflate")]
             Compression::Deflate => {
-                let mut encoder = flate2::write::DeflateEncoder::new(
+                let mut encoder = flate2::write::GzEncoder::new(
                     &mut compressed,
                     flate2::Compression::new(compression_level),
                 );
                 encoder.write_all(buffer)?;
-                encoder.flush_finish()?;
+                encoder.finish()?.flush()?;
             }
             #[cfg(feature = "bzip2")]
             Compression::Bwt => {
@@ -246,9 +265,11 @@ impl Compression {
             #[cfg(feature = "lz4")]
             Compression::Lz4 => {
                 let mut encoder = lz4::EncoderBuilder::new()
+                    .favor_dec_speed(true)
                     .level(compression_level)
                     .build(&mut compressed)?;
                 encoder.write_all(buffer)?;
+                encoder.flush()?;
                 let result = encoder.finish();
                 result.0.flush()?;
                 result.1?;
@@ -269,6 +290,10 @@ impl Compression {
             "burrows-wheeler-transform" => Compression::Bwt,
             #[cfg(feature = "bzip2")]
             "bzip2" => Compression::Bwt,
+            #[cfg(feature = "bzip2")]
+            "bzip" => Compression::Bwt,
+            #[cfg(feature = "bzip2")]
+            "bz" => Compression::Bwt,
             #[cfg(feature = "zstd")]
             "zstd" => Compression::Zstd,
             #[cfg(feature = "zstd")]
