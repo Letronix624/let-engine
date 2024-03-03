@@ -6,7 +6,7 @@ use image::{load_from_memory_with_format, DynamicImage};
 
 use derive_builder::Builder;
 use std::sync::Arc;
-use vulkano::descriptor_set::persistent::PersistentDescriptorSet;
+use vulkano::descriptor_set::DescriptorSet;
 pub use vulkano::image::sampler::BorderColor;
 use vulkano::image::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
@@ -156,7 +156,7 @@ pub struct Texture {
     data: Arc<[u8]>,
     dimensions: (u32, u32),
     layers: u32,
-    set: Arc<PersistentDescriptorSet>,
+    set: Arc<DescriptorSet>,
 }
 
 /// Making
@@ -290,7 +290,7 @@ impl Texture {
     pub fn layers(&self) -> u32 {
         self.layers
     }
-    pub(crate) fn set(&self) -> &Arc<PersistentDescriptorSet> {
+    pub(crate) fn set(&self) -> &Arc<DescriptorSet> {
         &self.set
     }
 }

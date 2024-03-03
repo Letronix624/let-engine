@@ -67,6 +67,21 @@ impl Settings {
     pub fn window(&self) -> Option<Arc<Window>> {
         self.window.lock().get().cloned()
     }
+
+    /// Cleans all caches on both ram and vram for unused data. This decreases memory usage and may not
+    /// hurt to be called between levels from time to time.
+    ///
+    /// This function clears the asset cache, gpu resource cache and label pixel buffer cache.
+    #[cfg(feature = "client")]
+    pub fn clean_caches(&self) {
+        use crate::resources::LABELIFIER;
+
+        #[cfg(feature = "asset_system")]
+        crate::assets::clear_cache();
+
+        #[cfg(feature = "labels")]
+        LABELIFIER.lock().clear_cache();
+    }
 }
 
 /// Engine wide tick system settings.
@@ -146,6 +161,7 @@ pub struct Graphics {
     framerate_limit: Mutex<Duration>,
     pub(crate) available_present_modes: OnceLock<Vec<PresentMode>>,
     pub(crate) recreate_swapchain: AtomicBool,
+    pub(crate) cleanup: AtomicBool,
 }
 
 #[cfg(feature = "client")]
@@ -156,6 +172,7 @@ impl Graphics {
             framerate_limit: Mutex::new(Duration::from_secs(0)),
             available_present_modes: OnceLock::new(),
             recreate_swapchain: false.into(),
+            cleanup: false.into(),
         }
     }
 

@@ -72,8 +72,18 @@ impl Appearance {
         }
     }
 
-    /// Scales the object appearance according to the texture applied. Works best in Expand camera mode for best quality.
-    pub fn auto_scale(&mut self) -> Result<(), TextureError> {
+    /// Scales the object appearance to how many pixels represent 1 according to the texture applied and returns it.
+    ///
+    /// Using 1000 works best in Expand camera mode for best quality.
+    pub fn auto_scaled(mut self, pixels_per_unit: f32) -> Result<Self, TextureError> {
+        self.auto_scale(pixels_per_unit)?;
+        Ok(self)
+    }
+
+    /// Scales the object appearance to how many pixels represent 1 according to the texture applied.
+    ///
+    /// Using 1000 works best in Expand camera mode for best quality.
+    pub fn auto_scale(&mut self, pixels_per_unit: f32) -> Result<(), TextureError> {
         let dimensions;
         if let Some(material) = &self.instance.material {
             dimensions = if let Some(texture) = &material.texture {
@@ -85,7 +95,10 @@ impl Appearance {
             return Err(TextureError::NoTexture);
         };
 
-        self.transform.size = vec2(dimensions.0 as f32 * 0.001, dimensions.1 as f32 * 0.001);
+        self.transform.size = vec2(
+            dimensions.0 as f32 / pixels_per_unit,
+            dimensions.1 as f32 / pixels_per_unit,
+        );
 
         Ok(())
     }

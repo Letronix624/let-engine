@@ -94,6 +94,16 @@ pub enum Model {
     Triangle,
 }
 
+impl Model {
+    pub fn data(&self) -> &Data {
+        match self {
+            Model::Custom(model) => model.data(),
+            Model::Square => RESOURCES.shapes.square.data(),
+            Model::Triangle => RESOURCES.shapes.triangle.data(),
+        }
+    }
+}
+
 impl Default for Model {
     fn default() -> Self {
         Self::Square

@@ -8,8 +8,9 @@ use std::{
         Arc,
     },
 };
-use winit::event::{ElementState, Event, ModifiersState, WindowEvent};
-pub use winit::event::{MouseButton, VirtualKeyCode};
+pub use winit::event::MouseButton;
+use winit::event::{ElementState, Event, WindowEvent};
+pub use winit::keyboard::*;
 
 use crossbeam::atomic::AtomicCell;
 use glam::f32::{vec2, Vec2};
@@ -20,10 +21,8 @@ use parking_lot::Mutex;
 /// Updates each frame.
 #[derive(Clone)]
 pub struct Input {
-    //pressed keyboard buttons.
-    keyboard_down: Arc<Mutex<HashSet<u32>>>,
     //pressed keyboard keycodes.
-    keys_down: Arc<Mutex<HashSet<VirtualKeyCode>>>,
+    keys_down: Arc<Mutex<HashSet<Key>>>,
     //pressed keyboard modifiers
     keyboard_modifiers: Arc<Mutex<ModifiersState>>,
     //pressed mouse buttons
@@ -38,7 +37,6 @@ pub struct Input {
 impl Input {
     pub(crate) fn new() -> Self {
         Self {
-            keyboard_down: Arc::new(Mutex::new(HashSet::new())),
             keys_down: Arc::new(Mutex::new(HashSet::new())),
             keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
             mouse_down: Arc::new(Mutex::new(HashSet::new())),
@@ -52,21 +50,15 @@ impl Input {
         self.dimensions.store(dimensions);
         if let Event::WindowEvent { event, .. } = event {
             match event {
-                WindowEvent::KeyboardInput { input, .. } => {
-                    if input.state == ElementState::Pressed {
-                        self.keyboard_down.lock().insert(input.scancode);
-                        if let Some(code) = input.virtual_keycode {
-                            self.keys_down.lock().insert(code);
-                        }
+                WindowEvent::KeyboardInput { event, .. } => {
+                    if event.state == ElementState::Pressed {
+                        self.keys_down.lock().insert(event.logical_key.clone());
                     } else {
-                        self.keyboard_down.lock().remove(&input.scancode);
-                        if let Some(code) = input.virtual_keycode {
-                            self.keys_down.lock().remove(&code);
-                        }
+                        self.keys_down.lock().remove(&event.logical_key);
                     }
                 }
                 WindowEvent::ModifiersChanged(modifiers) => {
-                    *self.keyboard_modifiers.lock() = *modifiers;
+                    *self.keyboard_modifiers.lock() = modifiers.state();
                 }
                 WindowEvent::MouseInput { state, button, .. } => {
                     if state == &ElementState::Pressed {
@@ -92,13 +84,9 @@ impl Input {
         }
     }
 
-    /// Returns true if the given key is pressed on the keyboard.
-    pub fn is_down(&self, key: u32) -> bool {
-        self.keyboard_down.lock().contains(&key)
-    }
     /// Returns true if the given keycode is pressed on the keyboard.
-    pub fn key_down(&self, key: VirtualKeyCode) -> bool {
-        self.keys_down.lock().contains(&key)
+    pub fn key_down(&self, key: &Key) -> bool {
+        self.keys_down.lock().contains(key)
     }
 
     /// Returns true if the given mouse button is pressed.
@@ -114,7 +102,7 @@ impl Input {
 
     /// Returns the cursor position going from -1.0 to 1.0 x and y scaled with the inserted layers scaling properties.
     pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
-        let dimensions = crate::utils::scale(layer.camera_scaling(), self.dimensions.load());
+        let dimensions = layer.camera_scaling().scale(self.dimensions.load());
         let cp = self.cursor_position.load();
         vec2(cp[0], cp[1]) * dimensions
     }
@@ -122,7 +110,7 @@ impl Input {
     /// Returns the cursor position in layer world space.
     pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
         let dims = self.dimensions.load();
-        let dimensions = crate::utils::scale(layer.camera_scaling(), dims);
+        let dimensions = layer.camera_scaling().scale(dims);
         let cp = self.cursor_position.load();
         let cam = layer.camera_transform().position;
         let zoom = 1.0 / layer.zoom();
@@ -134,24 +122,24 @@ impl Input {
 
     /// Returns true if shift is pressed on the keyboard.
     pub fn shift(&self) -> bool {
-        self.keyboard_modifiers.lock().shift()
+        self.keyboard_modifiers.lock().shift_key()
     }
 
     /// Returns true if ctrl is pressed on the keyboard.
     pub fn ctrl(&self) -> bool {
-        self.keyboard_modifiers.lock().ctrl()
+        self.keyboard_modifiers.lock().control_key()
     }
 
     /// Returns true if alt is pressed on the keyboard.
     pub fn alt(&self) -> bool {
-        self.keyboard_modifiers.lock().alt()
+        self.keyboard_modifiers.lock().alt_key()
     }
 
     /// Returns true if the super key is pressed on the keyboard.
     ///
     /// Super key also means "Windows" key on Windows or "Command" key on Mac.
     pub fn super_key(&self) -> bool {
-        self.keyboard_modifiers.lock().logo()
+        self.keyboard_modifiers.lock().super_key()
     }
 
     /// Returns true if the cursor is located in the window.

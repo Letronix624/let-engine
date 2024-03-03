@@ -213,14 +213,22 @@ pub enum AssetError {
 
 /// Returns an asset from the cache and loads and unpacks it, if it is not loaded yet. May take a while for some objects to get returned.
 ///
+/// This function can also be called to precache assets here.
+///
 /// It takes the asset directory relative path to a resource found inside and returns it.
 pub fn asset(path: &str) -> Result<Arc<[u8]>, AssetError> {
     CACHE.get_or_load(path)
 }
 
+/// Clears the asset cache for unused keys and removes them. When calling the `asset` function for an unloaded asset it takes the same time
+/// as it did first again.
+pub fn clear_cache() {
+    CACHE.clear();
+}
+
 /// The asset cache holding all currently loaded assets.
 #[derive(Debug)]
-pub struct Cache {
+struct Cache {
     map: RwLock<HashMap<String, Arc<[u8]>>>,
 }
 

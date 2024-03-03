@@ -12,8 +12,8 @@ use std::sync::Arc;
 use anyhow::Result;
 
 use super::super::resources::vulkan::shaders::*;
+use crate::error::objects::ObjectError;
 use crate::prelude::*;
-use glam::f32::{vec2, Vec2};
 
 /// Info to create default label objects with.
 #[derive(Clone)]
@@ -89,7 +89,7 @@ impl Default for LabelCreateInfo {
 /// It is recommended to sync or update the text with all other visible labels so the texture of all labels change to the same texture.
 /// At the beginning of the game update all the text gets rendered if any labels changed. This produces a new texture which if not synced
 /// to every label produces multiple textures, which take more memory.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Label<Object> {
     pub object: Object,
     pub font: Font,
@@ -131,17 +131,13 @@ impl Label<NewObject> {
         labelifier.queue(label.clone());
         Ok(label)
     }
-    pub fn init_with_parent(
-        mut self,
-        layer: &Arc<Layer>,
-        parent: &Object,
-    ) -> Result<Label<Object>> {
+    pub fn init_with_parent(mut self, parent: &Object) -> Result<Label<Object>> {
         let mut labelifier = LABELIFIER.lock();
         self.update_section(
             labelifier.increment_tasks(),
             self.object.appearance.get_transform().size,
         );
-        let object = self.object.init_with_parent(layer, parent)?;
+        let object = self.object.init_with_parent(parent)?;
         let label = Label {
             object,
             font: self.font,
@@ -212,14 +208,16 @@ impl<T> Label<T> {
 }
 impl Label<Object> {
     /// Updates the local information of this label from the layer, in case it has changed if for example the parent was changed too.
-    pub fn update(&mut self) {
-        self.object.update();
+    pub fn update(&mut self) -> Result<(), ObjectError> {
+        self.object.update()
     }
-    /// Changes the text of the label and updates it on the layer.
+
+    /// Changes the text of the label and immediately syncs it afterwards.
     pub fn update_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
         self.sync();
     }
+
     /// Syncs the public layer side label to be the same as the current.
     pub fn sync(&mut self) {
         let mut labelifier = LABELIFIER.lock();
@@ -324,6 +322,13 @@ impl Labelifier {
         })
     }
 
+    pub fn clear_cache(&mut self) {
+        self.glyph_brush
+            .to_builder()
+            .initial_cache_size((256, 256))
+            .rebuild(&mut self.glyph_brush);
+    }
+
     /// Increments the tasks number by one and returns the last id.
     fn increment_tasks(&mut self) -> usize {
         let tasks = self.tasks;
@@ -365,21 +370,19 @@ impl Labelifier {
 
         for task in queued.into_iter() {
             let mut label = task.label.clone();
+            let Ok(node) = label.object.as_node() else {
+                continue;
+            };
 
             //temp
-            let visible = if task.vertices.is_empty() {
-                false
-            } else {
+            if !task.vertices.is_empty() {
                 let model = ModelData::new(task.into_data())?;
                 label.object.appearance.set_model(Model::Custom(model));
-                true
             };
             label
                 .object
                 .appearance
                 .set_material(Some(self.material.clone()));
-            label.object.appearance.set_visible(visible);
-            let node = label.object.as_node();
             let mut object = node.lock();
             object.object = label.object.clone();
         }
@@ -411,16 +414,6 @@ impl Labelifier {
                             )
                         }
                     }
-                    // let mut dst_index = (rect.min[1] * dimensions.0 + rect.min[0]) as usize;
-                    // let mut src_index = 0;
-                    // for _ in 0..height {
-                    //     let dst_slice = &mut self.cache_pixel_buffer[dst_index..dst_index + width];
-                    //     let src_slice = &src_data[src_index..src_index + width];
-                    //     dst_slice.copy_from_slice(src_slice);
-
-                    //     dst_index += dimensions.0 as usize;
-                    //     src_index += width;
-                    // }
                 },
                 to_vertex,
             );
@@ -492,57 +485,12 @@ fn to_vertex(
         ],
         extra: *extra,
     }
-    // let vertices: Vec<Vertex> = task
-    //     .glyphs
-    //     .clone()
-    //     .iter()
-    //     .flat_map(|g| {
-    //         if let Ok(Some((uv_rect, screen_rect))) =
-    //             self.glyph_brush.rect_for(label.font.id(), g)
-    //         {
-    //             let gl_rect = rusttype::Rect {
-    //                 min: point(
-    //                     (screen_rect.min.x as f32 / dimensions[0] - 0.5) * 2.0,
-    //                     (screen_rect.min.y as f32 / dimensions[1] - 0.5) * 2.0,
-    //                 ),
-    //                 max: point(
-    //                     (screen_rect.max.x as f32 / dimensions[0] - 0.5) * 2.0,
-    //                     (screen_rect.max.y as f32 / dimensions[1] - 0.5) * 2.0,
-    //                 ),
-    //             };
-    //             indices.extend([1 + id, 2 + id, id, 2 + id, id, 3 + id]);
-    //             id += 4;
-    //             vec![
-    //                 Vertex {
-    //                     position: vec2(gl_rect.min.x, gl_rect.max.y),
-    //                     tex_position: vec2(uv_rect.min.x, uv_rect.max.y),
-    //                 },
-    //                 Vertex {
-    //                     position: vec2(gl_rect.min.x, gl_rect.min.y),
-    //                     tex_position: vec2(uv_rect.min.x, uv_rect.min.y),
-    //                 },
-    //                 Vertex {
-    //                     position: vec2(gl_rect.max.x, gl_rect.min.y),
-    //                     tex_position: vec2(uv_rect.max.x, uv_rect.min.y),
-    //                 },
-    //                 Vertex {
-    //                     position: vec2(gl_rect.max.x, gl_rect.max.y),
-    //                     tex_position: vec2(uv_rect.max.x, uv_rect.max.y),
-    //                 },
-    //             ]
-    //             .into_iter()
-    //         } else {
-    //             vec![].into_iter()
-    //         }
-    //     })
-    //     .collect();
 }
 
 struct DrawTask {
     pub label: Label<Object>,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
-    // pub glyphs: Vec<PositionedGlyph<'a>>,
 }
 
 impl DrawTask {
@@ -615,7 +563,7 @@ impl DrawTask {
 // }
 
 /// A font to be used with the default label system.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Font {
     id: FontId,
 }

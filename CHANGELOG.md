@@ -10,16 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - A new asset system for managing and loading resources from the disk with ease.
+- Scale function for camera scaling.
+- `Model` now has a `Data` function allowing you to get the model data.
+- Error handling for removed objects.
+- Exclusive fullscreen.
+- Monitor representations and video modes.
+- Cleaning functions that clean the built up memory usage of the engine.
 
 ### Changed
 
 - `CoefficientCombineRule's` location to `objects::physics`
 - Layer's `size_to_world` function does not require dimensions anymore.
+- The auto_scale function of appearance now takes a pixel per unit value.
+- The `init_with_parent` function does not require a layer anymore.
 
 ### Fixed
 
 - Deadlock when running the object `sync`
 - Default of 0 waiting time in tick settings.
+- Move functions of layer swapping instead of moving.
+- Crash when syncing a label and removing it afterwards.
 
 ## [0.10.0] - 2024-2-10
 

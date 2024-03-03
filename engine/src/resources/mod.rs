@@ -6,7 +6,6 @@ use crate::prelude::*;
 
 use anyhow::{Context, Result};
 use core::panic;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::BufferContents;

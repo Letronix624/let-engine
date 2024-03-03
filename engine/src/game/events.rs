@@ -6,7 +6,8 @@ use crate::prelude::*;
 #[cfg(feature = "egui")]
 use egui_winit_vulkano::egui::Context;
 use winit::dpi;
-pub use winit::event::{ElementState, MouseButton, VirtualKeyCode};
+pub use winit::event::{ElementState, MouseButton};
+pub use winit::keyboard::*;
 
 /// Describes an event coming from the event loop.
 #[derive(Debug, Clone)]
@@ -21,6 +22,8 @@ pub enum Event {
     /// The last event to be called in this loop.
     /// This is the "do on quit" event.
     Destroyed,
+    /// The application has received a low memory warning.
+    LowMemory,
 }
 
 /// An event coming with window context.
@@ -93,12 +96,8 @@ pub enum ScrollDelta {
 /// Input received from the keyboard.
 #[derive(Debug, Clone)]
 pub struct KeyboardInput {
-    /// Hardware dependent scancode.
-    ///
-    /// Does not change when you change the keyboard map.
-    /// Only keeps track of the physical keyboard key scancodes.
-    pub scancode: u32,
-    /// The meaning of the key.
-    pub keycode: Option<VirtualKeyCode>,
+    /// A representation of the pressed or released key.
+    pub keycode: Key,
+    /// Pressed or released,
     pub state: ElementState,
 }

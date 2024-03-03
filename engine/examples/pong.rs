@@ -75,9 +75,17 @@ impl Game {
         );
 
         // Make left paddle controlled with W for up and S for down.
-        let left_paddle = Paddle::new(&game_layer, (VirtualKeyCode::W, VirtualKeyCode::S), -0.95);
+        let left_paddle = Paddle::new(
+            &game_layer,
+            (Key::Character("w".into()), Key::Character("s".into())),
+            -0.95,
+        );
         // The right paddle controlled with J and K. Weird controls, but 60% keyboard friendly
-        let right_paddle = Paddle::new(&game_layer, (VirtualKeyCode::K, VirtualKeyCode::J), 0.95);
+        let right_paddle = Paddle::new(
+            &game_layer,
+            (Key::Character("k".into()), Key::Character("j".into())),
+            0.95,
+        );
 
         // Spawns a ball in the middle.
         let ball = Ball::new(&game_layer);
@@ -173,21 +181,22 @@ impl let_engine::Game for Game {
                 if input.state == ElementState::Pressed {
                     match input.keycode {
                         // Exit when the escape key is pressed.
-                        Some(VirtualKeyCode::Escape) => self.exit = true,
-                        // Troll the right paddle
-                        Some(VirtualKeyCode::E) => {
-                            self.right_paddle.shrink();
-                        }
-                        // Grow and show the right paddle whos boss.
-                        Some(VirtualKeyCode::Q) => {
-                            self.left_paddle.grow();
+                        Key::Named(NamedKey::Escape) => self.exit = true,
+                        Key::Character(e) => {
+                            if e == *"e" {
+                                // Troll the right paddle
+                                self.right_paddle.shrink();
+                            } else if e == *"q" {
+                                // Grow and show the right paddle whos boss.
+                                self.left_paddle.grow();
+                            }
                         }
                         // Oh, so the left paddle thinks it's funny. I'll show it.
-                        Some(VirtualKeyCode::Left) => {
+                        Key::Named(NamedKey::ArrowLeft) => {
                             self.left_paddle.shrink();
                         }
                         // I can grow too, noob.
-                        Some(VirtualKeyCode::Right) => {
+                        Key::Named(NamedKey::ArrowRight) => {
                             self.right_paddle.grow();
                         }
                         _ => (),
@@ -204,14 +213,14 @@ impl let_engine::Game for Game {
 
 #[cfg(feature = "client")]
 struct Paddle {
-    controls: (VirtualKeyCode, VirtualKeyCode), //up/down
+    controls: (Key, Key), //up/down
     object: Object,
     height: f32,
 }
 
 #[cfg(feature = "client")]
 impl Paddle {
-    pub fn new(layer: &Arc<Layer>, controls: (VirtualKeyCode, VirtualKeyCode), x: f32) -> Self {
+    pub fn new(layer: &Arc<Layer>, controls: (Key, Key), x: f32) -> Self {
         let height = 0.05;
         let mut object = NewObject::new();
         object.transform = Transform {
@@ -233,7 +242,8 @@ impl Paddle {
     }
     pub fn update(&mut self) {
         // Turn the `True` and `False` of the input.key_down() into 1, 0 or -1.
-        let shift = INPUT.key_down(self.controls.0) as i32 - INPUT.key_down(self.controls.1) as i32;
+        let shift =
+            INPUT.key_down(&self.controls.0) as i32 - INPUT.key_down(&self.controls.1) as i32;
 
         // Shift Y and clamp it between 0.51 so it doesn't go out of bounds.
         let y = &mut self.object.transform.position.y;
@@ -241,7 +251,7 @@ impl Paddle {
         *y = y.clamp(-0.70, 0.70);
 
         // Updates the object in the game.
-        self.object.sync();
+        self.object.sync().unwrap();
     }
     /// To troll the opponent.
     pub fn shrink(&mut self) {
@@ -257,7 +267,7 @@ impl Paddle {
         self.object.transform.size.y = self.height;
         self.object
             .set_collider(Some(ColliderBuilder::square(0.015, self.height).build()));
-        self.object.sync();
+        self.object.sync().unwrap();
     }
 }
 
@@ -337,7 +347,7 @@ impl Ball {
 
             self.object.transform.position +=
                 self.direction * TIME.delta_time() as f32 * self.speed;
-            self.object.sync();
+            self.object.sync().unwrap();
             self.bounce_sound.update(Tween::default()).unwrap();
         }
     }
@@ -346,7 +356,7 @@ impl Ball {
         self.object.transform.position = vec2(0.0, 0.0);
         self.direction = Self::random_direction();
         self.speed = 1.1;
-        self.object.sync();
+        self.object.sync().unwrap();
     }
     fn rebound(&mut self, x: f64) {
         // Random 0.0 to 1.0 value. Some math that makes a random direction.

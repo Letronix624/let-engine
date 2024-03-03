@@ -1,8 +1,6 @@
-#[cfg(feature = "client")]
-use crate::utils::scale;
 use crate::{error::objects::*, prelude::*};
 
-use super::{NObject, Node, Object, ObjectsMap};
+use super::ObjectsMap;
 use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
 use indexmap::{indexset, IndexSet};
@@ -177,7 +175,7 @@ impl Layer {
     }
     /// Sets the camera of this layer.
     pub fn set_camera(&self, camera: &Object) -> Result<(), ObjectError> {
-        *self.camera.lock() = camera.as_node();
+        *self.camera.lock() = camera.as_node()?;
         Ok(())
     }
 
@@ -226,7 +224,7 @@ impl Layer {
         } else {
             vec2(1000.0, 1000.0)
         };
-        let dimensions = scale(Self::camera_scaling(self), dimensions);
+        let dimensions = Self::camera_scaling(self).scale(dimensions);
         let zoom = 1.0 / Self::zoom(self);
         vec2(
             direction[0] * (dimensions.x * zoom) + camera.position.x * 2.0,
@@ -271,7 +269,7 @@ impl Layer {
     ///
     /// Returns
     pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
-        let node = object.as_node();
+        let node = object.as_node()?;
         let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
 
         if count < index {
@@ -286,7 +284,7 @@ impl Layer {
 
     /// Moves an object one up in it's parents children order.
     pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
+        let node = object.as_node()?;
         if Arc::ptr_eq(&node, &self.root) {
             return Err(ObjectError::NoParent);
         }
@@ -304,7 +302,7 @@ impl Layer {
 
     /// Moves an object one down in it's parents children order.
     pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
+        let node = object.as_node()?;
         if Arc::ptr_eq(&node, &self.root) {
             return Err(ObjectError::NoParent);
         }
@@ -323,14 +321,14 @@ impl Layer {
 
     /// Moves an object all the way to the top of it's parents children list.
     pub fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
+        let node = object.as_node()?;
         Self::move_object_to(node, 0);
         Ok(())
     }
 
     /// Moves an object all the way to the bottom of it's parents children list.
     pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
-        let node = object.as_node();
+        let node = object.as_node()?;
         let count = Self::count_children(&node).ok_or(ObjectError::NoParent)? - 1;
         Self::move_object_to(node, count);
         Ok(())
@@ -367,11 +365,12 @@ impl Layer {
             .into_iter()
             .position(|x| Arc::ptr_eq(&x, &src))
             .unwrap();
-        parent.children.swap(index, dst);
+        let element = parent.children.remove(index);
+        parent.children.insert(dst, element);
     }
 
     pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
-        let node = parent.as_node();
+        let node = parent.as_node()?;
         Self::count_children(&node).ok_or(ObjectError::NoParent)
     }
 }

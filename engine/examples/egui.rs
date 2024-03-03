@@ -79,7 +79,7 @@ impl let_engine::Game for Game {
             }
             Event::Input(InputEvent::KeyboardInput { input }) => {
                 if input.state == ElementState::Pressed {
-                    if let Some(VirtualKeyCode::Escape) = input.keycode {
+                    if let Key::Named(NamedKey::Escape) = input.keycode {
                         // Exit when the escape key is pressed.
                         self.exit = true;
                     }

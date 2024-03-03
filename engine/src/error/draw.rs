@@ -11,7 +11,7 @@ pub enum VulkanError {
     #[error("Failed to flush future:\n{0}")]
     FlushFutureError(String),
     #[error("A Validated error:\n{0}")]
-    Validated(Validated<VulkanoError>),
+    Validated(VulkanoError),
     #[error("An unexpected error with the shaders occured.")]
     ShaderError,
     #[error("An unexpected error occured:\n{0}")]
@@ -20,7 +20,7 @@ pub enum VulkanError {
 
 impl From<Validated<VulkanoError>> for VulkanError {
     fn from(value: Validated<VulkanoError>) -> Self {
-        Self::Validated(value)
+        Self::Validated(value.unwrap())
     }
 }
 
