@@ -65,9 +65,9 @@ impl let_engine::Game for Game {
         // Makes the circle in the middle.
         let mut circle = NewObject::new();
         // Loads a circle model into the engine and sets the appearance of this object to it.
-        circle
-            .appearance
-            .set_model(Model::Custom(ModelData::new(make_circle!(30)).unwrap()));
+        circle.appearance.set_model(Some(Model::Custom(
+            ModelData::new(make_circle!(30)).unwrap(),
+        )));
         // Initializes the object to the layer
         circle.init(&self.layer).unwrap();
     }

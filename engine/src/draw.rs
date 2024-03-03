@@ -244,10 +244,21 @@ impl Draw {
 
             for object in order {
                 let appearance = &object.appearance;
-                // Skip drawing the object if the object is not marked visible or has no vertices.
-                if !appearance.get_visible() {
+
+                let Some(model) = appearance.get_model() else {
                     continue;
                 };
+
+                let resources = &RESOURCES;
+                let shapes = resources.shapes().clone();
+
+                let model_data = match model {
+                    Model::Custom(data) => data,
+                    Model::Square => &shapes.square,
+                    Model::Triangle => &shapes.triangle,
+                };
+
+                // Skip drawing the object if the object is not marked visible or has no vertices.
                 if appearance.is_instanced() {
                     // appearance.instance.drawing.
                     appearance.instance.draw(&mut instances);
@@ -337,14 +348,6 @@ impl Draw {
                     .map_err(VulkanError::Validated)?,
                 );
 
-                let resources = &RESOURCES;
-                let shapes = resources.shapes().clone();
-                let model = match appearance.get_model() {
-                    Model::Custom(data) => data,
-                    Model::Square => &shapes.square,
-                    Model::Triangle => &shapes.triangle,
-                };
-
                 let command_buffer = command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
                     .map_err(|e| VulkanError::Other(e.into()))?
@@ -355,17 +358,21 @@ impl Draw {
                         descriptors,
                     )
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .bind_vertex_buffers(0, model.vertex_buffer())
+                    .bind_vertex_buffers(0, model_data.vertex_buffer())
                     .map_err(|e| VulkanError::Other(e.into()))?
-                    .bind_index_buffer(model.index_buffer())
+                    .bind_index_buffer(model_data.index_buffer())
                     .map_err(|e| VulkanError::Other(e.into()))?;
                 unsafe {
                     command_buffer
-                        .draw_indexed(model.size() as u32, 1, 0, 0, 0)
+                        .draw_indexed(model_data.size() as u32, 1, 0, 0, 0)
                         .map_err(|e| VulkanError::Other(e.into()))?;
                 }
             }
             for instance in instances {
+                let Some(model) = instance.model.as_ref() else {
+                    continue;
+                };
+
                 let mut data = instance.instance_data.lock();
                 let instance_buffer = loader
                     .instance_buffer_allocator
@@ -393,7 +400,7 @@ impl Draw {
 
                 let resources = &RESOURCES;
                 let shapes = resources.shapes().clone();
-                let model = match &instance.model {
+                let model = match &model {
                     Model::Custom(data) => data,
                     Model::Square => &shapes.square,
                     Model::Triangle => &shapes.triangle,

@@ -60,7 +60,7 @@ impl Appearance {
         }
     }
     /// Makes an instanced appearance allowing for better performance using the same appearance instance multiple times.
-    pub fn new_instanced(model: Model, material: Option<Material>) -> Self {
+    pub fn new_instanced(model: Option<Model>, material: Option<Material>) -> Self {
         Self {
             instanced: true,
             instance: Instance {
@@ -108,22 +108,28 @@ impl Appearance {
     getters_and_setters!(color, "the color", Color);
 
     /// Returns the model of the appearance.
-    pub fn get_model(&self) -> &Model {
-        &self.instance.model
+    pub fn get_model(&self) -> Option<&Model> {
+        self.instance.model.as_ref()
     }
 
-    /// Returns the mutable instance of a model in case the appearance is not instanced.
+    /// Returns the mutable instance of a model in case the appearance is not instanced or there is a model.
     pub fn get_model_mut(&mut self) -> Option<&mut Model> {
-        (!self.instanced).then_some(&mut self.instance.model)
+        if !self.instanced {
+            self.instance.model.as_mut()
+        } else {
+            None
+        }
     }
 
     /// Only sets the model if this appearance is not instanced.
-    pub fn set_model(&mut self, model: Model) {
-        (!self.instanced).then(|| self.instance.model = model);
+    pub fn set_model(&mut self, model: Option<Model>) {
+        if !self.instanced {
+            self.instance.model = model;
+        }
     }
 
     /// Only sets the model if this appearance in not instanced.
-    pub fn model(mut self, model: Model) -> Self {
+    pub fn model(mut self, model: Option<Model>) -> Self {
         (!self.instanced).then(|| self.instance.model = model);
         self
     }
@@ -207,7 +213,7 @@ impl Default for Appearance {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Instance {
     pub material: Option<Material>,
-    pub model: Model,
+    pub model: Option<Model>,
 
     pub drawing: Arc<AtomicBool>,
     pub instance_data: Arc<Mutex<Vec<InstanceData>>>,
