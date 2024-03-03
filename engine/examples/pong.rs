@@ -136,7 +136,7 @@ impl Game {
         );
         middle_line
             .appearance
-            .set_model(Model::Custom(ModelData::new(MIDDLE_DATA).unwrap()));
+            .set_model(Some(Model::Custom(ModelData::new(MIDDLE_DATA).unwrap())));
         // A description of how the line should look like.
         let line_material = MaterialSettingsBuilder::default()
             .line_width(10.0)

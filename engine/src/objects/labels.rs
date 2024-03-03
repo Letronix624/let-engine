@@ -377,7 +377,10 @@ impl Labelifier {
             //temp
             if !task.vertices.is_empty() {
                 let model = ModelData::new(task.into_data())?;
-                label.object.appearance.set_model(Model::Custom(model));
+                label
+                    .object
+                    .appearance
+                    .set_model(Some(Model::Custom(model)));
             };
             label
                 .object

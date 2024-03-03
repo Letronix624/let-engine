@@ -120,10 +120,16 @@ impl Node<Object> {
     pub(crate) fn order_position(order: &mut Vec<VisualObject>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
+            if !child.object.appearance.get_visible() {
+                continue;
+            }
             let object = VisualObject::combined(&objects.object, &child.object);
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();
+                if !child.object.appearance.get_visible() {
+                    continue;
+                }
                 order.push(VisualObject {
                     transform: object.transform.combine(child.object.transform),
                     appearance: child.object.appearance().clone(),
