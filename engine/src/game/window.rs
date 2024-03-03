@@ -9,11 +9,7 @@ use std::sync::{
     Arc,
 };
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel};
-use winit::{
-    dpi::*,
-    error::ExternalError,
-    window::{Fullscreen, WindowButtons},
-};
+use winit::{dpi::*, error::ExternalError, window::WindowButtons};
 
 /// A struct representing the window.
 #[derive(Debug)]
@@ -39,7 +35,7 @@ impl Window {
     /// Sets the size of the window in pixels. This unmaximizes the window in case it is.
     #[inline]
     pub fn set_inner_size(&self, size: Vec2) {
-        self.window.set_inner_size(Size::from_vec2(size));
+        let _ = self.window.request_inner_size(Size::from_vec2(size));
     }
 
     /// Returns the outer size of the window in pixels.
@@ -182,19 +178,14 @@ impl Window {
 
     /// Sets whether the window should be in fullscreen.
     #[inline]
-    pub fn set_fullscreen(&self, fullscreen: bool) {
-        let fullscreen = if fullscreen {
-            Some(Fullscreen::Borderless(None))
-        } else {
-            None
-        };
-        self.window.set_fullscreen(fullscreen)
+    pub fn set_fullscreen(&self, fullscreen: Option<Fullscreen>) {
+        self.window.set_fullscreen(fullscreen.map(|x| x.into()))
     }
 
     /// Returns whether the window is fullscreen.
     #[inline]
-    pub fn fullscreen(&self) -> bool {
-        self.window.fullscreen().is_some()
+    pub fn fullscreen(&self) -> Option<Fullscreen> {
+        self.window.fullscreen().map(|x| x.into())
     }
 
     /// Sets whether the window should have a title bar.
@@ -278,8 +269,24 @@ impl Window {
         self.clear_color.store(color);
     }
 
+    /// Returns the clear color of this window.
     pub fn clear_color(&self) -> Color {
         self.clear_color.load()
+    }
+
+    /// Returns all the monitors that are available.
+    pub fn monitors(&self) -> Vec<Monitor> {
+        self.window
+            .available_monitors()
+            .map(|handle| Monitor { handle })
+            .collect()
+    }
+
+    /// Returns the current monitor where the window is inside right now if it can.
+    pub fn currect_monitor(&self) -> Option<Monitor> {
+        self.window
+            .current_monitor()
+            .map(|handle| Monitor { handle })
     }
 }
 
@@ -381,13 +388,10 @@ impl WindowBuilder {
     // Add more modes.
     /// Sets the window to borderless fullscreen on the current monitor.
     #[inline]
-    pub fn fullscreen(mut self, fullscreen: bool) -> Self {
-        let fullscreen = if fullscreen {
-            Some(Fullscreen::Borderless(None))
-        } else {
-            None
-        };
-        self.attributes = self.attributes.with_fullscreen(fullscreen);
+    pub fn fullscreen(mut self, fullscreen: Option<Fullscreen>) -> Self {
+        self.attributes = self
+            .attributes
+            .with_fullscreen(fullscreen.map(|x| x.into()));
         self
     }
 
@@ -448,6 +452,98 @@ impl WindowBuilder {
     pub fn active(mut self, active: bool) -> Self {
         self.attributes = self.attributes.with_active(active);
         self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Fullscreen {
+    Exclusive(VideoMode),
+    Borderless(Option<Monitor>),
+}
+
+impl From<Fullscreen> for winit::window::Fullscreen {
+    fn from(value: Fullscreen) -> Self {
+        match value {
+            Fullscreen::Exclusive(mode) => winit::window::Fullscreen::Exclusive(mode.video_mode),
+            Fullscreen::Borderless(monitor) => {
+                winit::window::Fullscreen::Borderless(monitor.map(|x| x.handle))
+            }
+        }
+    }
+}
+
+impl From<winit::window::Fullscreen> for Fullscreen {
+    fn from(value: winit::window::Fullscreen) -> Self {
+        match value {
+            winit::window::Fullscreen::Exclusive(video_mode) => {
+                Fullscreen::Exclusive(VideoMode { video_mode })
+            }
+            winit::window::Fullscreen::Borderless(handle) => {
+                Fullscreen::Borderless(handle.map(|handle| Monitor { handle }))
+            }
+        }
+    }
+}
+
+/// A representation of a monitor.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Monitor {
+    handle: winit::monitor::MonitorHandle,
+}
+
+impl Monitor {
+    /// Returns the name of the monitor in case it it still connected.
+    pub fn name(&self) -> Option<String> {
+        self.handle.name()
+    }
+
+    /// Returns the resolution of the monitor.
+    pub fn size(&self) -> Vec2 {
+        let size = self.handle.size();
+        vec2(size.width as f32, size.height as f32)
+    }
+
+    /// Returns the position of the top left corner of the monitor relative to the larger full screen  area.
+    pub fn position(&self) -> Vec2 {
+        let position = self.handle.position();
+        vec2(position.x as f32, position.y as f32)
+    }
+
+    /// Returns the refresh rate of the monitor in case it is still connected.
+    pub fn refresh_rate(&self) -> Option<u32> {
+        self.handle.refresh_rate_millihertz()
+    }
+
+    /// Returns the scaling factor of the monitor.
+    pub fn scale_factor(&self) -> f64 {
+        self.handle.scale_factor()
+    }
+
+    /// Returns all the video modes of this monitor.
+    pub fn video_modes(&self) -> Vec<VideoMode> {
+        self.handle
+            .video_modes()
+            .map(|video_mode| VideoMode { video_mode })
+            .collect()
+    }
+}
+
+/// Exclusive fullscreen video modes for specific monitors.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VideoMode {
+    video_mode: winit::monitor::VideoMode,
+}
+
+impl VideoMode {
+    /// Returns the resolution of this video mode.
+    pub fn size(&self) -> Vec2 {
+        let size = self.video_mode.size();
+        vec2(size.width as f32, size.height as f32)
+    }
+
+    /// Returns the refresh rate of this monitor in millihertz
+    pub fn refresh_rate(&self) -> u32 {
+        self.video_mode.refresh_rate_millihertz()
     }
 }
 

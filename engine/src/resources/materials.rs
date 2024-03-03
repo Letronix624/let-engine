@@ -13,7 +13,7 @@ use derive_builder::Builder;
 use std::sync::Arc;
 
 use vulkano::{
-    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    descriptor_set::{DescriptorSet, WriteDescriptorSet},
     pipeline::{
         graphics::{
             color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
@@ -56,7 +56,7 @@ pub enum Topology {
 pub struct Material {
     pub(crate) pipeline: Arc<GraphicsPipeline>,
     pub(crate) instanced: bool,
-    pub(crate) descriptor: Option<Arc<PersistentDescriptorSet>>,
+    pub(crate) descriptor: Option<Arc<DescriptorSet>>,
     pub(crate) texture: Option<Texture>,
     pub(crate) layer: u32,
 }
@@ -126,11 +126,11 @@ impl Material {
         let vertex_input_state = if instanced {
             [GameVertex::per_vertex(), InstanceData::per_instance()]
                 .definition(&vertex.info().input_interface)
-                .map_err(|e| VulkanError::Validated(e.into()))?
+                .map_err(|e| VulkanError::Other(e.into()))?
         } else {
             GameVertex::per_vertex()
                 .definition(&vertex.info().input_interface)
-                .map_err(|e| VulkanError::Validated(e.into()))?
+                .map_err(|e| VulkanError::Other(e.into()))?
         };
 
         let pipeline = GraphicsPipeline::new(
@@ -159,10 +159,10 @@ impl Material {
                 ..GraphicsPipelineCreateInfo::layout(layout)
             },
         )
-        .map_err(VulkanError::Validated)?;
+        .map_err(|e| VulkanError::Other(e.into()))?;
         let descriptor = if !writes.is_empty() {
-            Some(PersistentDescriptorSet::new(
-                allocator,
+            Some(DescriptorSet::new(
+                allocator.clone(),
                 pipeline
                     .layout()
                     .set_layouts()
@@ -234,8 +234,8 @@ impl Material {
     pub unsafe fn write(&mut self, descriptor: Vec<WriteDescriptorSet>) -> Result<()> {
         let resources = &RESOURCES;
         let loader = resources.loader().lock();
-        self.descriptor = Some(PersistentDescriptorSet::new(
-            &loader.descriptor_set_allocator,
+        self.descriptor = Some(DescriptorSet::new(
+            loader.descriptor_set_allocator.clone(),
             self.pipeline
                 .layout()
                 .set_layouts()

@@ -33,10 +33,11 @@ once_cell = "1.19"
 
   [dependencies.vulkano]
   version = "0.34"
+  git = "https://github.com/vulkano-rs/vulkano.git"
   optional = true
 
   [dependencies.winit]
-  version = "0.28"
+  version = "0.29"
   optional = true
 
   [dependencies.image]
@@ -49,6 +50,7 @@ once_cell = "1.19"
 
   [dependencies.egui_winit_vulkano]
   version = "0.27"
+  git = "https://github.com/Letronix624/egui_winit_vulkano.git"
   optional = true
 
   [dependencies.kira]
@@ -56,12 +58,12 @@ once_cell = "1.19"
   optional = true
 
   [dependencies.glam]
-  version = "0.24"
+  version = "0.25"
   features = [ "bytemuck", "mint" ]
 
   [dependencies.nalgebra]
-  version = "0.32"
-  features = [ "convert-glam024" ]
+  version = "0.32.4"
+  features = [ "convert-glam025" ]
 
   [dependencies.rapier2d]
   version = "0.18"
@@ -89,7 +91,7 @@ once_cell = "1.19"
   optional = true
 
 [dev-dependencies]
-egui_demo_lib = "0.24"
+egui_demo_lib = "0.26"
 
 [build-dependencies]
 toml = "0.8"
@@ -133,6 +135,7 @@ labels = [ "dep:glyph_brush", "client" ]
 audio = [ "dep:kira", "client" ]
 physics = [ "dep:rapier2d" ]
 asset_system = [ ]
+serde = [ "glam/serde" ]
 # asset system compression algorithms
 deflate = [ "dep:flate2" ]
 bzip2 = [ "dep:bzip2" ]

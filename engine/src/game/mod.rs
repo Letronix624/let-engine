@@ -128,7 +128,7 @@ impl Engine {
 
             #[cfg(feature = "client")]
             EVENT_LOOP.with_borrow_mut(|cell| {
-                cell.get_or_init(|| winit::event_loop::EventLoopBuilder::new().build());
+                cell.get_or_init(|| winit::event_loop::EventLoopBuilder::new().build().unwrap());
             });
             #[cfg(feature = "client")]
             let draw = Draw::setup(settings.window_settings)
@@ -184,10 +184,10 @@ impl Engine {
             event_loop
                 .take()
                 .unwrap()
-                .run(move |event, _, control_flow| {
+                .run(move |event, control_flow| {
                     INPUT.update(&event, self.get_window().inner_size());
                     if game.lock().exit() {
-                        control_flow.set_exit();
+                        control_flow.exit();
                     }
                     use glam::vec2;
                     match event {
@@ -198,9 +198,6 @@ impl Engine {
                                 WindowEvent::Resized(size) => {
                                     Draw::mark_swapchain_outdated();
                                     events::Event::Window(events::WindowEvent::Resized(size))
-                                }
-                                WindowEvent::ReceivedCharacter(char) => {
-                                    events::Event::Input(InputEvent::ReceivedCharacter(char))
                                 }
                                 WindowEvent::CloseRequested => {
                                     events::Event::Window(events::WindowEvent::CloseRequested)
@@ -229,12 +226,11 @@ impl Engine {
                                 WindowEvent::Focused(focused) => {
                                     events::Event::Window(events::WindowEvent::Focused(focused))
                                 }
-                                WindowEvent::KeyboardInput { input, .. } => {
+                                WindowEvent::KeyboardInput { event, .. } => {
                                     events::Event::Input(InputEvent::KeyboardInput {
                                         input: events::KeyboardInput {
-                                            scancode: input.scancode,
-                                            keycode: input.virtual_keycode,
-                                            state: input.state,
+                                            keycode: event.logical_key,
+                                            state: event.state,
                                         },
                                     })
                                 }
@@ -254,6 +250,39 @@ impl Engine {
                                         }
                                     }),
                                 ),
+                                WindowEvent::RedrawRequested => {
+                                    #[cfg(feature = "labels")]
+                                    {
+                                        let labelifier = &crate::resources::LABELIFIER;
+                                        labelifier.lock().update().unwrap();
+                                    }
+
+                                    // fps limit logic
+                                    let start_time = SystemTime::now();
+
+                                    // redraw
+                                    match self.draw.redraw_event(
+                                        #[cfg(feature = "egui")]
+                                        &mut self.gui,
+                                    ) {
+                                        Err(VulkanError::SwapchainOutOfDate) => {
+                                            Draw::mark_swapchain_outdated();
+                                        }
+                                        Err(e) => panic!("{e}"),
+                                        _ => (),
+                                    };
+
+                                    // sleeps the required time to hit the framerate limit.
+                                    spin_sleep::native_sleep(
+                                        SETTINGS
+                                            .graphics
+                                            .framerate_limit()
+                                            .saturating_sub(start_time.elapsed().unwrap() * 2),
+                                    );
+                                    TIME.update();
+                                    game.lock().frame_update();
+                                    events::Event::Destroyed
+                                }
                                 _ => events::Event::Destroyed,
                             };
                             // destroy event can't be called here so I did the most lazy approach possible.
@@ -285,7 +314,7 @@ impl Engine {
                             }
                             _ => (),
                         },
-                        Event::MainEventsCleared => {
+                        Event::AboutToWait => {
                             #[cfg(feature = "egui")]
                             self.gui.immediate_ui(|gui| {
                                 game.lock().event(events::Event::Egui(gui.context()));
@@ -294,42 +323,11 @@ impl Engine {
                             game.lock().update();
                             self.get_window().request_redraw();
                         }
-                        Event::RedrawRequested(_) => {
-                            #[cfg(feature = "labels")]
-                            {
-                                let labelifier = &crate::resources::LABELIFIER;
-                                labelifier.lock().update().unwrap();
-                            }
-
-                            // fps limit logic
-                            let start_time = SystemTime::now();
-
-                            // redraw
-                            match self.draw.redraw_event(
-                                #[cfg(feature = "egui")]
-                                &mut self.gui,
-                            ) {
-                                Err(VulkanError::SwapchainOutOfDate) => {
-                                    Draw::mark_swapchain_outdated();
-                                }
-                                Err(e) => panic!("{e}"),
-                                _ => (),
-                            };
-
-                            // sleeps the required time to hit the framerate limit.
-                            spin_sleep::native_sleep(
-                                SETTINGS
-                                    .graphics
-                                    .framerate_limit()
-                                    .saturating_sub(start_time.elapsed().unwrap() * 2),
-                            );
-                        }
-                        Event::RedrawEventsCleared => {
-                            TIME.update();
-                            game.lock().frame_update();
-                        }
-                        Event::LoopDestroyed => {
+                        Event::LoopExiting => {
                             game.lock().event(events::Event::Destroyed);
+                        }
+                        Event::MemoryWarning => {
+                            game.lock().event(events::Event::LowMemory);
                         }
                         Event::NewEvents(StartCause::Init) => {
                             #[cfg(feature = "egui")]
@@ -352,7 +350,8 @@ impl Engine {
                         }
                         _ => (),
                     }
-                });
+                })
+                .unwrap();
         });
     }
 }

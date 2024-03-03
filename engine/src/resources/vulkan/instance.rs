@@ -17,7 +17,8 @@ pub fn create_instance(
 ) -> Result<Arc<vulkano::instance::Instance>, EngineStartError> {
     let library =
         VulkanLibrary::new().map_err(|e| EngineStartError::RequirementError(e.to_string()))?;
-    let required_extensions = Surface::required_extensions(event_loop);
+    let required_extensions = Surface::required_extensions(event_loop)
+        .map_err(|e| EngineStartError::RequirementError(e.to_string()))?;
 
     let extensions = InstanceExtensions {
         ext_debug_utils: true,

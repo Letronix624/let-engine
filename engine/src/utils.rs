@@ -1,12 +1,11 @@
 //! General utitities used throughout the engine.
 
 use crate::camera::CameraScaling;
-use core::f32::consts::FRAC_1_SQRT_2;
-use glam::{vec2, Mat4, Vec2};
+use glam::{Mat4, Vec2};
 
 /// Makes an orthographic projection matrix with the given information.
 pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: Vec2) -> Mat4 {
-    let dimensions = scale(mode, dimensions);
+    let dimensions = mode.scale(dimensions);
     Mat4::orthographic_rh(
         position.x - zoom * dimensions.x,
         position.x + zoom * dimensions.x,
@@ -27,27 +26,4 @@ pub fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
             vec![high_byte, low_byte]
         })
         .collect()
-}
-
-/// Scales the given dimensions using the given scaling algorithm.
-pub fn scale(mode: CameraScaling, dimensions: Vec2) -> Vec2 {
-    match mode {
-        // Camera view x1 and y1 max and min.
-        CameraScaling::Stretch => vec2(1.0, 1.0),
-        CameraScaling::Linear => vec2(
-            0.5 / (dimensions.y / (dimensions.x + dimensions.y)),
-            0.5 / (dimensions.x / (dimensions.x + dimensions.y)),
-        ),
-        CameraScaling::Circle => vec2(
-            1.0 / (dimensions.y.atan2(dimensions.x).sin() / FRAC_1_SQRT_2),
-            1.0 / (dimensions.y.atan2(dimensions.x).cos() / FRAC_1_SQRT_2),
-        ),
-        CameraScaling::Limited => vec2(
-            1.0 / (dimensions.y / dimensions.x.clamp(0.0, dimensions.y)),
-            1.0 / (dimensions.x / dimensions.y.clamp(0.0, dimensions.x)),
-        ),
-        CameraScaling::Expand => vec2(dimensions.x * 0.001, dimensions.y * 0.001),
-        CameraScaling::KeepHorizontal => vec2(1.0, 1.0 / (dimensions.x / dimensions.y)),
-        CameraScaling::KeepVertical => vec2(1.0 / (dimensions.y / dimensions.x), 1.0),
-    }
 }

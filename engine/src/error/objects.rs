@@ -24,7 +24,10 @@ pub enum ObjectError {
     /// The move operation has failed.
     #[error("This object can not be moved to this position:\n{0}")]
     Move(String),
-    /// This object for some reason does not have a parent..
-    #[error("This object does not have a parent, so this operation can not be applied.")]
+    /// This object does not have a parent.
+    #[error("This object does not have a parent. This operation can not be applied.")]
     NoParent,
+    /// The object you are trying to access is not initialized anymore.
+    #[error("This object was removed from the objects list.")]
+    Uninit,
 }

@@ -1,13 +1,13 @@
-use crate::{error::draw::*, prelude::*, resources::Loader};
+use crate::{error::draw::*, prelude::*};
 use anyhow::Result;
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
-        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract, RenderPassBeginInfo,
-        SecondaryAutoCommandBuffer, SubpassBeginInfo, SubpassContents,
+        CommandBuffer, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel,
+        CommandBufferUsage, RecordingCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo,
+        SubpassContents,
     },
-    descriptor_set::{PersistentDescriptorSet, WriteDescriptorSet},
+    descriptor_set::{DescriptorSet, WriteDescriptorSet},
     pipeline::{graphics::viewport::Viewport, GraphicsPipeline, Pipeline},
     render_pass::Framebuffer,
     swapchain::{
@@ -23,10 +23,7 @@ use super::resources::vulkan::{
 };
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
-use glam::{
-    f32::{Mat4, Quat, Vec3},
-    vec2,
-};
+use glam::f32::{Mat4, Quat, Vec3};
 
 /// Responsible for drawing on the surface.
 pub struct Draw {
@@ -65,13 +62,17 @@ impl Draw {
         let framebuffers =
             window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport)?;
 
-        let uploads = AutoCommandBufferBuilder::primary(
-            &loader.command_buffer_allocator,
+        let uploads = RecordingCommandBuffer::new(
+            loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
+            CommandBufferLevel::Primary,
+            CommandBufferBeginInfo {
+                usage: CommandBufferUsage::OneTimeSubmit,
+                ..Default::default()
+            },
         )?;
 
-        let previous_frame_end = Some(uploads.build()?.execute(vulkan.queue.clone())?.boxed());
+        let previous_frame_end = Some(uploads.end()?.execute(vulkan.queue.clone())?.boxed());
 
         let dimensions = [0; 2];
 
@@ -135,20 +136,19 @@ impl Draw {
         image_num: usize,
         clear_color: [f32; 4],
         loader: &Loader,
-    ) -> Result<
-        (
-            AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-            AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
-        ),
-        VulkanError,
-    > {
+    ) -> Result<(RecordingCommandBuffer, RecordingCommandBuffer), VulkanError> {
         let resources = &RESOURCES;
         let vulkan = resources.vulkan().clone();
-        let mut builder = AutoCommandBufferBuilder::primary(
-            &loader.command_buffer_allocator,
+        let mut builder = RecordingCommandBuffer::new(
+            loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
+            CommandBufferLevel::Primary,
+            CommandBufferBeginInfo {
+                usage: CommandBufferUsage::OneTimeSubmit,
+                ..Default::default()
+            },
         )
+        .map_err(Validated::unwrap)
         .map_err(VulkanError::Validated)?;
 
         // Makes a commandbuffer that takes multiple secondary buffers.
@@ -163,21 +163,26 @@ impl Draw {
                     ..Default::default()
                 },
             )
-            .map_err(|e| VulkanError::Validated(e.into()))?;
+            .map_err(|e| VulkanError::Other(e.into()))?;
 
-        let mut secondary_builder = AutoCommandBufferBuilder::secondary(
-            &loader.command_buffer_allocator,
+        let mut secondary_builder = RecordingCommandBuffer::new(
+            loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-            CommandBufferInheritanceInfo {
-                render_pass: Some(vulkan.subpass.clone().into()),
+            CommandBufferLevel::Secondary,
+            CommandBufferBeginInfo {
+                usage: CommandBufferUsage::OneTimeSubmit,
+                inheritance_info: Some(CommandBufferInheritanceInfo {
+                    render_pass: Some(vulkan.subpass.clone().into()),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
         )
+        .map_err(Validated::unwrap)
         .map_err(VulkanError::Validated)?;
         secondary_builder
             .set_viewport(0, [self.viewport.clone()].into_iter().collect())
-            .map_err(|e| VulkanError::Validated(e.into()))?;
+            .map_err(|e| VulkanError::Other(e.into()))?;
 
         Ok((builder, secondary_builder))
     }
@@ -228,7 +233,7 @@ impl Draw {
     /// Draws the Game Scene on the given command buffer.
     fn write_secondary_command_buffer(
         &self,
-        command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
+        command_buffer: &mut RecordingCommandBuffer,
         loader: &mut Loader,
     ) -> Result<(), VulkanError> {
         for layer in SCENE.layers().iter() {
@@ -314,8 +319,8 @@ impl Draw {
 
                 descriptors.insert(
                     0,
-                    PersistentDescriptorSet::new(
-                        &loader.descriptor_set_allocator,
+                    DescriptorSet::new(
+                        loader.descriptor_set_allocator.clone(),
                         pipeline
                             .layout()
                             .set_layouts()
@@ -328,6 +333,7 @@ impl Draw {
                         ],
                         [],
                     )
+                    .map_err(Validated::unwrap)
                     .map_err(VulkanError::Validated)?,
                 );
 
@@ -339,7 +345,7 @@ impl Draw {
                     Model::Triangle => &shapes.triangle,
                 };
 
-                command_buffer
+                let command_buffer = command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
                     .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_descriptor_sets(
@@ -352,9 +358,12 @@ impl Draw {
                     .bind_vertex_buffers(0, model.vertex_buffer())
                     .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_index_buffer(model.index_buffer())
-                    .map_err(|e| VulkanError::Other(e.into()))?
-                    .draw_indexed(model.size() as u32, 1, 0, 0, 0)
-                    .map_err(|e| VulkanError::Validated(e.into()))?;
+                    .map_err(|e| VulkanError::Other(e.into()))?;
+                unsafe {
+                    command_buffer
+                        .draw_indexed(model.size() as u32, 1, 0, 0, 0)
+                        .map_err(|e| VulkanError::Other(e.into()))?;
+                }
             }
             for instance in instances {
                 let mut data = instance.instance_data.lock();
@@ -390,7 +399,7 @@ impl Draw {
                     Model::Triangle => &shapes.triangle,
                 };
 
-                command_buffer
+                let command_buffer = command_buffer
                     .bind_pipeline_graphics(pipeline.clone())
                     .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_descriptor_sets(
@@ -403,9 +412,12 @@ impl Draw {
                     .bind_vertex_buffers(0, (model.vertex_buffer(), instance_buffer))
                     .map_err(|e| VulkanError::Other(e.into()))?
                     .bind_index_buffer(model.index_buffer())
-                    .map_err(|e| VulkanError::Other(e.into()))?
-                    .draw_indexed(model.size() as u32, data.len() as u32, 0, 0, 0)
                     .map_err(|e| VulkanError::Other(e.into()))?;
+                unsafe {
+                    command_buffer
+                        .draw_indexed(model.size() as u32, data.len() as u32, 0, 0, 0)
+                        .map_err(|e| VulkanError::Other(e.into()))?;
+                }
                 instance.finish_drawing();
                 data.clear();
             }
@@ -416,7 +428,7 @@ impl Draw {
     /// Creates and executes a future in which the command buffer gets executed.
     fn execute_command_buffer(
         &mut self,
-        command_buffer: Arc<PrimaryAutoCommandBuffer>,
+        command_buffer: Arc<CommandBuffer>,
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
     ) -> Result<(), VulkanError> {
@@ -438,7 +450,14 @@ impl Draw {
             .then_signal_fence_and_flush();
 
         match future.map_err(Validated::unwrap) {
-            Ok(future) => {
+            Ok(mut future) => {
+                if SETTINGS
+                    .graphics
+                    .cleanup
+                    .swap(false, std::sync::atomic::Ordering::AcqRel)
+                {
+                    future.cleanup_finished();
+                }
                 self.previous_frame_end = Some(future.boxed());
             }
             Err(VulkanoError::OutOfDate) => {
@@ -495,7 +514,7 @@ impl Draw {
                     return Err(VulkanError::SwapchainOutOfDate);
                 }
                 Err(e) => {
-                    return Err(VulkanError::Validated(e.into()));
+                    return Err(VulkanError::Validated(e));
                 }
             };
 
@@ -513,8 +532,8 @@ impl Draw {
         Self::write_secondary_command_buffer(self, &mut secondary_builder, &mut loader)?;
 
         builder
-            .execute_commands(secondary_builder.build()?)
-            .map_err(|e| VulkanError::Validated(e.into()))?;
+            .execute_commands(secondary_builder.end()?)
+            .map_err(|e| VulkanError::Other(e.into()))?;
 
         #[cfg(feature = "egui")]
         {
@@ -522,12 +541,12 @@ impl Draw {
             let cb = gui.draw_on_subpass_image(self.dimensions);
             builder
                 .execute_commands(cb)
-                .map_err(|e| VulkanError::Validated(e.into()))?;
+                .map_err(|e| VulkanError::Other(e.into()))?;
         }
         builder
             .end_render_pass(Default::default())
-            .map_err(|e| VulkanError::Validated(e.into()))?;
-        let command_buffer = builder.build()?;
+            .map_err(|e| VulkanError::Other(e.into()))?;
+        let command_buffer = builder.end()?;
 
         Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)?;
         Ok(())

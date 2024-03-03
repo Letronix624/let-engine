@@ -5,12 +5,11 @@ use vulkano::{
     buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
-        PrimaryCommandBufferAbstract,
+        CommandBufferBeginInfo, CommandBufferUsage, CopyBufferToImageInfo, RecordingCommandBuffer,
     },
     descriptor_set::{
         allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo},
-        PersistentDescriptorSet, WriteDescriptorSet,
+        DescriptorSet, WriteDescriptorSet,
     },
     format::Format,
     image::{
@@ -35,8 +34,8 @@ pub(crate) struct Loader {
     pub index_buffer_allocator: SubbufferAllocator,
     pub object_buffer_allocator: SubbufferAllocator,
     pub instance_buffer_allocator: SubbufferAllocator,
-    pub descriptor_set_allocator: StandardDescriptorSetAllocator,
-    pub command_buffer_allocator: StandardCommandBufferAllocator,
+    pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
+    pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     pub pipeline_cache: Arc<PipelineCache>,
 }
 
@@ -87,7 +86,8 @@ impl Loader {
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             vulkan.device.clone(),
             StandardDescriptorSetAllocatorCreateInfo::default(),
-        );
+        )
+        .into();
 
         let command_buffer_allocator = StandardCommandBufferAllocator::new(
             vulkan.device.clone(),
@@ -95,7 +95,8 @@ impl Loader {
                 secondary_buffer_count: 2,
                 ..Default::default()
             },
-        );
+        )
+        .into();
 
         let pipeline_cache = unsafe {
             PipelineCache::new(vulkan.device.clone(), PipelineCacheCreateInfo::default())?
@@ -122,16 +123,21 @@ impl Loader {
         layers: u32,
         format: tFormat,
         settings: TextureSettings,
-    ) -> Result<Arc<PersistentDescriptorSet>> {
+    ) -> Result<Arc<DescriptorSet>> {
         if dimensions.0 * dimensions.1 * format as u32 > data.len() as u32 {
             return Err(Error::msg(
                 "The size of the texture is smaller than the provided texture dimensions.",
             ));
         }
-        let mut uploads = AutoCommandBufferBuilder::primary(
-            &self.command_buffer_allocator,
+
+        let mut uploads = RecordingCommandBuffer::new(
+            self.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
+            vulkano::command_buffer::CommandBufferLevel::Primary,
+            CommandBufferBeginInfo {
+                usage: CommandBufferUsage::OneTimeSubmit,
+                ..Default::default()
+            },
         )?;
 
         let format = if settings.srgb {
@@ -224,8 +230,8 @@ impl Loader {
 
         let sampler = Sampler::new(vulkan.device.clone(), samplercreateinfo)?;
 
-        let set = PersistentDescriptorSet::new(
-            &self.descriptor_set_allocator,
+        let set = DescriptorSet::new(
+            self.descriptor_set_allocator.clone(),
             set_layout,
             [WriteDescriptorSet::image_view_sampler(
                 0,
@@ -236,7 +242,7 @@ impl Loader {
         )?;
 
         // Upload to gpu.
-        let _ = uploads.build()?.execute(vulkan.queue.clone())?;
+        let _ = uploads.end()?.execute(vulkan.queue.clone())?;
         Ok(set)
     }
     /// Makes a descriptor write.

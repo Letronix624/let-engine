@@ -16,13 +16,11 @@ pub mod labels;
 pub mod physics;
 pub mod scenes;
 
-use crate::prelude::*;
+use crate::{error::objects::ObjectError, prelude::*};
 
-use anyhow::{Error, Result};
-use scenes::Layer;
+use anyhow::{anyhow, Error, Result};
 
 use derive_builder::Builder;
-use glam::f32::{vec2, Vec2};
 use parking_lot::Mutex;
 
 use std::{
@@ -177,9 +175,9 @@ impl Node<Object> {
                 rigid_bodies,
             );
         }
-        objects.remove(&self.object.id());
+        objects.remove(self.object.id());
         #[cfg(feature = "physics")]
-        rigid_bodies.remove(&self.object.id());
+        rigid_bodies.remove(self.object.id());
         self.children = vec![];
     }
 }
@@ -206,7 +204,6 @@ pub struct Object {
     pub appearance: Appearance,
     id: usize,
     node: WeakObject,
-    #[cfg(feature = "physics")]
     parent_node: Option<WeakObject>,
     #[cfg(feature = "physics")]
     pub(crate) physics: ObjectPhysics,
@@ -257,13 +254,14 @@ impl NewObject {
     }
 
     /// Initializes the object into a layer with a parent object.
-    pub fn init_with_parent(self, layer: &Arc<Layer>, parent: &Object) -> Result<Object> {
+    pub fn init_with_parent(self, parent: &Object) -> Result<Object> {
+        let layer = parent.layer();
         self.init_with_optional_parent(layer, Some(parent))
     }
 
     /// Initializes the object into a layer with an optional parent object.
     #[allow(unused_mut)]
-    pub fn init_with_optional_parent(
+    fn init_with_optional_parent(
         mut self,
         layer: &Arc<Layer>,
         parent: Option<&Object>,
@@ -274,7 +272,9 @@ impl NewObject {
         #[cfg(feature = "physics")]
         let mut rigid_body_parent;
         let parent: NObject = if let Some(parent) = parent {
-            let parent = parent.as_node();
+            let Ok(parent) = parent.as_node() else {
+                return Err(anyhow!("Parent uninitialized"));
+            };
             #[cfg(feature = "physics")]
             {
                 rigid_body_parent = parent.lock().rigid_body_parent.clone();
@@ -314,7 +314,6 @@ impl NewObject {
                 appearance: self.appearance,
                 id,
                 node: weak.clone(),
-                #[cfg(feature = "physics")]
                 parent_node: parent.clone(),
                 #[cfg(feature = "physics")]
                 physics: self.physics,
@@ -416,7 +415,6 @@ impl Object {
             appearance: Appearance::default(),
             id: 0,
             node,
-            #[cfg(feature = "physics")]
             parent_node: None,
             #[cfg(feature = "physics")]
             physics: ObjectPhysics::default(),
@@ -515,31 +513,32 @@ impl Object {
     /// Returns the identification number of the object specific the layer it is inside right now.
     ///
     /// Returns 0 in case it is not initialized to a layer yet.
-    pub fn id(&self) -> usize {
-        self.id
+    pub fn id(&self) -> &usize {
+        &self.id
     }
 
-    pub(crate) fn as_node(&self) -> NObject {
-        self.node.upgrade().unwrap()
+    pub(crate) fn as_node(&self) -> Result<NObject, ObjectError> {
+        self.node.upgrade().ok_or(ObjectError::Uninit)
     }
 
     /// Updates the object to match the object information located inside the system of the layer. Useful when having physics.
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> Result<(), ObjectError> {
         // receive
-        let node = self.as_node();
+        let node = self.as_node()?;
         let object = &node.lock().object;
         self.transform = object.transform;
         #[cfg(feature = "client")]
         {
             self.appearance = object.appearance().clone();
         }
+        Ok(())
     }
 
     /// Updates the object inside the layer system to match with this one. Useful when doing anything to the object and submitting it with this function.
-    pub fn sync(&mut self) {
+    pub fn sync(&mut self) -> Result<(), ObjectError> {
         // send
         // update public position of all children recursively
-        let node = self.as_node().clone();
+        let node = self.as_node()?.clone();
         #[cfg(feature = "physics")]
         {
             let layer = self.layer().clone();
@@ -561,6 +560,7 @@ impl Object {
         let mut node = node.lock();
         node.update_children_position(self.public_transform());
         node.object = self.clone();
+        Ok(())
     }
 }
 

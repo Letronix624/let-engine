@@ -1,5 +1,9 @@
 //! Camera and vision related settings.
 
+use std::f32::consts::FRAC_1_SQRT_2;
+
+use glam::{vec2, Vec2};
+
 /// The 4 Camera scaling modes determine how far you can see when the window changes scale.
 /// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it's not on stretch mode.
 ///
@@ -30,6 +34,31 @@ pub enum CameraScaling {
 impl Default for CameraScaling {
     fn default() -> Self {
         Self::Stretch
+    }
+}
+
+impl CameraScaling {
+    /// Scales the given dimensions using the given scaling algorithm.
+    pub fn scale(&self, dimensions: Vec2) -> Vec2 {
+        match self {
+            // Camera view x1 and y1 max and min.
+            CameraScaling::Stretch => vec2(1.0, 1.0),
+            CameraScaling::Linear => vec2(
+                0.5 / (dimensions.y / (dimensions.x + dimensions.y)),
+                0.5 / (dimensions.x / (dimensions.x + dimensions.y)),
+            ),
+            CameraScaling::Circle => vec2(
+                1.0 / (dimensions.y.atan2(dimensions.x).sin() / FRAC_1_SQRT_2),
+                1.0 / (dimensions.y.atan2(dimensions.x).cos() / FRAC_1_SQRT_2),
+            ),
+            CameraScaling::Limited => vec2(
+                1.0 / (dimensions.y / dimensions.x.clamp(0.0, dimensions.y)),
+                1.0 / (dimensions.x / dimensions.y.clamp(0.0, dimensions.x)),
+            ),
+            CameraScaling::Expand => vec2(dimensions.x * 0.001, dimensions.y * 0.001),
+            CameraScaling::KeepHorizontal => vec2(1.0, 1.0 / (dimensions.x / dimensions.y)),
+            CameraScaling::KeepVertical => vec2(1.0 / (dimensions.y / dimensions.x), 1.0),
+        }
     }
 }
 

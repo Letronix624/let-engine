@@ -528,7 +528,7 @@ impl Sound {
     /// Returns an error in case the command queue is full.
     pub fn update(&mut self, tween: Tween) -> Result<()> {
         if let (Some(emitter), Some(object)) = (self.emitter.lock().get_mut(), &mut self.object) {
-            object.update();
+            object.update()?;
             emitter.set_position(object.transform.position.extend(0.0), tween.into())?
         }
         Ok(())
