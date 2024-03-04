@@ -24,8 +24,12 @@ jobs:
         run: cargo build --all-features --verbose
       - name: Examples
         run: cargo build --examples --all-features --verbose
-      - name: Run tests
+      - name: Run tests of all features
         run: cargo test --all-features --verbose
+      - name: Run tests of all default features
+        run: cargo test --verbose
+      - name: Run tests of no featues
+        run: cargo test --no-default-features --verbose
 
   windows:
     runs-on: windows-latest
@@ -39,8 +43,13 @@ jobs:
           shared-key: "${{ runner.os }}-rust-windows"
       - name: Build
         run: cargo build --all-features --verbose
-      - name: Run tests
+      - name: Run tests of all features
         run: cargo test --all-features --verbose
+      - name: Run tests of all default features
+        run: cargo test --verbose
+      - name: Run tests of no featues
+        run: cargo test --no-default-features --verbose
+        
   macos:
     runs-on: macos-latest
     steps:
@@ -51,5 +60,9 @@ jobs:
           shared-key: "${{ runner.os }}-rust-macos"
       - name: Build
         run: cargo build --all-features --verbose
-      - name: Run tests
+      - name: Run tests of all features
         run: cargo test --all-features --verbose
+      - name: Run tests of all default features
+        run: cargo test --verbose
+      - name: Run tests of no featues
+        run: cargo test --no-default-features --verbose
