@@ -338,6 +338,17 @@ pub struct MaterialSettings {
     pub initial_layer: u32,
 }
 
+impl Default for MaterialSettings {
+    fn default() -> Self {
+        Self {
+            topology: Topology::TriangleList,
+            line_width: 1.0,
+            texture: None,
+            initial_layer: 0,
+        }
+    }
+}
+
 /// Holds compiled shaders in form of ShaderModules to use in a material.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shaders {

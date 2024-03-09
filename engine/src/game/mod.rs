@@ -380,6 +380,7 @@ impl Default for Time {
 
 impl Time {
     /// Updates the time data on frame redraw.
+    #[inline]
     pub(crate) fn update(&self) {
         self.delta_time.store(
             self.delta_instant.load().elapsed().unwrap().as_secs_f64(),
@@ -389,26 +390,31 @@ impl Time {
     }
 
     /// Returns the time it took to execute last iteration.
+    #[inline]
     pub fn delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire) * self.scale()
     }
 
     /// Returns the delta time of the update iteration that does not scale with the time scale.
+    #[inline]
     pub fn unscaled_delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire)
     }
 
     /// Returns the frames per second.
+    #[inline]
     pub fn fps(&self) -> f64 {
         1.0 / self.delta_time.load(Ordering::Acquire)
     }
 
     /// Returns the time since start of the engine game session.
+    #[inline]
     pub fn time(&self) -> f64 {
         self.time.elapsed().unwrap().as_secs_f64()
     }
 
     /// Returns the time scale of the game
+    #[inline]
     pub fn scale(&self) -> f64 {
         self.time_scale.load(Ordering::Acquire)
     }
@@ -416,6 +422,7 @@ impl Time {
     /// Sets the time scale of the game.
     ///
     /// Panics if the given time scale is negative.
+    #[inline]
     pub fn set_scale(&self, time_scale: f64) {
         if time_scale.is_sign_negative() {
             panic!("A negative time scale was given.");
@@ -427,6 +434,7 @@ impl Time {
     }
 
     /// Sleeps the given duration times the time scale of the game engine.
+    #[inline]
     pub fn sleep(&self, duration: Duration) {
         spin_sleep::sleep(duration.mul_f64(self.time_scale.load(Ordering::Acquire)));
     }

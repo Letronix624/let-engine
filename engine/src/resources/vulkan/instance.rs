@@ -3,7 +3,7 @@ use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::{
     physical::PhysicalDeviceType, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
 };
-use vulkano::device::{Device, Features, Queue, QueueFlags};
+use vulkano::device::{Device, DeviceFeatures, Queue, QueueFlags};
 use vulkano::instance::{InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
@@ -60,7 +60,7 @@ pub fn create_device_extensions() -> DeviceExtensions {
 pub fn create_physical_device(
     instance: &Arc<vulkano::instance::Instance>,
     device_extensions: DeviceExtensions,
-    features: Features,
+    features: DeviceFeatures,
     surface: &Arc<Surface>,
 ) -> Result<(Arc<PhysicalDevice>, u32), EngineStartError> {
     // selects the physical device to be used using this order of preferred devices.
@@ -100,7 +100,7 @@ pub fn create_physical_device(
 pub fn create_device_and_queues(
     physical_device: &Arc<PhysicalDevice>,
     device_extensions: &DeviceExtensions,
-    features: Features,
+    features: DeviceFeatures,
     queue_family_index: u32,
 ) -> Result<(Arc<Device>, Arc<Queue>), EngineStartError> {
     let (device, mut queues) = Device::new(

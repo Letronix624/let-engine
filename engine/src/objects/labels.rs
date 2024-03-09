@@ -425,7 +425,6 @@ impl Labelifier {
                     break brush_action;
                 }
                 Err(BrushError::TextureTooSmall { suggested }) => {
-                    dbg!(suggested);
                     self.glyph_brush.resize_texture(suggested.0, suggested.1);
                     let mut new_buffer =
                         ImageBuffer::from_pixel(suggested.0, suggested.1, Luma([0u8]));

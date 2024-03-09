@@ -136,6 +136,10 @@ audio = [ "dep:kira", "client" ]
 physics = [ "dep:rapier2d" ]
 asset_system = [ ]
 serde = [ "glam/serde" ]
+
+rand = [ "glam/rand" ]
+fast-math = [ "glam/fast-math" ]
+
 # asset system compression algorithms
 deflate = [ "dep:flate2" ]
 bzip2 = [ "dep:bzip2" ]

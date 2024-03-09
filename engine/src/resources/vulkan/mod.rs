@@ -13,7 +13,7 @@ use anyhow::{Context, Error, Result};
 #[cfg(feature = "vulkan_debug_utils")]
 use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
-    device::{Device, Features, Queue},
+    device::{Device, DeviceFeatures, Queue},
     image::{view::ImageView, Image},
     pipeline::{
         graphics::{vertex_input::Vertex, viewport::Viewport},
@@ -56,10 +56,10 @@ impl Vulkan {
             window::create_window(event_loop.get().ok_or(Error::msg("There was a problem getting the event loop."))?, &instance, WindowBuilder::new())?;
 
         let device_extensions = instance::create_device_extensions();
-        let features = Features {
+        let features = DeviceFeatures {
             fill_mode_non_solid: true,
             wide_lines: true,
-            ..Features::empty()
+            ..DeviceFeatures::empty()
         };
         let (physical_device, queue_family_index) =
             instance::create_physical_device(&instance, device_extensions, features, &surface)?;

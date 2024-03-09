@@ -71,6 +71,22 @@ impl Transform {
     }
 }
 
+impl From<(Vec2, f32)> for Transform {
+    fn from(value: (Vec2, f32)) -> Self {
+        Self {
+            position: value.0,
+            rotation: value.1,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<Transform> for (Vec2, f32) {
+    fn from(value: Transform) -> Self {
+        (value.position, value.rotation)
+    }
+}
+
 impl Default for Transform {
     fn default() -> Self {
         Self {
@@ -191,7 +207,7 @@ impl Node<Object> {
 /// Object to be initialized to the layer.
 #[derive(Default, Clone, Builder, PartialEq, Debug)]
 pub struct NewObject {
-    #[builder(setter(into))]
+    #[builder(setter(into), default)]
     pub transform: Transform,
     #[builder(setter(into))]
     #[cfg(feature = "client")]
@@ -567,6 +583,33 @@ impl Object {
         node.update_children_position(self.public_transform());
         node.object = self.clone();
         Ok(())
+    }
+
+    /// Moves an object to the given index in the children order of the object it is inside right now.
+    ///
+    /// It returns an error in case the given index is not covered.
+    pub fn move_to(&self, index: usize) -> Result<(), ObjectError> {
+        self.layer().move_to(self, index)
+    }
+
+    /// Moves an object up one item in it's parents children order.
+    pub fn move_up(&self) -> Result<(), ObjectError> {
+        self.layer().move_up(self)
+    }
+
+    /// Moves an object down one item in it's parents children order.
+    pub fn move_down(&self) -> Result<(), ObjectError> {
+        self.layer().move_down(self)
+    }
+
+    /// Moves an object completely up in it's parents children order.
+    pub fn move_to_top(&self) -> Result<(), ObjectError> {
+        self.layer().move_to_top(self)
+    }
+
+    /// Moves an object completely down in it's parents children order.
+    pub fn move_to_bottom(&self) -> Result<(), ObjectError> {
+        self.layer().move_to_bottom(self)
     }
 }
 

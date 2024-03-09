@@ -266,9 +266,7 @@ impl Layer {
     }
 
     /// Moves an object on the given index in it's parents children order.
-    ///
-    /// Returns
-    pub fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
+    pub(crate) fn move_to(&self, object: &Object, index: usize) -> Result<(), ObjectError> {
         let node = object.as_node()?;
         let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
 
@@ -283,7 +281,7 @@ impl Layer {
     }
 
     /// Moves an object one up in it's parents children order.
-    pub fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
+    pub(crate) fn move_up(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node()?;
         if Arc::ptr_eq(&node, &self.root) {
             return Err(ObjectError::NoParent);
@@ -295,39 +293,42 @@ impl Layer {
                 "Object already on the top of the current layer.".to_string(),
             ));
         } else {
-            Self::move_object_to(node, index - 1);
+            let dst_node = parent.lock().children.get(index - 1).unwrap().clone();
+            Self::swap_objects(node, dst_node);
         }
         Ok(())
     }
 
     /// Moves an object one down in it's parents children order.
-    pub fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
+    pub(crate) fn move_down(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node()?;
         if Arc::ptr_eq(&node, &self.root) {
             return Err(ObjectError::NoParent);
         }
         let parent = node.lock().object.parent_node();
-        let count = Self::count_children(&node).ok_or(ObjectError::NoParent)?;
         let index = Self::find_child_index(&parent, &node).ok_or(ObjectError::NoParent)?;
-        if count == index {
-            return Err(ObjectError::Move(format!(
+
+        let dst_node = parent
+            .lock()
+            .children
+            .get(index + 1)
+            .ok_or(ObjectError::Move(format!(
                 "Object already at the bottom of the layer: {index}"
-            )));
-        } else {
-            Self::move_object_to(node, count + 1);
-        }
+            )))?
+            .clone();
+        Self::swap_objects(node, dst_node);
         Ok(())
     }
 
     /// Moves an object all the way to the top of it's parents children list.
-    pub fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
+    pub(crate) fn move_to_top(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node()?;
         Self::move_object_to(node, 0);
         Ok(())
     }
 
     /// Moves an object all the way to the bottom of it's parents children list.
-    pub fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
+    pub(crate) fn move_to_bottom(&self, object: &Object) -> Result<(), ObjectError> {
         let node = object.as_node()?;
         let count = Self::count_children(&node).ok_or(ObjectError::NoParent)? - 1;
         Self::move_object_to(node, count);
@@ -369,9 +370,23 @@ impl Layer {
         parent.children.insert(dst, element);
     }
 
-    pub fn children_count(&self, parent: &Object) -> Result<usize, ObjectError> {
-        let node = parent.as_node()?;
-        Self::count_children(&node).ok_or(ObjectError::NoParent)
+    fn swap_objects(src: NObject, dst: NObject) {
+        let parent = src.lock().object.parent_node();
+        let mut parent = parent.lock();
+        let src_index = parent
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::ptr_eq(&x, &src))
+            .unwrap();
+        let dst_index = parent
+            .children
+            .clone()
+            .into_iter()
+            .position(|x| Arc::ptr_eq(&x, &dst))
+            .unwrap();
+
+        parent.children.swap(src_index, dst_index);
     }
 }
 
@@ -556,10 +571,9 @@ impl Layer {
                     .rigid_body_set
                     .get(node.object.rigidbody_handle().unwrap())
                     .unwrap();
-                node.object.set_isometry(
-                    (*rigid_body.translation()).into(),
-                    rigid_body.rotation().angle(),
-                );
+                let position: Vec2 = (*rigid_body.translation()).into();
+                node.object
+                    .set_isometry(position, rigid_body.rotation().angle());
             }
         }
     }
