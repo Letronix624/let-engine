@@ -327,6 +327,8 @@ impl Labelifier {
             .to_builder()
             .initial_cache_size((256, 256))
             .rebuild(&mut self.glyph_brush);
+        let dims = self.glyph_brush.texture_dimensions();
+        self.cache_pixel_buffer = ImageBuffer::from_pixel(dims.0, dims.1, image::Luma([0u8]));
     }
 
     /// Increments the tasks number by one and returns the last id.

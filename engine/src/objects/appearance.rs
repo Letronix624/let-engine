@@ -19,7 +19,7 @@ impl Eq for Appearance {}
 
 use paste::paste;
 
-// Just a macro that removes boilerplate getters and setters to be easily added with just one macro.
+/// Just a macro that removes boilerplate getters and setters to be easily added with just one macro.
 macro_rules! getters_and_setters {
     ($field:ident, $title:expr, $type:ty) => {
         #[doc=concat!("Sets ", $title, " of this appearance and returns self.")]

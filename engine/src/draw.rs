@@ -96,7 +96,7 @@ impl Draw {
         &self.window
     }
 
-    /// Recreates the swapchain in case it's out of date if someone for example changed the scene size or window dimensions.
+    /// Recreates the swapchain in case it is out of date if someone for example changed the scene size or window dimensions.
     fn recreate_swapchain(&mut self) -> Result<(), VulkanError> {
         if SETTINGS
             .graphics
@@ -457,14 +457,7 @@ impl Draw {
             .then_signal_fence_and_flush();
 
         match future.map_err(Validated::unwrap) {
-            Ok(mut future) => {
-                if SETTINGS
-                    .graphics
-                    .cleanup
-                    .swap(false, std::sync::atomic::Ordering::AcqRel)
-                {
-                    future.cleanup_finished();
-                }
+            Ok(future) => {
                 self.previous_frame_end = Some(future.boxed());
             }
             Err(VulkanoError::OutOfDate) => {

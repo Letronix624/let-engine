@@ -72,7 +72,7 @@ impl std::fmt::Debug for Material {
 }
 /// Making
 ///
-/// Right now it produces an error when the shaders don't have a main function.
+/// Right now it produces an error when the shaders do not have a main function.
 impl Material {
     /// Creates a new material using the given shaders, settings and write operations.
     pub fn new_with_shaders(
@@ -362,13 +362,12 @@ impl Shaders {
     ///
     /// # Safety
     ///
-    /// When loading those shaders the engine doesn't know if they are right.
-    /// So when they are wrong I'm not sure what will happen. Make it right!
+    /// When loading those shaders the engine does not know if they are right.
+    /// So when they are wrong I am not sure what will happen. Make it right!
     pub unsafe fn from_bytes(
         vertex_bytes: &[u8],
         fragment_bytes: &[u8],
         entry_point: &str,
-        // layout: &[Box<dyn BufferContents + Any>],
     ) -> Result<Self, ShaderError> {
         let resources = &RESOURCES;
         let device = resources.vulkan().clone().device;

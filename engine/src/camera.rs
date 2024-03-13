@@ -5,7 +5,7 @@ use std::f32::consts::FRAC_1_SQRT_2;
 use glam::{vec2, Vec2};
 
 /// The 4 Camera scaling modes determine how far you can see when the window changes scale.
-/// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it's not on stretch mode.
+/// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it is not on stretch mode.
 ///
 /// The view size can be bigger or smaller depending on the zoom value. When -1 or 1 is mentioned we are talking about the default zoom of 1.
 ///
@@ -17,7 +17,7 @@ pub enum CameraScaling {
     Stretch = 1,
     /// Tries to have the same width\*height surface area all the time. When Making the window really thin you can see the same surface area, so you could see really far.
     Linear = 2,
-    /// It's similar to Linear but you can't look that far the tighter the window is.
+    /// It is similar to Linear but you can not look that far the tighter the window is.
     Circle = 3,
     /// The biggest side is always -1 to 1. Simple and more unfair the tighter your window is.
     Limited = 4,

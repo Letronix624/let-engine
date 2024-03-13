@@ -285,7 +285,7 @@ impl Engine {
                                 }
                                 _ => events::Event::Destroyed,
                             };
-                            // destroy event can't be called here so I did the most lazy approach possible.
+                            // destroy event can not be called here so I did the most lazy approach possible.
                             if let events::Event::Destroyed = event {
                             } else {
                                 game.lock().event(event);

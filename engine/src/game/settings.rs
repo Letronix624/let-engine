@@ -161,7 +161,6 @@ pub struct Graphics {
     framerate_limit: Mutex<Duration>,
     pub(crate) available_present_modes: OnceLock<Vec<PresentMode>>,
     pub(crate) recreate_swapchain: AtomicBool,
-    pub(crate) cleanup: AtomicBool,
 }
 
 #[cfg(feature = "client")]
@@ -172,7 +171,6 @@ impl Graphics {
             framerate_limit: Mutex::new(Duration::from_secs(0)),
             available_present_modes: OnceLock::new(),
             recreate_swapchain: false.into(),
-            cleanup: false.into(),
         }
     }
 

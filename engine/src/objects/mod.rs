@@ -452,14 +452,14 @@ impl Object {
         self.parent_node.as_ref().unwrap().upgrade().unwrap()
     }
 
-    /// Removes the object from it's layer.
+    /// Removes the object from it's layer in case it is still initialized.
     #[allow(unused_mut)]
-    pub fn remove(mut self) -> NewObject {
+    pub fn remove(mut self) -> Result<NewObject> {
         let layer = self.layer.as_ref().unwrap();
         let mut map = layer.objects_map.lock();
         #[cfg(feature = "physics")]
         let mut rigid_bodies = layer.rigid_body_roots().lock();
-        let node = map.remove(&self.id).unwrap();
+        let node = map.remove(&self.id).ok_or(ObjectError::Uninit)?;
 
         #[cfg(feature = "physics")]
         {
@@ -476,15 +476,15 @@ impl Object {
         );
 
         let mut parent_node = self.parent_node();
-        parent_node.lock().remove_child(&node).unwrap();
+        parent_node.lock().remove_child(&node)?;
 
-        NewObject {
+        Ok(NewObject {
             transform: self.transform,
             #[cfg(feature = "client")]
             appearance: self.appearance,
             #[cfg(feature = "physics")]
             physics: self.physics,
-        }
+        })
     }
 
     /// Makes a new object from this object.

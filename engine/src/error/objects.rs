@@ -4,12 +4,12 @@
 use thiserror::Error;
 
 /// This error gets returned when the layer that gets specified when an object needs to get added
-/// doesn't exit in the objects list anymore.
+/// does not exit in the objects list anymore.
 #[derive(Error, Debug)]
 #[error("No Layer found")]
 pub struct NoLayerError;
 
-/// This error gets returned when one of the objects input into register_joint doesn't have a rigid body to attach the joint to.
+/// This error gets returned when one of the objects input into register_joint does not have a rigid body to attach the joint to.
 #[derive(Error, Debug)]
 #[error("One of the objects does not have a rigid body")]
 pub struct NoRigidBodyError;

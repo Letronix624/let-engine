@@ -98,7 +98,7 @@ impl Window {
 
     /// Returns whether the window is visible.
     ///
-    /// `None` means it can't be determined if the window is visible or not.
+    /// `None` means it can not be determined if the window is visible or not.
     #[inline]
     pub fn visible(&self) -> Option<bool> {
         self.window.is_visible()
@@ -158,7 +158,7 @@ impl Window {
 
     /// Returns whether the window is minimized.
     ///
-    /// `None` gets returned if it couldn'd be determined if the window is minimized.
+    /// `None` gets returned if it could not be determined if the window is minimized.
     #[inline]
     pub fn minimized(&self) -> Option<bool> {
         self.window.is_minimized()
@@ -245,8 +245,8 @@ impl Window {
 
     /// Makes the cursor invisible mostly just within the confines of the window.
     #[inline]
-    pub fn set_cursor_visible(&self, mode: CursorGrabMode) -> Result<(), ExternalError> {
-        self.window.set_cursor_grab(mode)
+    pub fn set_cursor_visible(&self, visible: bool) {
+        self.window.set_cursor_visible(visible)
     }
 
     /// Drags the window with the left mouse button until it's released.
