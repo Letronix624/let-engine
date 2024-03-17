@@ -20,7 +20,7 @@ use vulkano::{
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     pipeline::{
         cache::{PipelineCache, PipelineCacheCreateInfo},
-        Pipeline,
+        GraphicsPipeline, Pipeline,
     },
     DeviceSize,
 };
@@ -37,11 +37,12 @@ pub(crate) struct Loader {
     pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
     pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     pub pipeline_cache: Arc<PipelineCache>,
+    pub pipelines: Vec<Arc<GraphicsPipeline>>,
 }
 
 impl Loader {
     /// Initializes the loader
-    pub fn init(vulkan: &Vulkan) -> Result<Self> {
+    pub fn init(vulkan: &Vulkan, pipelines: Vec<Arc<GraphicsPipeline>>) -> Result<Self> {
         let memory_allocator =
             Arc::new(StandardMemoryAllocator::new_default(vulkan.device.clone()));
 
@@ -111,12 +112,13 @@ impl Loader {
             descriptor_set_allocator,
             command_buffer_allocator,
             pipeline_cache,
+            pipelines,
         })
     }
 
     /// Loads a texture to the GPU.
     pub fn load_texture(
-        &self,
+        &mut self,
         vulkan: &Vulkan,
         data: Arc<[u8]>,
         dimensions: (u32, u32),
@@ -197,10 +199,10 @@ impl Loader {
         let texture_view = ImageView::new(
             image.clone(),
             ImageViewCreateInfo {
-                view_type: if layers == 1 {
+                view_type: if layers <= 1 {
                     set_layout = vulkan
                         .textured_material
-                        .pipeline
+                        .get_pipeline_or_recreate(self)?
                         .layout()
                         .set_layouts()
                         .get(1)
@@ -212,12 +214,12 @@ impl Loader {
                 } else {
                     set_layout = vulkan
                         .texture_array_material
-                        .pipeline
+                        .get_pipeline_or_recreate(self)?
                         .layout()
                         .set_layouts()
                         .get(1)
                         .ok_or(Error::msg(
-                            "failed to get second set of the texture layout.",
+                            "failed to get second set of the texture array layout.",
                         ))?
                         .clone();
                     ImageViewType::Dim2dArray

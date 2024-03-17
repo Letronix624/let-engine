@@ -1,5 +1,6 @@
 use crate::{error::draw::*, prelude::*};
 use anyhow::Result;
+use parking_lot::RwLock;
 use std::sync::Arc;
 use vulkano::{
     command_buffer::{
@@ -8,7 +9,7 @@ use vulkano::{
         SubpassContents,
     },
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
-    pipeline::{graphics::viewport::Viewport, GraphicsPipeline, Pipeline},
+    pipeline::{graphics::viewport::Viewport, Pipeline},
     render_pass::Framebuffer,
     swapchain::{
         acquire_next_image, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
@@ -25,17 +26,20 @@ use super::resources::vulkan::{
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
 use glam::f32::{Mat4, Quat, Vec3};
 
+pub static VIEWPORT: RwLock<Viewport> = RwLock::new(Viewport {
+    offset: [0.0; 2],
+    extent: [0.0; 2],
+    depth_range: 0.0..=1.0,
+});
+
 /// Responsible for drawing on the surface.
 pub struct Draw {
     pub surface: Arc<Surface>,
     pub window: Arc<Window>,
     pub(crate) swapchain: Arc<Swapchain>,
-    pub(crate) viewport: Viewport,
     pub(crate) framebuffers: Vec<Arc<Framebuffer>>,
     pub(crate) previous_frame_end: Option<Box<dyn GpuFuture>>,
     dimensions: [u32; 2],
-    default_pipeline: Arc<GraphicsPipeline>,
-    default_instance_pipeline: Arc<GraphicsPipeline>,
 }
 
 impl Draw {
@@ -54,13 +58,15 @@ impl Draw {
         let (swapchain, images) = create_swapchain_and_images(&vulkan.device, &surface)?;
 
         let mut viewport = Viewport {
-            offset: [0.0, 0.0],
-            extent: [0.0, 0.0],
+            offset: [0.0; 2],
+            extent: [0.0; 2],
             depth_range: 0.0..=1.0,
         };
 
         let framebuffers =
             window_size_dependent_setup(&images, vulkan.render_pass.clone(), &mut viewport)?;
+
+        *VIEWPORT.write() = viewport;
 
         let uploads = RecordingCommandBuffer::new(
             loader.command_buffer_allocator.clone(),
@@ -76,19 +82,13 @@ impl Draw {
 
         let dimensions = [0; 2];
 
-        let default_pipeline = vulkan.default_material.pipeline.clone();
-        let default_instance_pipeline = vulkan.default_instance_material.pipeline.clone();
-
         Ok(Self {
             surface,
             window,
             swapchain,
-            viewport,
             framebuffers,
             previous_frame_end,
             dimensions,
-            default_pipeline,
-            default_instance_pipeline,
         })
     }
 
@@ -97,7 +97,7 @@ impl Draw {
     }
 
     /// Recreates the swapchain in case it is out of date if someone for example changed the scene size or window dimensions.
-    fn recreate_swapchain(&mut self) -> Result<(), VulkanError> {
+    fn recreate_swapchain(&mut self, loader: &mut Loader) -> Result<(), VulkanError> {
         if SETTINGS
             .graphics
             .recreate_swapchain
@@ -119,9 +119,10 @@ impl Draw {
             self.framebuffers = window_size_dependent_setup(
                 &new_images,
                 resources.vulkan().render_pass.clone(),
-                &mut self.viewport,
+                &mut VIEWPORT.write(),
             )
             .map_err(VulkanError::Other)?;
+            loader.pipelines.clear();
             SETTINGS
                 .graphics
                 .recreate_swapchain
@@ -181,7 +182,7 @@ impl Draw {
         .map_err(Validated::unwrap)
         .map_err(VulkanError::Validated)?;
         secondary_builder
-            .set_viewport(0, [self.viewport.clone()].into_iter().collect())
+            .set_viewport(0, [VIEWPORT.read().clone()].into_iter().collect())
             .map_err(|e| VulkanError::Other(e.into()))?;
 
         Ok((builder, secondary_builder))
@@ -250,6 +251,7 @@ impl Draw {
                 };
 
                 let resources = &RESOURCES;
+                let vulkan = resources.vulkan();
                 let shapes = resources.shapes().clone();
 
                 let model_data = match model {
@@ -284,15 +286,20 @@ impl Draw {
 
                 // The pipeline of the current object. Takes the default one if there is none.
                 let pipeline = if let Some(material) = appearance.get_material() {
-                    if let Some(texture) = &material.texture {
+                    if let Some(texture) = material.texture() {
                         descriptors.push(texture.set().clone());
                     }
                     if let Some(descriptor) = &material.descriptor {
                         descriptors.push(descriptor.clone());
                     }
-                    material.pipeline.clone()
+                    material
+                        .get_pipeline_or_recreate(loader)
+                        .map_err(VulkanError::Other)?
                 } else {
-                    self.default_pipeline.clone()
+                    vulkan
+                        .default_material
+                        .get_pipeline_or_recreate(loader)
+                        .map_err(VulkanError::Other)?
                 };
 
                 // MVP matrix for the object
@@ -322,7 +329,7 @@ impl Draw {
                     .map_err(|error| VulkanError::Other(error.into()))? = ObjectFrag {
                     color: (*appearance.get_color()).into(),
                     texture_id: if let Some(material) = appearance.get_material() {
-                        material.layer
+                        material.layer()
                     } else {
                         0
                     },
@@ -384,21 +391,27 @@ impl Draw {
                     .copy_from_slice(&data);
 
                 let mut descriptors = vec![];
+                let resources = &RESOURCES;
+                let vulkan = resources.vulkan();
 
                 // The pipeline of the current object. Takes the default one if there is none.
                 let pipeline = if let Some(material) = &instance.material {
-                    if let Some(texture) = &material.texture {
+                    if let Some(texture) = material.texture() {
                         descriptors.push(texture.set().clone());
                     }
                     if let Some(descriptor) = &material.descriptor {
                         descriptors.push(descriptor.clone());
                     }
-                    material.pipeline.clone()
+                    material
+                        .get_pipeline_or_recreate(loader)
+                        .map_err(VulkanError::Other)?
                 } else {
-                    self.default_instance_pipeline.clone()
+                    vulkan
+                        .default_instance_material
+                        .get_pipeline_or_recreate(loader)
+                        .map_err(VulkanError::Other)?
                 };
 
-                let resources = &RESOURCES;
                 let shapes = resources.shapes().clone();
                 let model = match &model {
                     Model::Custom(data) => data,
@@ -504,7 +517,7 @@ impl Draw {
             return Ok(());
         }
 
-        Self::recreate_swapchain(self)?;
+        Self::recreate_swapchain(self, &mut loader)?;
 
         let (image_num, suboptimal, acquire_future) =
             match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {

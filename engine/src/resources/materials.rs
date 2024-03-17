@@ -8,30 +8,26 @@ use crate::{
     prelude::{InstanceData, Texture, Vertex as GameVertex},
 };
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Error, Result};
 use derive_builder::Builder;
-use std::sync::Arc;
+use parking_lot::Mutex;
+use std::sync::{Arc, Weak};
 
 use vulkano::{
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
     pipeline::{
         graphics::{
-            color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
             input_assembly::{InputAssemblyState, PrimitiveTopology},
-            multisample::MultisampleState,
             rasterization::RasterizationState,
             vertex_input::{Vertex, VertexDefinition},
-            viewport::ViewportState,
-            GraphicsPipelineCreateInfo,
         },
-        layout::PipelineDescriptorSetLayoutCreateInfo,
-        DynamicState, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+        GraphicsPipeline, Pipeline,
     },
     render_pass::Subpass,
     shader::{spirv::bytes_to_words, ShaderModule, ShaderModuleCreateInfo},
 };
 
-use super::RESOURCES;
+use super::{vulkan::pipeline::create_pipeline, Loader, RESOURCES};
 // pub use vulkano::pipeline::graphics::rasterization::LineStipple;
 
 /// The way in which an object gets drawn using it's vertices and indices.
@@ -49,16 +45,36 @@ pub enum Topology {
     PointList,
 }
 
+impl From<Topology> for PrimitiveTopology {
+    fn from(value: Topology) -> Self {
+        match value {
+            Topology::TriangleList => PrimitiveTopology::TriangleList,
+            Topology::TriangleStrip => PrimitiveTopology::TriangleStrip,
+            Topology::LineList => PrimitiveTopology::LineList,
+            Topology::LineStrip => PrimitiveTopology::LineStrip,
+            Topology::PointList => PrimitiveTopology::PointList,
+        }
+    }
+}
+
 /// A material holding the way an object should be drawn.
 ///
 /// It takes some time to make a new material.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Material {
-    pub(crate) pipeline: Arc<GraphicsPipeline>,
-    pub(crate) instanced: bool,
+    pub(crate) pipeline: Arc<Mutex<Weak<GraphicsPipeline>>>,
+    instanced: bool,
     pub(crate) descriptor: Option<Arc<DescriptorSet>>,
-    pub(crate) texture: Option<Texture>,
-    pub(crate) layer: u32,
+    texture: Option<Texture>,
+    layer: u32,
+    settings: MaterialSettings,
+    shaders: Shaders,
+}
+
+impl PartialEq for Material {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.pipeline, &other.pipeline) && self.descriptor == other.descriptor
+    }
 }
 
 impl std::fmt::Debug for Material {
@@ -74,9 +90,25 @@ impl std::fmt::Debug for Material {
 ///
 /// Right now it produces an error when the shaders do not have a main function.
 impl Material {
+    pub(crate) fn from_pipeline(
+        pipeline: &Arc<GraphicsPipeline>,
+        instanced: bool,
+        shaders: Shaders,
+    ) -> Self {
+        Self {
+            pipeline: Arc::new(Mutex::new(Arc::downgrade(pipeline))),
+            instanced,
+            descriptor: None,
+            texture: None,
+            layer: 0,
+            settings: MaterialSettings::default(),
+            shaders,
+        }
+    }
     /// Creates a new material using the given shaders, settings and write operations.
     pub fn new_with_shaders(
         settings: MaterialSettings,
+        texture: Option<Texture>,
         shaders: &Shaders,
         instanced: bool,
         writes: Vec<WriteDescriptorSet>,
@@ -90,79 +122,52 @@ impl Material {
             .entry_point(&shaders.entry_point)
             .ok_or(VulkanError::ShaderError)?;
 
-        let topology: PrimitiveTopology = match settings.topology {
-            Topology::TriangleList => PrimitiveTopology::TriangleList,
-            Topology::TriangleStrip => PrimitiveTopology::TriangleStrip,
-            Topology::LineList => PrimitiveTopology::LineList,
-            Topology::LineStrip => PrimitiveTopology::LineStrip,
-            Topology::PointList => PrimitiveTopology::PointList,
-        };
+        let topology: PrimitiveTopology = settings.topology.into();
 
         // let line_stipple = settings.line_stripple.map(StateMode::Fixed);
 
         let resources = &RESOURCES;
-        let loader = resources.loader().lock();
+        let mut loader = resources.loader().lock();
         let vulkan = resources.vulkan();
         let pipeline_cache = loader.pipeline_cache.clone();
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0)
             .ok_or(VulkanError::Other(Error::msg("Failed to make subpass.")))?;
-        let allocator = &loader.descriptor_set_allocator;
 
         let input_assembly = InputAssemblyState {
             topology,
             ..Default::default()
         };
-        let stages = [
-            PipelineShaderStageCreateInfo::new(vertex.clone()),
-            PipelineShaderStageCreateInfo::new(fragment.clone()),
-        ];
-        let layout = PipelineLayout::new(
-            vulkan.device.clone(),
-            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                .into_pipeline_layout_create_info(vulkan.device.clone())
-                .map_err(|e| VulkanError::Other(e.into()))?,
-        )?;
 
         let vertex_input_state = if instanced {
             [GameVertex::per_vertex(), InstanceData::per_instance()]
                 .definition(&vertex.info().input_interface)
-                .map_err(|e| VulkanError::Other(e.into()))?
         } else {
-            GameVertex::per_vertex()
-                .definition(&vertex.info().input_interface)
-                .map_err(|e| VulkanError::Other(e.into()))?
+            [GameVertex::per_vertex()].definition(&vertex.info().input_interface)
+        }
+        .map_err(|e| VulkanError::Other(e.into()))?;
+
+        let rasterisation_state = RasterizationState {
+            line_width: settings.line_width,
+            ..RasterizationState::default()
         };
 
-        let pipeline = GraphicsPipeline::new(
-            vulkan.device.clone(),
-            Some(pipeline_cache.clone()),
-            GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(vertex_input_state),
-                input_assembly_state: Some(input_assembly),
-                viewport_state: Some(ViewportState::default()),
-                rasterization_state: Some(RasterizationState {
-                    line_width: settings.line_width,
-                    // line_stipple,
-                    ..RasterizationState::default()
-                }),
-                multisample_state: Some(MultisampleState::default()),
-                color_blend_state: Some(ColorBlendState::with_attachment_states(
-                    subpass.num_color_attachments(),
-                    ColorBlendAttachmentState {
-                        blend: Some(AttachmentBlend::alpha()),
-                        ..Default::default()
-                    },
-                )),
-                dynamic_state: [DynamicState::Viewport].into_iter().collect(),
-                subpass: Some(subpass.into()),
-                ..GraphicsPipelineCreateInfo::layout(layout)
-            },
+        let pipeline = create_pipeline(
+            &vulkan.device,
+            vertex,
+            fragment,
+            input_assembly,
+            subpass,
+            vertex_input_state,
+            rasterisation_state,
+            Some(pipeline_cache),
         )
-        .map_err(|e| VulkanError::Other(e.into()))?;
+        .map_err(VulkanError::Other)?;
+
+        loader.pipelines.push(pipeline.clone());
+
         let descriptor = if !writes.is_empty() {
             Some(DescriptorSet::new(
-                allocator.clone(),
+                loader.descriptor_set_allocator.clone(),
                 pipeline
                     .layout()
                     .set_layouts()
@@ -171,33 +176,41 @@ impl Material {
                         "Failed to get the second set of the pipeline layout.",
                     )))?
                     .clone(),
-                writes,
+                writes.clone(),
                 [],
             )?)
         } else {
             None
         };
         Ok(Self {
-            pipeline,
+            pipeline: Arc::new(Mutex::new(Arc::downgrade(&pipeline))),
             descriptor,
             instanced,
             layer: settings.initial_layer,
-            texture: settings.texture,
+            texture,
+            settings,
+            shaders: shaders.clone(),
         })
     }
 
     /// Makes a new default material.
-    pub fn new(settings: MaterialSettings) -> Result<Material, VulkanError> {
+    pub fn new(
+        settings: MaterialSettings,
+        texture: Option<Texture>,
+    ) -> Result<Material, VulkanError> {
         let resources = &RESOURCES;
         let shaders = resources.vulkan().clone().default_shaders;
-        Self::new_with_shaders(settings, &shaders, false, vec![])
+        Self::new_with_shaders(settings, texture, &shaders, false, vec![])
     }
 
     /// Makes a new default material.
-    pub fn new_instanced(settings: MaterialSettings) -> Result<Material, VulkanError> {
+    pub fn new_instanced(
+        settings: MaterialSettings,
+        texture: Option<Texture>,
+    ) -> Result<Material, VulkanError> {
         let resources = &RESOURCES;
         let shaders = resources.vulkan().clone().default_instance_shaders;
-        Self::new_with_shaders(settings, &shaders, true, vec![])
+        Self::new_with_shaders(settings, texture, &shaders, true, vec![])
     }
 
     /// Creates a simple material made just for showing a texture.
@@ -213,6 +226,8 @@ impl Material {
             ..default
         }
     }
+
+    /// Creates a default material instance with a texture.
     pub fn new_default_textured_instance(texture: &Texture) -> Material {
         let resources = &RESOURCES;
         let default = if texture.layers() == 1 {
@@ -225,6 +240,72 @@ impl Material {
             ..default
         }
     }
+
+    /// Returns the graphics pipeline, but in case it is out of date reloads it from the beginning.
+    ///
+    /// ## How the system works
+    ///
+    /// A material contains a graphics pipeline that because this game engine is not working with a dynamic viewport goes
+    /// out of date as soon as the window size has changed.
+    ///
+    /// Every material only has a weak pointer to the pipeline they are working with. That means there is also a strong pointer
+    /// somewhere. The loader struct contains a vec of arcs with all the graphics pipelines that get cleared on window resize
+    /// making the weak pointer invalid and return a `None`. This function returns the Some if the weak pointer or remakes the
+    /// whole pipeline returning it instead.
+    pub(crate) fn get_pipeline_or_recreate(
+        &self,
+        loader: &mut Loader,
+    ) -> Result<Arc<GraphicsPipeline>> {
+        if let Some(pipeline) = self.pipeline.lock().upgrade() {
+            return Ok(pipeline);
+        }
+        let vulkan = RESOURCES.vulkan();
+        let vertex = self
+            .shaders
+            .vertex
+            .entry_point(&self.shaders.entry_point)
+            .ok_or(anyhow!("Entry point changed during runtime."))?;
+        let fragment = self
+            .shaders
+            .fragment
+            .entry_point(&self.shaders.entry_point)
+            .ok_or(anyhow!("Entry point changed during runtime."))?;
+
+        let subpass = Subpass::from(vulkan.render_pass.clone(), 0)
+            .ok_or(anyhow!("Failed to create subpass from the render pass."))?;
+
+        let input_assembly = InputAssemblyState {
+            topology: self.settings.topology.into(),
+            ..Default::default()
+        };
+
+        let vertex_input_state = if self.instanced {
+            [GameVertex::per_vertex(), InstanceData::per_instance()]
+                .definition(&vertex.info().input_interface)
+        } else {
+            [GameVertex::per_vertex()].definition(&vertex.info().input_interface)
+        }?;
+
+        let rasterisation_state = RasterizationState {
+            line_width: self.settings.line_width,
+            ..RasterizationState::default()
+        };
+
+        let pipeline = create_pipeline(
+            &vulkan.device,
+            vertex,
+            fragment,
+            input_assembly,
+            subpass,
+            vertex_input_state,
+            rasterisation_state,
+            Some(loader.pipeline_cache.clone()),
+        )?;
+
+        loader.pipelines.push(pipeline.clone());
+        *self.pipeline.lock() = Arc::downgrade(&pipeline);
+        Ok(pipeline)
+    }
 }
 impl Material {
     /// Writes to the material changing the variables for the shaders.
@@ -233,10 +314,10 @@ impl Material {
     /// The program will crash in case in case the data input here is not as the shader wants it.
     pub unsafe fn write(&mut self, descriptor: Vec<WriteDescriptorSet>) -> Result<()> {
         let resources = &RESOURCES;
-        let loader = resources.loader().lock();
+        let mut loader = resources.loader().lock();
         self.descriptor = Some(DescriptorSet::new(
             loader.descriptor_set_allocator.clone(),
-            self.pipeline
+            self.get_pipeline_or_recreate(&mut loader)?
                 .layout()
                 .set_layouts()
                 .get(1)
@@ -327,12 +408,6 @@ pub struct MaterialSettings {
     /// The width of the line in case the topology was set to something with lines.
     #[builder(setter(into), default = "1.0")]
     pub line_width: f32,
-    // /// The stipple of the line.
-    // #[builder(setter(into), default = "None")]
-    // pub line_stripple: Option<LineStipple>,
-    /// The optional texture of the material.
-    #[builder(setter(into), default = "None")]
-    pub texture: Option<Texture>,
     /// If the texture has multiple layers this is the layer it starts at.
     #[builder(setter(into), default = "0")]
     pub initial_layer: u32,
@@ -343,7 +418,6 @@ impl Default for MaterialSettings {
         Self {
             topology: Topology::TriangleList,
             line_width: 1.0,
-            texture: None,
             initial_layer: 0,
         }
     }

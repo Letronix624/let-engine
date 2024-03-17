@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The auto_scale function of appearance now takes a pixel per unit value.
 - The `init_with_parent` function does not require a layer anymore.
 - Setting an object to invisible makes all children invisible too. For the old effect use `None` as model.
+- Switched from dynamic to fixed viewports, hopefully making games faster when not resizing windows.
 
 ### Fixed
 

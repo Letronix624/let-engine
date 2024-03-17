@@ -5,6 +5,7 @@
 
 - Heavily under development.
 - Not all features are ready. The development phase is Alpha.
+- When using this game engine now I recommend cloning it and when experiencing problems fix them and submit a pull request. Because the stage is Alpha not everything is tested. The focus right now is to push all the features I need.
 
 ## Facts and features
 
@@ -25,15 +26,11 @@
 # Progress
 To do:
 
-- Sounds
-
 - 3D layers
 
 - Post processing
 
 - Serialisation, Deserialisation with Serde
-
-- Resource packing system
 
 - Better labels with text edit and caret
 

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use vulkano::buffer::BufferContents;
 use vulkano::descriptor_set::WriteDescriptorSet;
 use vulkano::pipeline::cache::{PipelineCache, PipelineCacheCreateInfo};
+use vulkano::pipeline::GraphicsPipeline;
 
 mod loader;
 pub(crate) mod vulkan;
@@ -28,8 +29,9 @@ pub mod sounds;
 pub use model::*;
 
 pub(crate) static RESOURCES: Lazy<Resources> = Lazy::new(|| {
-    let vulkan = Vulkan::init().unwrap_or_else(|e| panic!("{e}"));
-    Resources::new(vulkan).unwrap_or_else(|e| panic!("{e}"))
+    let (materials, vulkan) =
+        EVENT_LOOP.with_borrow(|event_loop| Vulkan::init(event_loop).unwrap());
+    Resources::new(vulkan, materials).unwrap_or_else(|e| panic!("{e}"))
 });
 #[cfg(feature = "labels")]
 pub(crate) static LABELIFIER: Lazy<Mutex<Labelifier>> =
@@ -46,8 +48,8 @@ pub(crate) struct Resources {
 }
 
 impl Resources {
-    pub(crate) fn new(vulkan: Vulkan) -> Result<Self> {
-        let loader = Arc::new(Mutex::new(Loader::init(&vulkan).context(
+    pub(crate) fn new(vulkan: Vulkan, materials: Vec<Arc<GraphicsPipeline>>) -> Result<Self> {
+        let loader = Arc::new(Mutex::new(Loader::init(&vulkan, materials).context(
             "Failed to create the graphics loading environment for the game engine.",
         )?));
         let shapes = BasicShapes::new(&loader)

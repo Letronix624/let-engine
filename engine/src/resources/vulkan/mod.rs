@@ -1,28 +1,32 @@
 mod instance;
-mod pipeline;
+pub mod pipeline;
 pub mod shaders;
 pub use shaders::*;
+use vulkano::pipeline::graphics::rasterization::RasterizationState;
+use winit::event_loop::EventLoop;
 #[cfg(feature = "vulkan_debug_utils")]
 mod debug;
 pub mod swapchain;
 pub(crate) mod window;
 
-use crate::prelude::*;
 use crate::resources::data::Vertex as GameVertex;
+use crate::{draw::VIEWPORT, prelude::*};
 use anyhow::{Context, Error, Result};
-#[cfg(feature = "vulkan_debug_utils")]
-use vulkano::instance::debug::DebugUtilsMessenger;
 use vulkano::{
     device::{Device, DeviceFeatures, Queue},
     image::{view::ImageView, Image},
     pipeline::{
-        graphics::{vertex_input::Vertex, viewport::Viewport},
+        graphics::{
+            input_assembly::InputAssemblyState,
+            vertex_input::{Vertex, VertexDefinition},
+            viewport::Viewport,
+        },
         GraphicsPipeline,
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
 };
 
-use std::sync::Arc;
+use std::{cell::OnceCell, sync::Arc};
 
 /// Just a holder of general immutable information about Vulkan.
 #[derive(Clone)]
@@ -41,19 +45,30 @@ pub(crate) struct Vulkan {
     pub default_instance_material: Material,
     pub textured_instance_material: Material,
     pub texture_array_instance_material: Material,
-
-    #[cfg(feature = "vulkan_debug_utils")]
-    _debug: Arc<DebugUtilsMessenger>,
 }
 
 impl Vulkan {
-    pub fn init() -> Result<Self> {
-        EVENT_LOOP.with_borrow(|event_loop| {
-        let instance = instance::create_instance(event_loop.get().ok_or(Error::msg("There was a problem getting the event loop."))?)?;
+    pub fn init(
+        event_loop: &OnceCell<EventLoop<()>>,
+    ) -> Result<(Vec<Arc<GraphicsPipeline>>, Self)> {
+        let instance = instance::create_instance(
+            event_loop
+                .get()
+                .ok_or(Error::msg("There was a problem getting the event loop."))?,
+        )?;
+
         #[cfg(feature = "vulkan_debug_utils")]
-        let _debug = Arc::new(debug::make_debug(&instance)?);
-        let (surface, _window) =
-            window::create_window(event_loop.get().ok_or(Error::msg("There was a problem getting the event loop."))?, &instance, WindowBuilder::new())?;
+        std::mem::forget(debug::make_debug(&instance)?);
+
+        let (surface, window) = window::create_window(
+            event_loop
+                .get()
+                .ok_or(Error::msg("There was a problem getting the event loop."))?,
+            &instance,
+            WindowBuilder::new(),
+        )?;
+
+        VIEWPORT.write().extent = window.inner_size().into();
 
         let device_extensions = instance::create_device_extensions();
         let features = DeviceFeatures {
@@ -86,7 +101,9 @@ impl Vulkan {
             }
         )?;
 
-        let subpass = Subpass::from(render_pass.clone(), 0).ok_or(Error::msg("There was a problem making a subpass from the last render pass."))?;
+        let subpass = Subpass::from(render_pass.clone(), 0).ok_or(Error::msg(
+            "There was a problem making a subpass from the last render pass.",
+        ))?;
 
         //Materials
         let vs = vertex_shader(device.clone())?;
@@ -94,124 +111,174 @@ impl Vulkan {
         let default_shaders = Shaders::from_modules(vs.clone(), fs.clone(), "main");
 
         let tfs = textured_fragment_shader(device.clone())?;
+        let default_textured_shaders = Shaders::from_modules(vs.clone(), tfs.clone(), "main");
+
         let tafs = texture_array_fragment_shader(device.clone())?;
+        let default_texture_array_shaders = Shaders::from_modules(vs.clone(), tafs.clone(), "main");
 
         let instance_vert = instanced_vertex_shader(device.clone())?;
         let instance_frag = instanced_fragment_shader(device.clone())?;
-        let textured_instance_frag = instanced_textured_fragment_shader(device.clone())?;
-        let textue_array_instance_frag = instanced_texture_array_fragment_shader(device.clone())?;
-
         let default_instance_shaders =
             Shaders::from_modules(instance_vert.clone(), instance_frag.clone(), "main");
 
+        let textured_instance_frag = instanced_textured_fragment_shader(device.clone())?;
+        let default_textured_instance_shaders = Shaders::from_modules(
+            instance_vert.clone(),
+            textured_instance_frag.clone(),
+            "main",
+        );
+
+        let texture_array_instance_frag = instanced_texture_array_fragment_shader(device.clone())?;
+        let default_texture_array_instance_shaders = Shaders::from_modules(
+            instance_vert.clone(),
+            texture_array_instance_frag.clone(),
+            "main",
+        );
+
         let vertex_buffer_description = [GameVertex::per_vertex(), InstanceData::per_instance()];
+
+        let mut pipelines = vec![];
+
+        let rasterisation_state = RasterizationState::default();
+
+        let vertex = vs
+            .entry_point("main")
+            .expect("Main function of default vertex shader has no main function.");
+        let fragment = fs
+            .entry_point("main")
+            .expect("Main function of default fragment shader has no main function.");
 
         let pipeline: Arc<GraphicsPipeline> = pipeline::create_pipeline(
             &device,
-            &vs,
-            &fs,
+            vertex.clone(),
+            fragment,
+            InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description[0].clone(),
+            vertex_buffer_description[0].definition(&vertex.info().input_interface)?,
+            rasterisation_state.clone(),
+            None,
         )?;
+        pipelines.push(pipeline.clone());
+
+        let textured_fragment = tfs
+            .entry_point("main")
+            .expect("Main function not found in default textured fragment shader.");
         let textured_pipeline = pipeline::create_pipeline(
             &device,
-            &vs,
-            &tfs,
+            vertex.clone(),
+            textured_fragment,
+            InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description[0].clone(),
+            vertex_buffer_description[0].definition(&vertex.info().input_interface)?,
+            rasterisation_state.clone(),
+            None,
         )?;
+        pipelines.push(textured_pipeline.clone());
+
+        let texture_array_fragment = tafs
+            .entry_point("main")
+            .expect("Main function not found in default texture array shader.");
         let texture_array_pipeline = pipeline::create_pipeline(
             &device,
-            &vs,
-            &tafs,
+            vertex.clone(),
+            texture_array_fragment,
+            InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description[0].clone(),
+            vertex_buffer_description[0].definition(&vertex.info().input_interface)?,
+            rasterisation_state.clone(),
+            None,
         )?;
+        pipelines.push(texture_array_pipeline.clone());
+
+        let instance_vertex = instance_vert
+            .entry_point("main")
+            .expect("Main function not found in default instanced vertex shader.");
+        let instance_fragment = instance_frag
+            .entry_point("main")
+            .expect("Main function not found in default instanced fragment shader.");
         let instance_pipeline = pipeline::create_pipeline(
             &device,
-            &instance_vert,
-            &instance_frag,
+            instance_vertex.clone(),
+            instance_fragment,
+            InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description.clone(),
+            vertex_buffer_description.definition(&instance_vertex.info().input_interface)?,
+            rasterisation_state.clone(),
+            None,
         )?;
+        pipelines.push(instance_pipeline.clone());
+
+        let textured_instance_fragment = textured_instance_frag
+            .entry_point("main")
+            .expect("Main function not found in default textured instanced fragment shader.");
         let textured_instance_pipeline = pipeline::create_pipeline(
             &device,
-            &instance_vert,
-            &textured_instance_frag,
+            instance_vertex.clone(),
+            textured_instance_fragment,
+            InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description.clone(),
+            vertex_buffer_description.definition(&instance_vertex.info().input_interface)?,
+            rasterisation_state.clone(),
+            None,
         )?;
+        pipelines.push(textured_instance_pipeline.clone());
+
+        let texture_array_instance_fragment = texture_array_instance_frag
+            .entry_point("main")
+            .expect("Main function not found in default texture array instance fragment shader.");
         let texture_array_instance_pipeline = pipeline::create_pipeline(
             &device,
-            &instance_vert,
-            &textue_array_instance_frag,
+            instance_vertex.clone(),
+            texture_array_instance_fragment,
+            InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description.clone(),
+            vertex_buffer_description.definition(&instance_vertex.info().input_interface)?,
+            rasterisation_state,
+            None,
         )?;
+        pipelines.push(texture_array_instance_pipeline.clone());
 
-        let default_material = Material {
-            pipeline,
-            descriptor: None,
-            texture: None,
-            layer: 0,
-            instanced: false,
-        };
-        let textured_material = Material {
-            pipeline: textured_pipeline,
-            descriptor: None,
-            texture: None,
-            layer: 0,
-            instanced: false,
-        };
-        let texture_array_material = Material {
-            pipeline: texture_array_pipeline,
-            descriptor: None,
-            texture: None,
-            layer: 0,
-            instanced: false,
-        };
-        let default_instance_material = Material {
-            pipeline: instance_pipeline,
-            descriptor: None,
-            texture: None,
-            layer: 0,
-            instanced: true,
-        };
+        let default_material = Material::from_pipeline(&pipeline, false, default_shaders.clone());
+        let textured_material =
+            Material::from_pipeline(&textured_pipeline, false, default_textured_shaders.clone());
+        let texture_array_material = Material::from_pipeline(
+            &texture_array_pipeline,
+            false,
+            default_texture_array_shaders.clone(),
+        );
+        let default_instance_material =
+            Material::from_pipeline(&instance_pipeline, true, default_instance_shaders.clone());
 
-        let textured_instance_material = Material {
-            pipeline: textured_instance_pipeline,
-            descriptor: None,
-            texture: None,
-            layer: 0,
-            instanced: true,
-        };
+        let textured_instance_material = Material::from_pipeline(
+            &textured_instance_pipeline,
+            true,
+            default_textured_instance_shaders.clone(),
+        );
 
-        let texture_array_instance_material = Material {
-            pipeline: texture_array_instance_pipeline,
-            descriptor: None,
-            texture: None,
-            layer: 0,
-            instanced: true,
-        };
+        let texture_array_instance_material = Material::from_pipeline(
+            &texture_array_instance_pipeline,
+            true,
+            default_texture_array_instance_shaders.clone(),
+        );
 
-        Ok(Self {
-            instance,
-            device,
-            queue,
-            render_pass,
-            subpass,
-            default_shaders,
-            default_instance_shaders,
-            default_material,
-            textured_material,
-            texture_array_material,
-            textured_instance_material,
-            texture_array_instance_material,
-            default_instance_material,
-            #[cfg(feature = "vulkan_debug_utils")]
-            _debug,
-        })
-        })
+        Ok((
+            pipelines,
+            Self {
+                instance,
+                device,
+                queue,
+                render_pass,
+                subpass,
+                default_shaders,
+                default_instance_shaders,
+                default_material,
+                textured_material,
+                texture_array_material,
+                textured_instance_material,
+                texture_array_instance_material,
+                default_instance_material,
+            },
+        ))
     }
 }
 
@@ -225,11 +292,12 @@ pub fn window_size_dependent_setup(
     let dimensions = images[0].extent();
     viewport.extent = [dimensions[0] as f32, dimensions[1] as f32];
 
-    images
+    let framebuffers: Vec<Arc<Framebuffer>> = images
         .iter()
         .map(|image| {
-            let view =
-                ImageView::new_default(image.clone()).context("Could not make a frame texture.")?;
+            let view = ImageView::new_default(image.clone())
+                .context("Could not make a frame texture.")
+                .unwrap();
             Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
@@ -238,6 +306,9 @@ pub fn window_size_dependent_setup(
                 },
             )
             .context("Could not make a framebuffer to present to the window.")
+            .unwrap()
         })
-        .collect()
+        .collect();
+
+    Ok(framebuffers)
 }

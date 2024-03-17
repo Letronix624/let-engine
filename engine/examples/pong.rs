@@ -136,14 +136,15 @@ impl Game {
         );
         middle_line
             .appearance
-            .set_model(Some(Model::Custom(ModelData::new(MIDDLE_DATA).unwrap())));
+            .set_model(Some(Model::Custom(ModelData::new(MIDDLE_DATA).unwrap())))
+            .unwrap();
         // A description of how the line should look like.
         let line_material = MaterialSettingsBuilder::default()
             .line_width(10.0)
             .topology(Topology::LineList)
             .build()
             .unwrap();
-        let line_material = Material::new(line_material).unwrap();
+        let line_material = Material::new(line_material, None).unwrap();
         middle_line.appearance.set_material(Some(line_material));
         middle_line.init(&ui_layer).unwrap();
 
@@ -228,6 +229,7 @@ impl Paddle {
             size: vec2(0.015, height),
             ..Default::default()
         };
+        object.appearance = Appearance::default().model(Some(Model::Square)).unwrap();
 
         // Make a collider that resembles the form of the paddle.
         object.set_collider(Some(ColliderBuilder::square(0.015, height).build()));
@@ -290,6 +292,7 @@ impl Ball {
         let lifetime = SystemTime::now();
         let mut object = NewObject::new();
         object.transform.size = vec2(0.015, 0.015);
+        object.appearance = Appearance::default().model(Some(Model::Square)).unwrap();
         let object = object.init(layer).unwrap();
         // make a sound to play when bouncing.
         let mut bounce_sound = Sound::new(

@@ -306,11 +306,15 @@ impl Labelifier {
             "main",
         );
 
-        let material_settings = MaterialSettingsBuilder::default()
-            .texture(texture)
-            .build()?;
+        let material_settings = MaterialSettingsBuilder::default().build()?;
 
-        let material = Material::new_with_shaders(material_settings, &text_shaders, false, vec![])?;
+        let material = Material::new_with_shaders(
+            material_settings,
+            Some(texture),
+            &text_shaders,
+            false,
+            vec![],
+        )?;
 
         Ok(Self {
             material,
@@ -360,13 +364,13 @@ impl Labelifier {
         };
 
         // Make the cache a texture.
-        self.material.texture = Some(Texture::from_raw(
+        self.material.set_texture(Some(Texture::from_raw(
             self.cache_pixel_buffer.as_raw(),
             self.glyph_brush.texture_dimensions(),
             Format::R8,
             1,
             settings,
-        )?);
+        )?));
 
         let queued = std::mem::take(&mut self.queued);
 
@@ -382,7 +386,8 @@ impl Labelifier {
                 label
                     .object
                     .appearance
-                    .set_model(Some(Model::Custom(model)));
+                    .set_model(Some(Model::Custom(model)))
+                    .unwrap();
             };
             label
                 .object

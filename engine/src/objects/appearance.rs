@@ -3,6 +3,7 @@ use crate::prelude::*;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use thiserror::Error;
 
 /// Holds everything about the appearance of objects like
 /// textures, vetex/index data, color and material.
@@ -86,7 +87,7 @@ impl Appearance {
     pub fn auto_scale(&mut self, pixels_per_unit: f32) -> Result<(), TextureError> {
         let dimensions;
         if let Some(material) = &self.instance.material {
-            dimensions = if let Some(texture) = &material.texture {
+            dimensions = if let Some(texture) = material.texture() {
                 texture.dimensions()
             } else {
                 return Err(TextureError::NoTexture);
@@ -122,16 +123,23 @@ impl Appearance {
     }
 
     /// Only sets the model if this appearance is not instanced.
-    pub fn set_model(&mut self, model: Option<Model>) {
+    pub fn set_model(&mut self, model: Option<Model>) -> Result<(), InstancedError> {
         if !self.instanced {
             self.instance.model = model;
+            Ok(())
+        } else {
+            Err(InstancedError)
         }
     }
 
     /// Only sets the model if this appearance in not instanced.
-    pub fn model(mut self, model: Option<Model>) -> Self {
-        (!self.instanced).then(|| self.instance.model = model);
-        self
+    pub fn model(mut self, model: Option<Model>) -> Result<Self, InstancedError> {
+        if !self.instanced {
+            self.instance.model = model;
+            Ok(self)
+        } else {
+            Err(InstancedError)
+        }
     }
 
     /// Returns the material of the appearance.
@@ -171,7 +179,7 @@ impl Appearance {
 
     /// Returns the layer of the texture in case there is a material.
     pub fn layer(&self) -> Option<u32> {
-        Some(self.instance.material.as_ref()?.layer)
+        Some(self.instance.material.as_ref()?.layer())
     }
 
     /// Goes to the next frame of the textured material.
@@ -236,3 +244,7 @@ impl PartialEq for Instance {
         self.material == other.material && self.model == other.model
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("This error gets returned when trying to call a material or model set function on an appearance that is instanced.")]
+pub struct InstancedError;

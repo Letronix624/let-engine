@@ -1,37 +1,37 @@
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::device::Device;
+use vulkano::pipeline::cache::PipelineCache;
+use vulkano::pipeline::graphics::vertex_input::VertexInputState;
 use vulkano::pipeline::graphics::{
     color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
     multisample::MultisampleState,
-    rasterization::{PolygonMode, RasterizationState},
-    vertex_input::VertexDefinition,
+    rasterization::RasterizationState,
     GraphicsPipelineCreateInfo,
     {input_assembly::InputAssemblyState, viewport::ViewportState},
 };
 
 use vulkano::pipeline::{
-    layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, PipelineLayout,
+    layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, PipelineLayout,
     PipelineShaderStageCreateInfo,
 };
 use vulkano::render_pass::Subpass;
-use vulkano::shader::ShaderModule;
+use vulkano::shader::EntryPoint;
+
+use crate::draw::VIEWPORT;
 
 /// Creates the graphics pipeline.
+#[allow(clippy::too_many_arguments)]
 pub fn create_pipeline(
     device: &Arc<Device>,
-    vs: &Arc<ShaderModule>,
-    fs: &Arc<ShaderModule>,
+    vertex: EntryPoint,
+    fragment: EntryPoint,
+    input_assembly: InputAssemblyState,
     subpass: Subpass,
-    vertex_buffer_description: impl VertexDefinition,
+    vertex_input_state: VertexInputState,
+    rasterisaion_state: RasterizationState,
+    cache: Option<Arc<PipelineCache>>,
 ) -> Result<Arc<GraphicsPipeline>> {
-    let vertex = vs.entry_point("main").ok_or(Error::msg(
-        "There is no `main` entry point for the default shaders.",
-    ))?;
-    let fragment = fs.entry_point("main").ok_or(Error::msg(
-        "There is no `main` entry point for the default shaders.",
-    ))?;
-    let input_assembly = InputAssemblyState::default();
     let stages = [
         PipelineShaderStageCreateInfo::new(vertex.clone()),
         PipelineShaderStageCreateInfo::new(fragment.clone()),
@@ -42,21 +42,18 @@ pub fn create_pipeline(
             .into_pipeline_layout_create_info(device.clone())?,
     )?;
 
-    let vertex_input_state =
-        vertex_buffer_description.definition(&vertex.info().input_interface)?;
     GraphicsPipeline::new(
         device.clone(),
-        None,
+        cache,
         GraphicsPipelineCreateInfo {
             stages: stages.into_iter().collect(),
             vertex_input_state: Some(vertex_input_state),
             input_assembly_state: Some(input_assembly),
-            viewport_state: Some(ViewportState::default()),
-            rasterization_state: Some(RasterizationState {
-                polygon_mode: PolygonMode::Fill,
-                // line_stipple,
-                ..RasterizationState::default()
+            viewport_state: Some(ViewportState {
+                viewports: [VIEWPORT.read().clone()].into_iter().collect(),
+                ..Default::default()
             }),
+            rasterization_state: Some(rasterisaion_state),
             multisample_state: Some(MultisampleState::default()),
             color_blend_state: Some(ColorBlendState::with_attachment_states(
                 subpass.num_color_attachments(),
@@ -65,7 +62,6 @@ pub fn create_pipeline(
                     ..Default::default()
                 },
             )),
-            dynamic_state: [DynamicState::Viewport].into_iter().collect(),
             subpass: Some(subpass.into()),
             ..GraphicsPipelineCreateInfo::layout(layout)
         },
