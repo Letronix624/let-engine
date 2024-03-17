@@ -61,6 +61,13 @@ sudo zypper install alsa-devel
 sudo zypper install --type pattern devel_base devel_C_C++ devel_vulkan
 ```
 
+## Radicle
+
+To clone this repository on [Radicle](https://radicle.xyz), simply run:
+```
+  rad clone rad:z35VMD8yfGYcrvb7k2eyxiUL4VUko
+```
+
 ## Examples
 
 run by doing
