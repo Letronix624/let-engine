@@ -10,8 +10,6 @@ _simple game engine_
 
 ## Facts and features
 
-* Better than Unity
-
 * Layer based object system
 
 * Labels and text
@@ -26,7 +24,7 @@ _simple game engine_
 
 # Progress
 
-To do:
+### To do:
 
 * 3D layers
 

@@ -26,8 +26,8 @@ and
 
 If you want to make a pull request then just do that for small things like formatting, fixing things, cleaning and others.
 
-If you are planning something bigger like a new feature, then please announce your plans before you open a pull request, so there are not several people working on the same thing.
-If you are trying to solve one of the issues you can announce that you will be working on it.
+If you are planning something bigger like a new feature, please announce your plans before you open a pull request.
+If you are trying to solve one of the issues you should announce that you will be working on it.
 
 Before submitting a pull request, make sure there are no problems when runnning the `test.sh` script in the root directory and format it using `cargo fmt`.
 Also make sure that all the examples work as they did before or better.
@@ -36,15 +36,7 @@ Also make sure that all the examples work as they did before or better.
 
 Right now my game engine is focusing on making it work first. Not everything is tested yet and it is not ready for use.
 
-There are a few things that should change and should be practiced on my game engine right now.
-
-The code is a bit messy, there are many unwraps to be removed, documentation to be added.
-
-I am planning on cleaning all that up, but I will only clean it when I absolutely need to or all my features on my todo list are completed.
-
-It would be nice if you could handle some of that.
-
-Even if the current code does not follow some of those points, please
+Please
 
 - Write clean code
 - Have a look at the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
@@ -54,7 +46,6 @@ Even if the current code does not follow some of those points, please
 - Add docstrings `///` to every public structs, methods, objects or things like that
 - Also add examples in the docs
 - Use the `use` statements locally in the functions if it is the only place where it is used. (not like it is right now)
-- When making `// TODO:` comments add your GitHub name like `// TODO(Letronix624):`
 
 Correcting some of the current mistakes would be so nice.
 
