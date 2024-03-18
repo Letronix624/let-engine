@@ -31,6 +31,7 @@ pub fn create_swapchain_and_images(
     let present_mode = device
         .physical_device()
         .surface_present_modes(surface, SurfaceInfo::default())?
+        .into_iter()
         .min_by_key(|compare| match compare {
             PresentMode::Mailbox => 0,
             PresentMode::Immediate => 1,
@@ -48,6 +49,7 @@ pub fn create_swapchain_and_images(
     let mut present_modes: Vec<_> = device
         .physical_device()
         .surface_present_modes(surface, SurfaceInfo::default())?
+        .into_iter()
         .map(|x| x.into())
         .collect();
     present_modes.dedup();

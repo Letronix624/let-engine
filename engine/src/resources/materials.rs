@@ -139,10 +139,9 @@ impl Material {
         };
 
         let vertex_input_state = if instanced {
-            [GameVertex::per_vertex(), InstanceData::per_instance()]
-                .definition(&vertex.info().input_interface)
+            [GameVertex::per_vertex(), InstanceData::per_instance()].definition(&vertex)
         } else {
-            [GameVertex::per_vertex()].definition(&vertex.info().input_interface)
+            [GameVertex::per_vertex()].definition(&vertex)
         }
         .map_err(|e| VulkanError::Other(e.into()))?;
 
@@ -280,10 +279,9 @@ impl Material {
         };
 
         let vertex_input_state = if self.instanced {
-            [GameVertex::per_vertex(), InstanceData::per_instance()]
-                .definition(&vertex.info().input_interface)
+            [GameVertex::per_vertex(), InstanceData::per_instance()].definition(&vertex)
         } else {
-            [GameVertex::per_vertex()].definition(&vertex.info().input_interface)
+            [GameVertex::per_vertex()].definition(&vertex)
         }?;
 
         let rasterisation_state = RasterizationState {

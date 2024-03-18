@@ -154,7 +154,7 @@ impl Vulkan {
             fragment,
             InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description[0].definition(&vertex.info().input_interface)?,
+            vertex_buffer_description[0].definition(&vertex)?,
             rasterisation_state.clone(),
             None,
         )?;
@@ -169,7 +169,7 @@ impl Vulkan {
             textured_fragment,
             InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description[0].definition(&vertex.info().input_interface)?,
+            vertex_buffer_description[0].definition(&vertex)?,
             rasterisation_state.clone(),
             None,
         )?;
@@ -184,7 +184,7 @@ impl Vulkan {
             texture_array_fragment,
             InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description[0].definition(&vertex.info().input_interface)?,
+            vertex_buffer_description[0].definition(&vertex)?,
             rasterisation_state.clone(),
             None,
         )?;
@@ -202,7 +202,7 @@ impl Vulkan {
             instance_fragment,
             InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description.definition(&instance_vertex.info().input_interface)?,
+            vertex_buffer_description.definition(&instance_vertex)?,
             rasterisation_state.clone(),
             None,
         )?;
@@ -217,7 +217,7 @@ impl Vulkan {
             textured_instance_fragment,
             InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description.definition(&instance_vertex.info().input_interface)?,
+            vertex_buffer_description.definition(&instance_vertex)?,
             rasterisation_state.clone(),
             None,
         )?;
@@ -232,7 +232,7 @@ impl Vulkan {
             texture_array_instance_fragment,
             InputAssemblyState::default(),
             subpass.clone(),
-            vertex_buffer_description.definition(&instance_vertex.info().input_interface)?,
+            vertex_buffer_description.definition(&instance_vertex)?,
             rasterisation_state,
             None,
         )?;
