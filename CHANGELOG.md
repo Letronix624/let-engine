@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `init_with_parent` function does not require a layer anymore.
 - Setting an object to invisible makes all children invisible too. For the old effect use `None` as model.
 - Switched from dynamic to fixed viewports, hopefully making games faster when not resizing windows.
+- Split crate features into multiple crates including `asset-system`, `let-engine-core`, `let-engine-audio`, `let-engine-widgets` and `let-engine`
 
 ### Fixed
 

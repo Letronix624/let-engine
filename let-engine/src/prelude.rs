@@ -42,7 +42,7 @@ pub use sounds::*;
 
 // Asset system
 #[cfg(feature = "asset_system")]
-pub use assets::*;
+pub use asset_system::*;
 
 // Other structs
 pub use glam;
