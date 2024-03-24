@@ -77,7 +77,7 @@ impl Settings {
         use crate::resources::LABELIFIER;
 
         #[cfg(feature = "asset_system")]
-        crate::assets::clear_cache();
+        asset_system::clear_cache();
 
         #[cfg(feature = "labels")]
         LABELIFIER.lock().clear_cache();

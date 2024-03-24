@@ -13,9 +13,6 @@ fn main() -> Result<()> {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     let map_data_path = out_dir.join("map_data");
     fs::write(&map_data_path, [0, 0])?;
-    if !cfg!(feature = "asset_system") {
-        return Ok(());
-    }
     let Ok(assets_path) = std::env::var("ASSETS_DIR") else {
         return Ok(());
     };

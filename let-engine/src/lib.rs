@@ -9,9 +9,9 @@ pub mod camera;
 pub(crate) mod draw;
 pub mod error;
 mod game;
-pub use game::*;
 #[cfg(feature = "asset_system")]
-pub mod assets;
+pub use asset_system;
+pub use game::*;
 pub mod objects;
 pub mod prelude;
 #[cfg(feature = "client")]

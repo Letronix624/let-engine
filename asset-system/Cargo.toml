@@ -1,0 +1,84 @@
+[package]
+name = "asset-system"
+version = "0.1.0"
+authors = [ "let" ]
+edition = "2021"
+description = "asset management and packing system for games"
+readme = "./README.md"
+repository = "https://github.com/Letronix624/let-engine"
+keywords = [ "gamedev", "assets", "compression" ]
+license = "Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+toml = "0.8"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+ahash = { workspace = true }
+bincode = { workspace = true }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }
+
+  [dependencies.serde]
+  workspace = true
+  features = [ "derive" ]
+
+  [dependencies.flate2]
+  workspace = true
+  optional = true
+
+  [dependencies.bzip2]
+  workspace = true
+  optional = true
+
+  [dependencies.zstd]
+  workspace = true
+  optional = true
+
+  [dependencies.xz2]
+  workspace = true
+  optional = true
+
+  [dependencies.lz4]
+  workspace = true
+  optional = true
+
+
+[build-dependencies]
+toml = "0.8"
+anyhow = { workspace = true }
+ahash = { workspace = true }
+bincode = { workspace = true }
+
+  [build-dependencies.serde]
+  workspace = true
+  features = [ "derive" ]
+
+  [build-dependencies.flate2]
+  workspace = true
+  optional = true
+
+  [build-dependencies.bzip2]
+  workspace = true
+  optional = true
+
+  [build-dependencies.zstd]
+  workspace = true
+  optional = true
+
+  [build-dependencies.xz2]
+  workspace = true
+  optional = true
+
+  [build-dependencies.lz4]
+  workspace = true
+  optional = true
+
+[features]
+deflate = [ "dep:flate2" ]
+bzip2 = [ "dep:bzip2" ]
+zstd = [ "dep:zstd" ]
+lzma = [ "dep:xz2" ]
+lz4 = [ "dep:lz4" ]
+

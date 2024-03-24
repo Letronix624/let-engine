@@ -1,0 +1,14 @@
+[package]
+name = "let-engine-audio"
+version = "0.1.0"
+authors = [ "let" ]
+edition = "2021"
+description = "audio capabilities for let-engine using Kira"
+readme = "./README.md"
+repository = "https://github.com/Letronix624/let-engine"
+keywords = [ "gamedev", "audio", "game engine" ]
+license = "Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
