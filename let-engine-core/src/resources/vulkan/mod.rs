@@ -9,8 +9,8 @@ mod debug;
 pub mod swapchain;
 pub(crate) mod window;
 
+use crate::draw::VIEWPORT;
 use crate::resources::data::Vertex as GameVertex;
-use crate::{draw::VIEWPORT, prelude::*};
 use anyhow::{Context, Error, Result};
 use vulkano::{
     device::{Device, DeviceFeatures, Queue},
@@ -26,11 +26,14 @@ use vulkano::{
     render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
 };
 
-use std::{cell::OnceCell, sync::Arc};
+use std::sync::Arc;
+
+use super::data::InstanceData;
+use super::materials::{Material, Shaders};
 
 /// Just a holder of general immutable information about Vulkan.
 #[derive(Clone)]
-pub(crate) struct Vulkan {
+pub struct Vulkan {
     pub instance: Arc<vulkano::instance::Instance>,
     pub device: Arc<Device>,
     pub queue: Arc<Queue>,
@@ -48,25 +51,14 @@ pub(crate) struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn init(
-        event_loop: &OnceCell<EventLoop<()>>,
-    ) -> Result<(Vec<Arc<GraphicsPipeline>>, Self)> {
-        let instance = instance::create_instance(
-            event_loop
-                .get()
-                .ok_or(Error::msg("There was a problem getting the event loop."))?,
-        )?;
+    pub fn init(event_loop: &EventLoop<()>) -> Result<(Vec<Arc<GraphicsPipeline>>, Self)> {
+        let instance = instance::create_instance(event_loop)?;
 
         #[cfg(feature = "vulkan_debug_utils")]
         std::mem::forget(debug::make_debug(&instance)?);
 
-        let (surface, window) = window::create_window(
-            event_loop
-                .get()
-                .ok_or(Error::msg("There was a problem getting the event loop."))?,
-            &instance,
-            WindowBuilder::new(),
-        )?;
+        let (surface, window) =
+            window::create_window(event_loop, &instance, crate::window::WindowBuilder::new())?;
 
         VIEWPORT.write().extent = window.inner_size().into();
 

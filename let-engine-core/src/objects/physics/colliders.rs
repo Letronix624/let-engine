@@ -1,7 +1,8 @@
 //! Wrapping of Rapiers colliders to be used with Let Engine and Glam.
 
-use crate::prelude::*;
-use rapier2d::prelude::*;
+use crate::{objects::Transform, resources::data::Data};
+use glam::Vec2;
+use rapier2d::{parry::transformation::vhacd::VHACDParameters, prelude::*};
 
 #[derive(Clone)]
 pub struct Collider(pub rapier2d::geometry::Collider);

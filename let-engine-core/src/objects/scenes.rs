@@ -1,12 +1,14 @@
-use crate::{error::objects::*, prelude::*};
+use self::joints::NoJointError;
 
-use super::ObjectsMap;
+use super::{physics::*, *};
+use crate::camera::*;
 use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
 use indexmap::{indexset, IndexSet};
 
 #[cfg(feature = "audio")]
 use kira::spatial::listener::ListenerHandle;
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
@@ -15,6 +17,10 @@ use std::{
         Arc,
     },
 };
+
+/// The engine wide scene holding all objects in layers.
+pub static SCENE: Lazy<crate::objects::scenes::Scene> =
+    Lazy::new(crate::objects::scenes::Scene::default);
 
 /// The whole scene seen with all it's layers.
 pub struct Scene {
@@ -111,8 +117,6 @@ impl Default for Scene {
 pub struct Layer {
     pub(crate) root: NObject,
     pub(crate) camera: Mutex<NObject>,
-    #[cfg(feature = "audio")]
-    old_camera: Mutex<NewObject>,
     camera_settings: AtomicCell<CameraSettings>,
     pub(crate) objects_map: Mutex<ObjectsMap>,
     #[cfg(feature = "physics")]
@@ -122,8 +126,6 @@ pub struct Layer {
     physics: Mutex<Physics>,
     #[cfg(feature = "physics")]
     physics_enabled: std::sync::atomic::AtomicBool,
-    #[cfg(feature = "audio")]
-    pub(crate) listener: Mutex<std::sync::OnceLock<ListenerHandle>>,
 }
 
 impl Layer {
@@ -140,11 +142,9 @@ impl Layer {
         });
         let mut objects_map = HashMap::new();
         objects_map.insert(0, root.clone());
-        let layer = Arc::new(Self {
+        Ok(Arc::new(Self {
             root: root.clone(),
             camera: Mutex::new(root),
-            #[cfg(feature = "audio")]
-            old_camera: Mutex::new(NewObject::default()),
             camera_settings: AtomicCell::new(CameraSettings::default()),
             objects_map: Mutex::new(objects_map),
             #[cfg(feature = "physics")]
@@ -154,15 +154,7 @@ impl Layer {
             physics: Mutex::new(Physics::new()),
             #[cfg(feature = "physics")]
             physics_enabled: std::sync::atomic::AtomicBool::new(true),
-            #[cfg(feature = "audio")]
-            listener: Mutex::new(std::sync::OnceLock::new()),
-        });
-        #[cfg(feature = "audio")]
-        RESOURCES
-            .audio_server
-            .send(AudioUpdate::NewLayer(layer.clone()))?;
-        #[allow(clippy::let_and_return)]
-        Ok(layer)
+        }))
     }
     /// Used by the proc macro to initialize the physics for an object.
     #[cfg(feature = "physics")]
@@ -180,8 +172,7 @@ impl Layer {
     }
 
     /// Returns the position of the camera object.
-    #[allow(dead_code)]
-    pub(crate) fn camera_transform(&self) -> Transform {
+    pub fn camera_transform(&self) -> Transform {
         self.camera.lock().lock().object.transform
     }
 
@@ -218,8 +209,10 @@ impl Layer {
     #[cfg(feature = "client")]
     pub fn side_to_world(&self, direction: Vec2) -> Vec2 {
         // Change this to remove dimensions.
+
+        use crate::window::WINDOW;
         let camera = self.camera_transform();
-        let dimensions = if let Some(window) = SETTINGS.window() {
+        let dimensions = if let Some(window) = WINDOW.get() {
             window.inner_size()
         } else {
             vec2(1000.0, 1000.0)

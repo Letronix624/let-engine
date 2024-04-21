@@ -1,8 +1,10 @@
-use crate::{error::NoDataError, prelude::*};
+use crate::resources::data::*;
 use anyhow::Result;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use vulkano::buffer::Subbuffer;
+
+use super::{resources, Loader};
 
 /// The custom model of an object made of vertices and indices.
 #[derive(Clone, Debug, PartialEq)]
@@ -17,7 +19,7 @@ impl ModelData {
     ///
     /// Can return an error in case the GPU memory is full.
     pub fn new(data: Data) -> Result<Self> {
-        Self::new_from_loader(data, RESOURCES.loader())
+        Self::new_from_loader(data, resources()?.loader())
     }
 
     pub(crate) fn new_from_loader(data: Data, loader: &Arc<Mutex<Loader>>) -> Result<Self> {
@@ -95,12 +97,12 @@ pub enum Model {
 }
 
 impl Model {
-    pub fn data(&self) -> &Data {
-        match self {
+    pub fn data(&self) -> Result<&Data> {
+        Ok(match self {
             Model::Custom(model) => model.data(),
-            Model::Square => RESOURCES.shapes.square.data(),
-            Model::Triangle => RESOURCES.shapes.triangle.data(),
-        }
+            Model::Square => resources()?.shapes.square.data(),
+            Model::Triangle => resources()?.shapes.triangle.data(),
+        })
     }
 }
 

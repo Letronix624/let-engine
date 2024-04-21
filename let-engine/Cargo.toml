@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.10.0"
+version = "0.11.0"
 authors = [ "let" ]
 edition = "2021"
 description = "game engine"
@@ -19,34 +19,26 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 bincode = { workspace = true }
 thiserror = { workspace = true }
-derive_builder = "0.20"
-indexmap = "2.2"
+derive_builder = { workspace = true }
+crossbeam = { workspace = true }
 atomic_float = "0.1"
-crossbeam = "0.8"
-paste = "1.0.14"
 spin_sleep = "1.2"
 once_cell = { workspace = true }
 
   [dependencies.vulkano]
-  version = "0.34"
-  git = "https://github.com/vulkano-rs/vulkano.git"
+  workspace = true
   optional = true
 
   [dependencies.winit]
-  version = "0.29"
+  workspace = true
   optional = true
 
   [dependencies.image]
-  version = "0.25"
-  optional = true
-
-  [dependencies.glyph_brush]
-  version = "0.7.8"
+  workspace = true
   optional = true
 
   [dependencies.egui_winit_vulkano]
-  version = "0.27"
-  git = "https://github.com/Letronix624/egui_winit_vulkano.git"
+  workspace = true
   optional = true
 
   [dependencies.kira]
@@ -54,7 +46,7 @@ once_cell = { workspace = true }
   optional = true
 
   [dependencies.glam]
-  version = "0.25"
+  workspace = true
   features = [ "bytemuck", "mint" ]
 
   [dependencies.nalgebra]
@@ -62,7 +54,7 @@ once_cell = { workspace = true }
   features = [ "convert-glam025" ]
 
   [dependencies.rapier2d]
-  version = "0.18"
+  workspace = true
   features = [ "simd-stable" ]
   optional = true
 
@@ -71,22 +63,26 @@ once_cell = { workspace = true }
   path = "../asset-system"
   optional = true
 
+  [dependencies.let-engine-core]
+  version = "0.11"
+  path = "../let-engine-core"
+
 [dev-dependencies]
-egui_demo_lib = "0.26"
+egui_demo_lib = "0.27"
 
 [features]
 default = [ "client", "labels", "physics", "audio" ]
-egui = [ "dep:egui_winit_vulkano", "client" ]
-vulkan_debug_utils = [ ]
-client = [ "dep:vulkano", "dep:winit", "dep:image" ]
-labels = [ "dep:glyph_brush", "client" ]
+egui = [ "let-engine-core/egui", "dep:egui_winit_vulkano", "client" ]
+vulkan_debug_utils = [ "let-engine-core/vulkan_debug_utils" ]
+client = [ "dep:vulkano", "dep:winit", "dep:image", "let-engine-core/client" ]
+labels = [ "client", "let-engine-core/labels" ]
 audio = [ "dep:kira", "client" ]
 physics = [ "dep:rapier2d" ]
 asset_system = [ "dep:asset-system" ]
-serde = [ "glam/serde" ]
+serde = [ "glam/serde", "let-engine-core/serde" ]
 
-rand = [ "glam/rand" ]
-fast-math = [ "glam/fast-math" ]
+rand = [ "glam/rand", "let-engine-core/rand" ]
+fast-math = [ "glam/fast-math", "let-engine-core/fast-math" ]
 
 # asset system compression algorithms
 deflate = [ "asset-system/deflate" ]

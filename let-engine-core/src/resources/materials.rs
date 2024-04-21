@@ -1,11 +1,11 @@
 //! Material related settings that determine the way the scene gets rendered.
 
 use crate::{
-    error::{
-        draw::{ShaderError, VulkanError},
-        textures::*,
+    draw::{ShaderError, VulkanError},
+    resources::{
+        data::{InstanceData, Vertex as GameVertex},
+        textures::Texture,
     },
-    prelude::{InstanceData, Texture, Vertex as GameVertex},
 };
 
 use anyhow::{anyhow, Error, Result};
@@ -27,7 +27,7 @@ use vulkano::{
     shader::{spirv::bytes_to_words, ShaderModule, ShaderModuleCreateInfo},
 };
 
-use super::{vulkan::pipeline::create_pipeline, Loader, RESOURCES};
+use super::{resources, textures::TextureError, vulkan::pipeline::create_pipeline, Loader};
 // pub use vulkano::pipeline::graphics::rasterization::LineStipple;
 
 /// The way in which an object gets drawn using it's vertices and indices.
@@ -126,9 +126,13 @@ impl Material {
 
         // let line_stipple = settings.line_stripple.map(StateMode::Fixed);
 
-        let resources = &RESOURCES;
-        let mut loader = resources.loader().lock();
-        let vulkan = resources.vulkan();
+        let mut loader = resources()
+            .map_err(|e| VulkanError::Other(e.into()))?
+            .loader()
+            .lock();
+        let vulkan = resources()
+            .map_err(|e| VulkanError::Other(e.into()))?
+            .vulkan();
         let pipeline_cache = loader.pipeline_cache.clone();
         let subpass = Subpass::from(vulkan.render_pass.clone(), 0)
             .ok_or(VulkanError::Other(Error::msg("Failed to make subpass.")))?;
@@ -196,9 +200,12 @@ impl Material {
     pub fn new(
         settings: MaterialSettings,
         texture: Option<Texture>,
-    ) -> Result<Material, VulkanError> {
-        let resources = &RESOURCES;
-        let shaders = resources.vulkan().clone().default_shaders;
+    ) -> Result<Material, crate::draw::VulkanError> {
+        let shaders = resources()
+            .map_err(|e| VulkanError::Other(e.into()))?
+            .vulkan()
+            .clone()
+            .default_shaders;
         Self::new_with_shaders(settings, texture, &shaders, false, vec![])
     }
 
@@ -207,37 +214,41 @@ impl Material {
         settings: MaterialSettings,
         texture: Option<Texture>,
     ) -> Result<Material, VulkanError> {
-        let resources = &RESOURCES;
-        let shaders = resources.vulkan().clone().default_instance_shaders;
+        let shaders = resources()
+            .map_err(|e| VulkanError::Other(e.into()))?
+            .vulkan()
+            .clone()
+            .default_instance_shaders;
         Self::new_with_shaders(settings, texture, &shaders, true, vec![])
     }
 
     /// Creates a simple material made just for showing a texture.
-    pub fn new_default_textured(texture: &Texture) -> Material {
-        let resources = &RESOURCES;
+    pub fn new_default_textured(texture: &Texture) -> Result<Material> {
         let default = if texture.layers() == 1 {
-            resources.vulkan().textured_material.clone()
+            resources()?.vulkan().textured_material.clone()
         } else {
-            resources.vulkan().texture_array_material.clone()
+            resources()?.vulkan().texture_array_material.clone()
         };
-        Material {
+        Ok(Material {
             texture: Some(texture.clone()),
             ..default
-        }
+        })
     }
 
     /// Creates a default material instance with a texture.
-    pub fn new_default_textured_instance(texture: &Texture) -> Material {
-        let resources = &RESOURCES;
+    pub fn new_default_textured_instance(texture: &Texture) -> Result<Material> {
         let default = if texture.layers() == 1 {
-            resources.vulkan().textured_instance_material.clone()
+            resources()?.vulkan().textured_instance_material.clone()
         } else {
-            resources.vulkan().texture_array_instance_material.clone()
+            resources()?
+                .vulkan()
+                .texture_array_instance_material
+                .clone()
         };
-        Material {
+        Ok(Material {
             texture: Some(texture.clone()),
             ..default
-        }
+        })
     }
 
     /// Returns the graphics pipeline, but in case it is out of date reloads it from the beginning.
@@ -258,7 +269,7 @@ impl Material {
         if let Some(pipeline) = self.pipeline.lock().upgrade() {
             return Ok(pipeline);
         }
-        let vulkan = RESOURCES.vulkan();
+        let vulkan = resources()?.vulkan();
         let vertex = self
             .shaders
             .vertex
@@ -311,8 +322,7 @@ impl Material {
     /// # Safety
     /// The program will crash in case in case the data input here is not as the shader wants it.
     pub unsafe fn write(&mut self, descriptor: Vec<WriteDescriptorSet>) -> Result<()> {
-        let resources = &RESOURCES;
-        let mut loader = resources.loader().lock();
+        let mut loader = resources()?.loader().lock();
         self.descriptor = Some(DescriptorSet::new(
             loader.descriptor_set_allocator.clone(),
             self.get_pipeline_or_recreate(&mut loader)?
@@ -441,8 +451,11 @@ impl Shaders {
         fragment_bytes: &[u8],
         entry_point: &str,
     ) -> Result<Self, ShaderError> {
-        let resources = &RESOURCES;
-        let device = resources.vulkan().clone().device;
+        let device = resources()
+            .map_err(|e| ShaderError::Other(VulkanError::Other(e.into())))?
+            .vulkan()
+            .clone()
+            .device;
         let vertex_words = bytes_to_words(vertex_bytes)?;
         let fragment_words = bytes_to_words(fragment_bytes)?;
         let vertex: Arc<ShaderModule> = unsafe {

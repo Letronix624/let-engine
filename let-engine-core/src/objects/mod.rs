@@ -9,14 +9,16 @@ pub use appearance::*;
 #[cfg(feature = "client")]
 pub use color::Color;
 
+#[cfg(feature = "physics")]
+pub mod physics;
+#[cfg(feature = "physics")]
+use physics::*;
+
 #[cfg(feature = "labels")]
 pub mod labels;
 
-#[cfg(feature = "physics")]
-pub mod physics;
 pub mod scenes;
-
-use crate::{error::objects::ObjectError, prelude::*};
+use scenes::Layer;
 
 use anyhow::{anyhow, Error, Result};
 
@@ -27,6 +29,8 @@ use std::{
     collections::HashMap,
     sync::{Arc, Weak},
 };
+
+use glam::{vec2, Vec2};
 
 #[cfg(feature = "physics")]
 type RigidBodyParent = Option<Option<Weak<Mutex<Node<Object>>>>>;
@@ -659,4 +663,28 @@ impl Object {
     pub fn set_local_collider_position(&mut self, pos: Vec2) {
         self.physics.local_collider_position = pos;
     }
+}
+
+// Object based errors.
+
+use thiserror::Error;
+
+/// This error gets returned when the layer that gets specified when an object needs to get added
+/// does not exit in the objects list anymore.
+#[derive(Error, Debug)]
+#[error("No Layer found")]
+pub struct NoLayerError;
+
+/// Errors that happen in object and layer functions.
+#[derive(Error, Debug)]
+pub enum ObjectError {
+    /// The move operation has failed.
+    #[error("This object can not be moved to this position:\n{0}")]
+    Move(String),
+    /// This object does not have a parent.
+    #[error("This object does not have a parent. This operation can not be applied.")]
+    NoParent,
+    /// The object you are trying to access is not initialized anymore.
+    #[error("This object was removed from the objects list.")]
+    Uninit,
 }

@@ -1,15 +1,23 @@
 //! General window stuff.
 //!
 //! Multiple structs to change the properties of a Window.
-use crate::prelude::Color;
 use crossbeam::atomic::AtomicCell;
 use glam::{vec2, Vec2};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc,
+    Arc, OnceLock,
 };
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel};
 use winit::{dpi::*, error::ExternalError, window::WindowButtons};
+
+use crate::objects::Color;
+
+pub static WINDOW: OnceLock<Arc<Window>> = OnceLock::new();
+
+/// Returns the window if it is initialized.
+pub fn window() -> Option<Arc<Window>> {
+    WINDOW.get().cloned()
+}
 
 /// A struct representing the window.
 #[derive(Debug)]
@@ -90,7 +98,10 @@ impl Window {
         self.window
             .set_visible(visible && self.initialized.0.load(Ordering::Acquire))
     }
-    pub(crate) fn initialize(&self) {
+
+    /// Used by the engine crate containing the event loop to mark a window as initialized.
+    /// Should not be used by a high level user of the engine.
+    pub fn initialize(&self) {
         self.initialized.1.store(true, Ordering::Release);
         self.window
             .set_visible(self.initialized.0.load(Ordering::Acquire));

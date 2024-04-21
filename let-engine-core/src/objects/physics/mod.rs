@@ -10,7 +10,7 @@ mod colliders;
 pub mod joints;
 mod rigid_bodies;
 pub use colliders::{Collider, ColliderBuilder, Shape};
-pub use rigid_bodies::{RigidBody, RigidBodyBuilder};
+pub use rigid_bodies::{NoRigidBodyError, RigidBody, RigidBodyBuilder};
 
 pub use rapier2d::dynamics::{
     CoefficientCombineRule, ImpulseJointHandle, IntegrationParameters, LockedAxes,

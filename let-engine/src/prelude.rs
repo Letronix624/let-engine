@@ -8,19 +8,21 @@
 
 // Resources only exists if client is enabled.
 #[cfg(feature = "client")]
-pub use crate::resources::*;
+pub use let_engine_core::resources::*;
 
-pub use crate::{camera::*, objects::*, *};
+pub use let_engine_core::{camera::*, objects::*};
 
 // Client structs
 #[cfg(feature = "client")]
+pub use crate::events::*;
+#[cfg(feature = "client")]
+pub use crate::*;
+#[cfg(feature = "client")]
 pub use data::*;
 #[cfg(feature = "client")]
-pub use events::*;
+pub use let_engine_core::draw::PresentMode;
 #[cfg(feature = "client")]
 pub use materials::*;
-#[cfg(feature = "client")]
-pub use settings::PresentMode;
 #[cfg(feature = "client")]
 pub use textures::*;
 #[cfg(feature = "client")]
@@ -38,14 +40,14 @@ pub use labels::*;
 
 // Audio structs
 #[cfg(feature = "audio")]
-pub use sounds::*;
+pub use crate::sounds::*;
 
 // Asset system
 #[cfg(feature = "asset_system")]
 pub use asset_system::*;
 
 // Other structs
+pub use crate::settings::{EngineSettings, EngineSettingsBuilder, EngineSettingsBuilderError};
 pub use glam;
 pub use glam::{vec2, Vec2};
 pub use scenes::*;
-pub use settings::{EngineSettings, EngineSettingsBuilder, EngineSettingsBuilderError};

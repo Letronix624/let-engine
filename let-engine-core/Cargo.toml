@@ -12,3 +12,52 @@ license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+once_cell = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+derive_builder = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam = { workspace = true }
+indexmap = "2.2"
+paste = "1.0.14"
+
+  [dependencies.glyph_brush]
+  version = "0.7.8"
+  optional = true
+
+  [dependencies.glam]
+  workspace = true
+  features = [ "bytemuck", "mint" ]
+
+  [dependencies.vulkano]
+  workspace = true
+  optional = true
+
+  [dependencies.egui_winit_vulkano]
+  workspace = true
+  optional = true
+
+  [dependencies.winit]
+  workspace = true
+  optional = true
+
+  [dependencies.image]
+  workspace = true
+  optional = true
+
+  [dependencies.rapier2d]
+  workspace = true
+  features = [ "simd-stable" ]
+  optional = true
+
+[features]
+default = [ "client", "physics"]
+egui = [ "dep:egui_winit_vulkano", "client" ]
+vulkan_debug_utils = [ ]
+client = [ "dep:vulkano", "dep:winit", "dep:image" ]
+physics = [ "dep:rapier2d" ]
+serde = [ "glam/serde" ]
+labels = [ "dep:glyph_brush", "client" ]
+
+rand = [ "glam/rand" ]
+fast-math = [ "glam/fast-math" ]

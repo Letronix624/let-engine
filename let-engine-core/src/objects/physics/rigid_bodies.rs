@@ -3,6 +3,13 @@
 use glam::Vec2;
 use rapier2d::prelude::*;
 
+use thiserror::Error;
+
+/// This error gets returned when one of the objects input into register_joint does not have a rigid body to attach the joint to.
+#[derive(Error, Debug)]
+#[error("One of the objects does not have a rigid body")]
+pub struct NoRigidBodyError;
+
 #[derive(Clone, Default, Debug)]
 pub struct RigidBody(pub(crate) rapier2d::dynamics::RigidBody);
 

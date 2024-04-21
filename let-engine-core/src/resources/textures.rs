@@ -1,6 +1,5 @@
 //! Texture related options.
 
-use crate::{error::textures::*, utils::u16tou8vec};
 pub use image::ImageFormat;
 use image::{load_from_memory_with_format, DynamicImage};
 
@@ -12,7 +11,8 @@ use vulkano::image::sampler::{
     Filter as vkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode,
 };
 
-use super::RESOURCES;
+use super::resources;
+use crate::utils::u16tou8vec;
 
 /// Formats for the texture from raw data.
 #[derive(Clone, Copy, Debug)]
@@ -174,11 +174,14 @@ impl Texture {
             data: data.clone(),
             dimensions,
             layers,
-            set: RESOURCES
+            set: resources()
+                .map_err(|e| TextureError::Other(e.into()))?
                 .loader()
                 .lock()
                 .load_texture(
-                    RESOURCES.vulkan(),
+                    resources()
+                        .map_err(|e| TextureError::Other(e.into()))?
+                        .vulkan(),
                     data,
                     dimensions,
                     layers,
@@ -311,4 +314,30 @@ impl std::fmt::Debug for Texture {
             .field("frames", &self.layers)
             .finish()
     }
+}
+
+// Texture based errors.
+
+use thiserror::Error;
+
+/// Errors that occur from textures.
+#[derive(Error, Debug)]
+pub enum TextureError {
+    /// This error gets returned when you set the texture ID of an Appearance object higher than the
+    /// actual frame count of the texture this object is holding.
+    #[error("The layer you set for this object does not exist:\n{0}")]
+    Layer(String),
+    /// This error gets returned when a function gets called that requires an object to have a textured material
+    /// but it does not have one.
+    #[error(
+        "The object you ran a function on that requires a textured material does not have one."
+    )]
+    NoTexture,
+    /// This error gets returned when you give the wrong format to the texture when trying to create a
+    /// new texture.
+    #[error("The given format does not match with the bytes provided:\n{0}")]
+    InvalidFormat(String),
+    /// If the texture for some reason can not be made.
+    #[error("There was an error loading this texture:\n{0}")]
+    Other(anyhow::Error),
 }
