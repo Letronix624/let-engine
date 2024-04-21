@@ -16,7 +16,7 @@ pub fn ortho_maker(mode: CameraScaling, position: Vec2, zoom: f32, dimensions: V
     )
 }
 
-/// Converts a Vec<u16> to a Vec<u8> where each number is split into it is high and low bytes.
+/// Converts a `Vec<u16>` to a `Vec<u8>` where each number is split into it is high and low bytes.
 pub fn u16tou8vec(data: Vec<u16>) -> Vec<u8> {
     // to utils.rs in the future
     data.iter()

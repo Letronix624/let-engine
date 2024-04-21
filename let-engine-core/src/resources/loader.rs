@@ -28,7 +28,7 @@ use vulkano::{
 use super::textures::{Format as tFormat, TextureSettings};
 
 /// Loads thing to the gpu.
-pub(crate) struct Loader {
+pub struct Loader {
     pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub vertex_buffer_allocator: SubbufferAllocator,
     pub index_buffer_allocator: SubbufferAllocator,

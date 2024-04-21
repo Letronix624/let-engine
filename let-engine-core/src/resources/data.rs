@@ -2,11 +2,19 @@
 
 use anyhow::Result;
 use glam::f32::{vec2, Mat4, Vec2, Vec4};
+use thiserror::Error;
 use vulkano::{buffer::BufferContents, pipeline::graphics::vertex_input::Vertex as VTX};
 
 use super::{Loader, ModelData};
 use parking_lot::Mutex;
 use std::sync::Arc;
+
+/// The model you are trying to load has empty data.
+///
+/// Use `apperance.set_visible(false)` instead.
+#[derive(Debug, Error)]
+#[error("The model you are trying to load has empty data.")]
+pub struct NoDataError;
 
 /// A vertex containing it's position (xy) and texture position (uv).
 #[repr(C)]
@@ -156,7 +164,7 @@ impl Data {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct BasicShapes {
+pub struct BasicShapes {
     pub square: ModelData,
     pub triangle: ModelData,
 }

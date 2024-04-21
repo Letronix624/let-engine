@@ -1,9 +1,13 @@
-use crate::error::textures::*;
-use crate::prelude::*;
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
+
+use crate::{
+    objects::*,
+    resources::{data::InstanceData, materials::Material, textures::TextureError, Model},
+};
+use glam::vec2;
 
 /// Holds everything about the appearance of objects like
 /// textures, vetex/index data, color and material.

@@ -1,8 +1,9 @@
+use let_engine_core::{resources::RESOURCES, window::WINDOW, EngineError};
 // mods
 #[cfg(feature = "client")]
-pub mod window;
+pub use let_engine_core::window;
 #[cfg(feature = "client")]
-pub(crate) use super::draw::Draw;
+use let_engine_core::{draw::Draw, resources::Resources};
 #[cfg(all(feature = "egui", feature = "client"))]
 mod egui;
 #[cfg(feature = "client")]
@@ -32,18 +33,8 @@ use std::{
 
 // client feature
 #[cfg(feature = "client")]
-use crate::{error::draw::VulkanError, INPUT};
-use crate::{error::EngineStartError, SETTINGS, TIME};
-
-// Structs imported for the incoming thread local.
-#[cfg(feature = "client")]
-use std::cell::{OnceCell, RefCell};
-
-// The event loop that gets created and executed in the thread where Engine was made.
-#[cfg(feature = "client")]
-thread_local! {
-    pub(crate) static EVENT_LOOP: RefCell<OnceCell<winit::event_loop::EventLoop<()>>> = const { RefCell::new(OnceCell::new()) };
-}
+use crate::INPUT;
+use crate::{SETTINGS, TIME};
 
 /// Represents the game application with essential methods for a game's lifetime.
 /// # Usage
@@ -102,11 +93,19 @@ pub trait Game {
     fn exit(&self) -> bool;
 }
 
+// // The event loop that gets created and executed in the thread where Engine was made.
+// #[cfg(feature = "client")]
+// thread_local! {
+//     pub(crate) static EVENT_LOOP: RefCell<OnceCell<winit::event_loop::EventLoop<()>>> = const { RefCell::new(OnceCell::new()) };
+// }
+
 /// The struct that holds and executes all of the game data.
 pub struct Engine {
     #[cfg(all(feature = "egui", feature = "client"))]
     gui: egui_winit_vulkano::Gui,
     tick_system: TickSystem,
+    #[cfg(feature = "client")]
+    event_loop: Option<winit::event_loop::EventLoop<()>>,
 
     #[cfg(feature = "client")]
     draw: Draw,
@@ -119,38 +118,50 @@ impl Engine {
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
     ///
     /// This function can only be called one time. Attempting to make a second one of those will return an error.
-    pub fn new(settings: impl Into<settings::EngineSettings>) -> Result<Self, EngineStartError> {
+    pub fn new(settings: impl Into<settings::EngineSettings>) -> Result<Self, EngineError> {
         if INIT.state() == parking_lot::OnceState::New {
+            #[cfg(feature = "client")]
+            let event_loop = winit::event_loop::EventLoopBuilder::new()
+                .build()
+                .map_err(|e| EngineError::Other(e.to_string()))?;
+            #[cfg(feature = "client")]
+            let resources =
+                Resources::new(&event_loop).map_err(|e| EngineError::Other(e.to_string()))?;
+            #[cfg(feature = "client")]
+            RESOURCES.get_or_init(|| resources);
             INIT.call_once(|| {});
             let settings = settings.into();
             SETTINGS.tick_system.set(settings.tick_settings);
             let tick_system = TickSystem::new();
 
+            // EVENT_LOOP.with_borrow_mut(|cell| {
+            //     cell.get_or_init(|| .unwrap());
+            // });
+
             #[cfg(feature = "client")]
-            EVENT_LOOP.with_borrow_mut(|cell| {
-                cell.get_or_init(|| winit::event_loop::EventLoopBuilder::new().build().unwrap());
-            });
+            let draw = Draw::setup(
+                settings.window_settings,
+                &event_loop,
+                SETTINGS.graphics.clone(),
+            )
+            .map_err(EngineError::DrawingBackendError)?;
             #[cfg(feature = "client")]
-            let draw = Draw::setup(settings.window_settings)
-                .map_err(EngineStartError::DrawingBackendError)?;
-            #[cfg(feature = "client")]
-            SETTINGS.set_window(draw.window().clone()).map_err(|_| {
-                EngineStartError::Other("Could not make the window object.".to_string())
-            })?;
+            WINDOW.get_or_init(|| draw.window().clone());
 
             #[cfg(all(feature = "egui", feature = "client"))]
-            let gui = egui::init(&draw);
+            let gui = egui::init(&draw, &event_loop);
 
             Ok(Self {
                 #[cfg(all(feature = "egui", feature = "client"))]
                 gui,
                 tick_system,
-
+                #[cfg(feature = "client")]
+                event_loop: Some(event_loop),
                 #[cfg(feature = "client")]
                 draw,
             })
         } else {
-            Err(EngineStartError::EngineInitialized)
+            Err(EngineError::EngineInitialized)
         }
     }
 
@@ -177,182 +188,177 @@ impl Engine {
     /// Client start function running all the methods of the given game object as documented in the [trait](Game).
     #[cfg(feature = "client")]
     pub fn start(mut self, game: impl Game + Send + 'static) {
+        use let_engine_core::draw::VulkanError;
         use winit::event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent};
         let game = Arc::new(Mutex::new(game));
 
-        EVENT_LOOP.with_borrow_mut(|event_loop| {
-            event_loop
-                .take()
-                .unwrap()
-                .run(move |event, control_flow| {
-                    INPUT.update(&event, self.get_window().inner_size());
-                    if game.lock().exit() {
-                        control_flow.exit();
-                    }
-                    use glam::vec2;
-                    match event {
-                        Event::WindowEvent { event, .. } => {
-                            #[cfg(feature = "egui")]
-                            self.gui.update(&event);
-                            let event = match event {
-                                WindowEvent::Resized(size) => {
-                                    Draw::mark_swapchain_outdated();
-                                    events::Event::Window(events::WindowEvent::Resized(size))
-                                }
-                                WindowEvent::CloseRequested => {
-                                    events::Event::Window(events::WindowEvent::CloseRequested)
-                                }
-                                WindowEvent::CursorEntered { .. } => {
-                                    events::Event::Window(events::WindowEvent::CursorEntered)
-                                }
-                                WindowEvent::CursorLeft { .. } => {
-                                    events::Event::Window(events::WindowEvent::CursorLeft)
-                                }
-                                WindowEvent::CursorMoved { position, .. } => events::Event::Window(
-                                    events::WindowEvent::CursorMoved(position),
-                                ),
-                                WindowEvent::Destroyed => {
-                                    events::Event::Window(events::WindowEvent::Destroyed)
-                                }
-                                WindowEvent::HoveredFile(file) => {
-                                    events::Event::Window(events::WindowEvent::HoveredFile(file))
-                                }
-                                WindowEvent::DroppedFile(file) => {
-                                    events::Event::Window(events::WindowEvent::DroppedFile(file))
-                                }
-                                WindowEvent::HoveredFileCancelled => {
-                                    events::Event::Window(events::WindowEvent::HoveredFileCancelled)
-                                }
-                                WindowEvent::Focused(focused) => {
-                                    events::Event::Window(events::WindowEvent::Focused(focused))
-                                }
-                                WindowEvent::KeyboardInput { event, .. } => {
-                                    events::Event::Input(InputEvent::KeyboardInput {
-                                        input: events::KeyboardInput {
-                                            keycode: event.logical_key,
-                                            state: event.state,
-                                        },
-                                    })
-                                }
-                                WindowEvent::ModifiersChanged(_) => {
-                                    events::Event::Input(InputEvent::ModifiersChanged)
-                                }
-                                WindowEvent::MouseInput { state, button, .. } => {
-                                    events::Event::Input(InputEvent::MouseInput(button, state))
-                                }
-                                WindowEvent::MouseWheel { delta, .. } => events::Event::Window(
-                                    events::WindowEvent::MouseWheel(match delta {
-                                        MouseScrollDelta::LineDelta(x, y) => {
-                                            ScrollDelta::LineDelta(vec2(x, y))
-                                        }
-                                        MouseScrollDelta::PixelDelta(x) => {
-                                            ScrollDelta::PixelDelta(x)
-                                        }
-                                    }),
-                                ),
-                                WindowEvent::RedrawRequested => {
-                                    #[cfg(feature = "labels")]
-                                    {
-                                        let labelifier = &crate::resources::LABELIFIER;
-                                        labelifier.lock().update().unwrap();
+        let event_loop = std::mem::take(&mut self.event_loop).unwrap();
+
+        event_loop
+            .run(move |event, control_flow| {
+                INPUT.update(&event, self.get_window().inner_size());
+                if game.lock().exit() {
+                    control_flow.exit();
+                }
+                use glam::vec2;
+                match event {
+                    Event::WindowEvent { event, .. } => {
+                        #[cfg(feature = "egui")]
+                        self.gui.update(&event);
+                        let event = match event {
+                            WindowEvent::Resized(size) => {
+                                self.draw.mark_swapchain_outdated();
+                                events::Event::Window(events::WindowEvent::Resized(size))
+                            }
+                            WindowEvent::CloseRequested => {
+                                events::Event::Window(events::WindowEvent::CloseRequested)
+                            }
+                            WindowEvent::CursorEntered { .. } => {
+                                events::Event::Window(events::WindowEvent::CursorEntered)
+                            }
+                            WindowEvent::CursorLeft { .. } => {
+                                events::Event::Window(events::WindowEvent::CursorLeft)
+                            }
+                            WindowEvent::CursorMoved { position, .. } => {
+                                events::Event::Window(events::WindowEvent::CursorMoved(position))
+                            }
+                            WindowEvent::Destroyed => {
+                                events::Event::Window(events::WindowEvent::Destroyed)
+                            }
+                            WindowEvent::HoveredFile(file) => {
+                                events::Event::Window(events::WindowEvent::HoveredFile(file))
+                            }
+                            WindowEvent::DroppedFile(file) => {
+                                events::Event::Window(events::WindowEvent::DroppedFile(file))
+                            }
+                            WindowEvent::HoveredFileCancelled => {
+                                events::Event::Window(events::WindowEvent::HoveredFileCancelled)
+                            }
+                            WindowEvent::Focused(focused) => {
+                                events::Event::Window(events::WindowEvent::Focused(focused))
+                            }
+                            WindowEvent::KeyboardInput { event, .. } => {
+                                events::Event::Input(InputEvent::KeyboardInput {
+                                    input: events::KeyboardInput {
+                                        keycode: event.logical_key,
+                                        state: event.state,
+                                    },
+                                })
+                            }
+                            WindowEvent::ModifiersChanged(_) => {
+                                events::Event::Input(InputEvent::ModifiersChanged)
+                            }
+                            WindowEvent::MouseInput { state, button, .. } => {
+                                events::Event::Input(InputEvent::MouseInput(button, state))
+                            }
+                            WindowEvent::MouseWheel { delta, .. } => events::Event::Window(
+                                events::WindowEvent::MouseWheel(match delta {
+                                    MouseScrollDelta::LineDelta(x, y) => {
+                                        ScrollDelta::LineDelta(vec2(x, y))
                                     }
-
-                                    // fps limit logic
-                                    let start_time = SystemTime::now();
-
-                                    // redraw
-                                    match self.draw.redraw_event(
-                                        #[cfg(feature = "egui")]
-                                        &mut self.gui,
-                                    ) {
-                                        Err(VulkanError::SwapchainOutOfDate) => {
-                                            Draw::mark_swapchain_outdated();
-                                        }
-                                        Err(e) => panic!("{e}"),
-                                        _ => (),
-                                    };
-
-                                    // sleeps the required time to hit the framerate limit.
-                                    spin_sleep::native_sleep(
-                                        SETTINGS
-                                            .graphics
-                                            .framerate_limit()
-                                            .saturating_sub(start_time.elapsed().unwrap() * 2),
-                                    );
-                                    TIME.update();
-                                    game.lock().frame_update();
-                                    events::Event::Destroyed
+                                    MouseScrollDelta::PixelDelta(x) => ScrollDelta::PixelDelta(x),
+                                }),
+                            ),
+                            WindowEvent::RedrawRequested => {
+                                #[cfg(feature = "labels")]
+                                {
+                                    let labelifier = &let_engine_core::objects::labels::LABELIFIER;
+                                    labelifier.lock().update().unwrap();
                                 }
-                                _ => events::Event::Destroyed,
-                            };
-                            // destroy event can not be called here so I did the most lazy approach possible.
-                            if let events::Event::Destroyed = event {
-                            } else {
-                                game.lock().event(event);
-                            }
-                        }
-                        Event::DeviceEvent { event, .. } => match event {
-                            DeviceEvent::MouseMotion { delta } => {
-                                game.lock()
-                                    .event(events::Event::Input(InputEvent::MouseMotion(vec2(
-                                        delta.0 as f32,
-                                        delta.1 as f32,
-                                    ))));
-                            }
-                            DeviceEvent::MouseWheel { delta } => {
-                                game.lock()
-                                    .event(events::Event::Input(InputEvent::MouseWheel(
-                                        match delta {
-                                            MouseScrollDelta::LineDelta(x, y) => {
-                                                ScrollDelta::LineDelta(vec2(x, y))
-                                            }
-                                            MouseScrollDelta::PixelDelta(delta) => {
-                                                ScrollDelta::PixelDelta(delta)
-                                            }
-                                        },
-                                    )));
-                            }
-                            _ => (),
-                        },
-                        Event::AboutToWait => {
-                            #[cfg(feature = "egui")]
-                            self.gui.immediate_ui(|gui| {
-                                game.lock().event(events::Event::Egui(gui.context()));
-                            });
 
-                            game.lock().update();
-                            self.get_window().request_redraw();
+                                // fps limit logic
+                                let start_time = SystemTime::now();
+
+                                // redraw
+                                match self.draw.redraw_event(
+                                    #[cfg(feature = "egui")]
+                                    &mut self.gui,
+                                ) {
+                                    Err(VulkanError::SwapchainOutOfDate) => {
+                                        self.draw.mark_swapchain_outdated();
+                                    }
+                                    Err(e) => panic!("{e}"),
+                                    _ => (),
+                                };
+
+                                // sleeps the required time to hit the framerate limit.
+                                spin_sleep::native_sleep(
+                                    SETTINGS
+                                        .graphics
+                                        .framerate_limit()
+                                        .saturating_sub(start_time.elapsed().unwrap() * 2),
+                                );
+                                TIME.update();
+                                game.lock().frame_update();
+                                events::Event::Destroyed
+                            }
+                            _ => events::Event::Destroyed,
+                        };
+                        // destroy event can not be called here so I did the most lazy approach possible.
+                        if let events::Event::Destroyed = event {
+                        } else {
+                            game.lock().event(event);
                         }
-                        Event::LoopExiting => {
-                            game.lock().event(events::Event::Destroyed);
+                    }
+                    Event::DeviceEvent { event, .. } => match event {
+                        DeviceEvent::MouseMotion { delta } => {
+                            game.lock()
+                                .event(events::Event::Input(InputEvent::MouseMotion(vec2(
+                                    delta.0 as f32,
+                                    delta.1 as f32,
+                                ))));
                         }
-                        Event::MemoryWarning => {
-                            game.lock().event(events::Event::LowMemory);
-                        }
-                        Event::NewEvents(StartCause::Init) => {
-                            #[cfg(feature = "egui")]
-                            self.gui.immediate_ui(|gui| {
-                                game.lock().event(events::Event::Egui(gui.context()));
-                            });
-                            match self.draw.redraw_event(
-                                #[cfg(feature = "egui")]
-                                &mut self.gui,
-                            ) {
-                                Err(VulkanError::SwapchainOutOfDate) => {
-                                    Draw::mark_swapchain_outdated();
-                                }
-                                Err(e) => panic!("{e}"),
-                                _ => (),
-                            };
-                            game.lock().start();
-                            self.get_window().initialize();
-                            self.tick_system.run(Arc::clone(&game));
+                        DeviceEvent::MouseWheel { delta } => {
+                            game.lock()
+                                .event(events::Event::Input(InputEvent::MouseWheel(match delta {
+                                    MouseScrollDelta::LineDelta(x, y) => {
+                                        ScrollDelta::LineDelta(vec2(x, y))
+                                    }
+                                    MouseScrollDelta::PixelDelta(delta) => {
+                                        ScrollDelta::PixelDelta(delta)
+                                    }
+                                })));
                         }
                         _ => (),
+                    },
+                    Event::AboutToWait => {
+                        #[cfg(feature = "egui")]
+                        self.gui.immediate_ui(|gui| {
+                            game.lock().event(events::Event::Egui(gui.context()));
+                        });
+
+                        game.lock().update();
+                        self.get_window().request_redraw();
                     }
-                })
-                .unwrap();
-        });
+                    Event::LoopExiting => {
+                        game.lock().event(events::Event::Destroyed);
+                    }
+                    Event::MemoryWarning => {
+                        game.lock().event(events::Event::LowMemory);
+                    }
+                    Event::NewEvents(StartCause::Init) => {
+                        #[cfg(feature = "egui")]
+                        self.gui.immediate_ui(|gui| {
+                            game.lock().event(events::Event::Egui(gui.context()));
+                        });
+                        match self.draw.redraw_event(
+                            #[cfg(feature = "egui")]
+                            &mut self.gui,
+                        ) {
+                            Err(VulkanError::SwapchainOutOfDate) => {
+                                self.draw.mark_swapchain_outdated();
+                            }
+                            Err(e) => panic!("{e}"),
+                            _ => (),
+                        };
+                        game.lock().start();
+                        self.get_window().initialize();
+                        self.tick_system.run(Arc::clone(&game));
+                    }
+                    _ => (),
+                }
+            })
+            .unwrap();
     }
 }
 

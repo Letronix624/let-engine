@@ -10,6 +10,9 @@ pub struct Color {
 impl Color {
     pub const WHITE: Self = Self::from_rgb(1.0, 1.0, 1.0);
     pub const BLACK: Self = Self::from_r(0.0);
+    pub const RED: Self = Self::from_r(1.0);
+    pub const GREEN: Self = Self::from_g(1.0);
+    pub const BLUE: Self = Self::from_b(1.0);
 
     /// Makes a color from red, green, blue and alpha.
     #[inline]

@@ -20,19 +20,20 @@ use kira::{
     },
     spatial::{
         emitter::{EmitterHandle, EmitterSettings},
-        listener::ListenerSettings,
+        listener::{ListenerHandle, ListenerSettings},
         scene::SpatialSceneSettings,
     },
     tween::Value,
 };
+
+static AUDIO_SERVER: Lazy<Sender<AudioUpdate>> = Lazy::new(audio_server);
 
 /// The audio server has not started.
 #[derive(Clone, Copy, Debug, Error)]
 #[error("The audio server is not started for this session.")]
 pub struct NoAudioServerError;
 
-// TODO(Letronix624): Creatively remove all unwraps in a way that it can recover or on unrecoverable cases be handled by the user.
-pub(crate) fn audio_server() -> Sender<AudioUpdate> {
+fn audio_server() -> Sender<AudioUpdate> {
     let (send, recv) = unbounded();
     thread::spawn(|| {
         let recv = recv;
@@ -75,13 +76,13 @@ pub(crate) fn audio_server() -> Sender<AudioUpdate> {
                         sound.handle.lock().take();
                         let _ = sound.handle.lock().set(handle.map_err(|x| x.into()));
                     }
-                    Ok(AudioUpdate::NewLayer(layer)) => {
+                    Ok(AudioUpdate::NewListener(sender)) => {
                         if let Ok(listener) = spacial_scene.add_listener(
                             Vec3::ZERO,
                             Quat::IDENTITY,
                             ListenerSettings::default(),
                         ) {
-                            let _ = layer.listener.lock().set(listener);
+                            let _ = sender.send(listener);
                         };
                     }
                     Ok(AudioUpdate::SettingsChange(settings)) => {
@@ -107,7 +108,7 @@ pub(crate) fn audio_server() -> Sender<AudioUpdate> {
 
 pub(crate) enum AudioUpdate {
     Play(Sound),
-    NewLayer(Arc<Layer>),
+    NewListener(Sender<ListenerHandle>),
     SettingsChange(AudioSettings),
 }
 
@@ -236,15 +237,13 @@ impl Default for AudioSettings {
     }
 }
 
+use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use thiserror::Error;
 
-use crate::{
-    objects::{scenes::Layer, Object},
-    SETTINGS,
-};
+use crate::SETTINGS;
 
-use super::RESOURCES;
+use let_engine_core::objects::Object;
 
 /// The shared loaded data of a sound, clone friendly and thread safe.
 #[derive(Clone, Debug, PartialEq)]
@@ -537,8 +536,7 @@ impl Sound {
     /// Plays this sound.
     pub fn play(&mut self) -> Result<()> {
         if self.state() != PlaybackState::Playing {
-            RESOURCES
-                .audio_server
+            AUDIO_SERVER
                 .send(AudioUpdate::Play(self.clone()))
                 .ok()
                 .ok_or(NoAudioServerError)?;
@@ -702,5 +700,69 @@ impl From<StaticSoundSettings> for SoundSettings {
 impl Default for SoundSettings {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Engine wide audio settings.
+pub struct Audio {
+    audio_settings: Mutex<AudioSettings>,
+}
+
+impl Audio {
+    pub(crate) fn new() -> Self {
+        Self {
+            audio_settings: Mutex::new(AudioSettings::new()),
+        }
+    }
+    /// Returns the audio settings.
+    #[cfg(feature = "audio")]
+    pub fn get(&self) -> AudioSettings {
+        *self.audio_settings.lock()
+    }
+    /// Sets and applies the audio settings and therefore refreshes the engine side audio server to use them.
+    #[cfg(feature = "audio")]
+    pub fn set(&self, settings: AudioSettings) -> Result<(), NoAudioServerError> {
+        *self.audio_settings.lock() = settings;
+        AUDIO_SERVER
+            .send(AudioUpdate::SettingsChange(settings))
+            .ok()
+            .ok_or(NoAudioServerError)
+    }
+}
+
+/// Your "ears". The object this is bound to represents the position and orientation of where the sound is to be heard.
+///
+/// Just the existence of this object is enough for you to be able to hear sounds directionally from the position of this listener.
+pub struct Listener {
+    listener: ListenerHandle,
+    object: Object,
+}
+
+impl Listener {
+    /// Creates a new Listener using the given object as ears.
+    pub fn new(object: &Object) -> Result<Self> {
+        let (sender, recv) = unbounded();
+        AUDIO_SERVER.send(AudioUpdate::NewListener(sender))?;
+        Ok(Self {
+            object: object.clone(),
+            listener: recv.recv()?,
+        })
+    }
+
+    /// Returns the object bound to this listener.
+    pub fn object(&self) -> &Object {
+        &self.object
+    }
+
+    /// Updates the listener to the object it is bound to.
+    pub fn update(&mut self, tween: Tween) -> Result<()> {
+        self.object.update()?;
+        self.listener
+            .set_position(self.object.transform.position.extend(0.0), tween.into())?;
+        self.listener.set_orientation(
+            Quat::from_rotation_z(self.object.transform.rotation),
+            tween.into(),
+        )?;
+        Ok(())
     }
 }

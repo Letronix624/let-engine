@@ -2,16 +2,13 @@
 //!
 //! Panics the program in case the system is not capable of running the game engine.
 
-use crate::prelude::*;
-
 use anyhow::{Context, Result};
-use core::panic;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use vulkano::buffer::BufferContents;
 use vulkano::descriptor_set::WriteDescriptorSet;
 use vulkano::pipeline::cache::{PipelineCache, PipelineCacheCreateInfo};
-use vulkano::pipeline::GraphicsPipeline;
+use winit::event_loop::EventLoop;
 
 mod loader;
 pub(crate) mod vulkan;
@@ -24,22 +21,20 @@ pub mod data;
 pub mod materials;
 mod model;
 
-#[cfg(feature = "audio")]
-pub mod sounds;
 pub use model::*;
 
-pub(crate) static RESOURCES: Lazy<Resources> = Lazy::new(|| {
-    let (materials, vulkan) =
-        EVENT_LOOP.with_borrow(|event_loop| Vulkan::init(event_loop).unwrap());
-    Resources::new(vulkan, materials).unwrap_or_else(|e| panic!("{e}"))
-});
-#[cfg(feature = "labels")]
-pub(crate) static LABELIFIER: Lazy<Mutex<Labelifier>> =
-    Lazy::new(|| Mutex::new(Labelifier::new().unwrap_or_else(|e| panic!("{e}"))));
+use crate::EngineError;
+
+use self::data::BasicShapes;
+
+pub static RESOURCES: OnceLock<Resources> = OnceLock::new();
+pub fn resources<'a>() -> Result<&'a Resources, EngineError> {
+    RESOURCES.get().ok_or(EngineError::NotReady)
+}
 
 /// All the resources kept in the game engine like textures, fonts, sounds and models.
 #[derive(Clone)]
-pub(crate) struct Resources {
+pub struct Resources {
     pub vulkan: Vulkan,
     pub loader: Arc<Mutex<Loader>>,
     pub shapes: BasicShapes,
@@ -48,7 +43,9 @@ pub(crate) struct Resources {
 }
 
 impl Resources {
-    pub(crate) fn new(vulkan: Vulkan, materials: Vec<Arc<GraphicsPipeline>>) -> Result<Self> {
+    pub fn new(event_loop: &EventLoop<()>) -> Result<Self> {
+        let (materials, vulkan) = Vulkan::init(event_loop)?;
+
         let loader = Arc::new(Mutex::new(Loader::init(&vulkan, materials).context(
             "Failed to create the graphics loading environment for the game engine.",
         )?));
@@ -65,13 +62,13 @@ impl Resources {
         })
     }
 
-    pub(crate) fn vulkan(&self) -> &Vulkan {
+    pub fn vulkan(&self) -> &Vulkan {
         &self.vulkan
     }
-    pub(crate) fn loader(&self) -> &Arc<Mutex<Loader>> {
+    pub fn loader(&self) -> &Arc<Mutex<Loader>> {
         &self.loader
     }
-    pub(crate) fn shapes(&self) -> &BasicShapes {
+    pub fn shapes(&self) -> &BasicShapes {
         &self.shapes
     }
 }
@@ -86,13 +83,13 @@ impl Resources {
 /// The binary given to the function must be made with the same hardware and vulkan driver version.
 pub unsafe fn load_pipeline_cache(data: &[u8]) -> Result<()> {
     let cache = PipelineCache::new(
-        RESOURCES.vulkan().device.clone(),
+        resources()?.vulkan().device.clone(),
         PipelineCacheCreateInfo {
             initial_data: data.to_vec(),
             ..Default::default()
         },
     )?;
-    RESOURCES
+    resources()?
         .loader()
         .lock()
         .pipeline_cache
@@ -104,11 +101,11 @@ pub unsafe fn load_pipeline_cache(data: &[u8]) -> Result<()> {
 ///
 /// Allows this binary to be loaded with the `load_pipeline_cache` function to make loading materials potentially faster.
 pub fn pipeline_binary() -> Result<Vec<u8>> {
-    Ok(RESOURCES.loader().lock().pipeline_cache.get_data()?)
+    Ok(resources()?.loader().lock().pipeline_cache.get_data()?)
 }
 
 /// Loads a new write operation for a shader.
 pub fn new_descriptor_write<T: BufferContents>(buf: T, set: u32) -> Result<WriteDescriptorSet> {
-    let loader = RESOURCES.loader().lock();
+    let loader = resources()?.loader().lock();
     loader.write_descriptor(buf, set)
 }

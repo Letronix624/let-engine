@@ -1,6 +1,6 @@
 //! The default input system by the engine.
 
-use crate::objects::scenes::Layer;
+use let_engine_core::objects::scenes::Layer;
 use std::{
     collections::HashSet,
     sync::{

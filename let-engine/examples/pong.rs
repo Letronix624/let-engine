@@ -295,11 +295,10 @@ impl Ball {
         object.appearance = Appearance::default().model(Some(Model::Square)).unwrap();
         let object = object.init(layer).unwrap();
         // make a sound to play when bouncing.
-        let mut bounce_sound = Sound::new(
+        let bounce_sound = Sound::new(
             SoundData::gen_square_wave(777.0, 0.03),
             SoundSettings::default().volume(0.05),
         );
-        bounce_sound.bind_to_object(Some(&object));
 
         Self {
             object,

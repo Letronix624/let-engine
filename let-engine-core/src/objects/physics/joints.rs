@@ -8,6 +8,12 @@ use rapier2d::{
 
 pub use rapier2d::dynamics::JointAxesMask;
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+#[error("This joint was not found in this layer.")]
+pub struct NoJointError;
+
 // GenericJoint
 
 #[derive(Copy, Clone, Debug, PartialEq, Default)]

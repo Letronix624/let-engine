@@ -7,13 +7,28 @@ use glyph_brush::{
     HorizontalAlign, Layout, OwnedSection, OwnedText, VerticalAlign,
 };
 use image::{ImageBuffer, Luma};
+use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::super::resources::vulkan::shaders::*;
-use crate::error::objects::ObjectError;
-use crate::prelude::*;
+use crate::{
+    objects::{scenes::Layer, Appearance, NewObject, Object, ObjectError, Transform},
+    resources::{
+        data::{tvert, Data, Vertex},
+        materials::{Material, MaterialSettingsBuilder, Shaders},
+        resources,
+        textures::{Format, Sampler, Texture, TextureSettings},
+        vulkan::shaders::*,
+        Model, ModelData,
+    },
+    Direction,
+};
+use glam::{vec2, Vec2};
+
+pub static LABELIFIER: Lazy<Mutex<Labelifier>> =
+    Lazy::new(|| Mutex::new(Labelifier::new().unwrap()));
 
 /// Info to create default label objects with.
 #[derive(Clone)]
@@ -253,7 +268,7 @@ impl std::hash::Hash for Extra {
 }
 
 /// A label maker holding
-pub(crate) struct Labelifier {
+pub struct Labelifier {
     /// the default material,
     material: Material,
     /// RustType font cache,
@@ -298,8 +313,7 @@ impl Labelifier {
             settings,
         )?;
 
-        let resources = &RESOURCES;
-        let vulkan = resources.vulkan().clone();
+        let vulkan = resources()?.vulkan().clone();
         let text_shaders = Shaders::from_modules(
             vertex_shader(vulkan.device.clone())?,
             text_fragment_shader(vulkan.device.clone())?,

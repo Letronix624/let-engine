@@ -72,7 +72,7 @@ impl let_engine::Game for Game {
         // Initializes the object to the layer
         circle.init(&self.main_layer).unwrap();
     }
-    fn event(&mut self, event: events::Event) {
+    fn event(&mut self, event: Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {

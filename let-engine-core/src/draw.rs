@@ -1,7 +1,9 @@
-use crate::{error::draw::*, prelude::*};
 use anyhow::Result;
-use parking_lot::RwLock;
-use std::sync::Arc;
+use parking_lot::{Mutex, RwLock};
+use std::{
+    sync::{atomic::AtomicBool, Arc, OnceLock},
+    time::Duration,
+};
 use vulkano::{
     command_buffer::{
         CommandBuffer, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel,
@@ -18,13 +20,29 @@ use vulkano::{
     sync::{self, GpuFuture},
     Validated, VulkanError as VulkanoError,
 };
+use winit::event_loop::EventLoop;
 
-use super::resources::vulkan::{
-    swapchain::create_swapchain_and_images, window_size_dependent_setup,
+use crate::{
+    camera::CameraSettings,
+    objects::{scenes::SCENE, Instance, Node, Object, VisualObject},
+    resources::{
+        data::{InstanceData, ModelViewProj, ObjectFrag},
+        resources,
+        vulkan::{
+            swapchain::create_swapchain_and_images, window::create_window,
+            window_size_dependent_setup,
+        },
+        Loader, Model,
+    },
+    utils::ortho_maker,
+    window::{Window, WindowBuilder},
 };
 
 //use cgmath::{Deg, Matrix3, Matrix4, Ortho, Point3, Rad, Vector3};
-use glam::f32::{Mat4, Quat, Vec3};
+use glam::{
+    f32::{Mat4, Quat, Vec3},
+    vec2,
+};
 
 pub static VIEWPORT: RwLock<Viewport> = RwLock::new(Viewport {
     offset: [0.0; 2],
@@ -36,26 +54,25 @@ pub static VIEWPORT: RwLock<Viewport> = RwLock::new(Viewport {
 pub struct Draw {
     pub surface: Arc<Surface>,
     pub window: Arc<Window>,
-    pub(crate) swapchain: Arc<Swapchain>,
-    pub(crate) framebuffers: Vec<Arc<Framebuffer>>,
-    pub(crate) previous_frame_end: Option<Box<dyn GpuFuture>>,
+    pub swapchain: Arc<Swapchain>,
+    pub framebuffers: Vec<Arc<Framebuffer>>,
+    pub previous_frame_end: Option<Box<dyn GpuFuture>>,
+    graphics: Arc<Graphics>,
     dimensions: [u32; 2],
 }
 
 impl Draw {
-    pub(crate) fn setup(window_builder: WindowBuilder) -> Result<Self> {
-        let resources = &RESOURCES;
-        let vulkan = resources.vulkan().clone();
-        let loader = resources.loader().lock();
-        let (surface, window) = EVENT_LOOP.with_borrow(|event_loop| {
-            return vulkan::window::create_window(
-                event_loop.get().expect("An unexpected error occured."), // I do not know when this could cause a crash.
-                &resources.vulkan().instance,
-                window_builder,
-            );
-        })?;
+    pub fn setup(
+        window_builder: WindowBuilder,
+        event_loop: &EventLoop<()>,
+        graphics: Arc<Graphics>,
+    ) -> Result<Self> {
+        let vulkan = resources()?.vulkan().clone();
+        let loader = resources()?.loader().lock();
+        let (surface, window) =
+            create_window(event_loop, &resources()?.vulkan().instance, window_builder)?;
 
-        let (swapchain, images) = create_swapchain_and_images(&vulkan.device, &surface)?;
+        let (swapchain, images) = create_swapchain_and_images(&vulkan.device, &surface, &graphics)?;
 
         let mut viewport = Viewport {
             offset: [0.0; 2],
@@ -88,6 +105,7 @@ impl Draw {
             swapchain,
             framebuffers,
             previous_frame_end,
+            graphics,
             dimensions,
         })
     }
@@ -97,15 +115,15 @@ impl Draw {
     }
 
     /// Recreates the swapchain in case it is out of date if someone for example changed the scene size or window dimensions.
-    fn recreate_swapchain(&mut self, loader: &mut Loader) -> Result<(), VulkanError> {
-        if SETTINGS
+    fn recreate_swapchain(&mut self, loader: &mut Loader) -> Result<()> {
+        if self
             .graphics
             .recreate_swapchain
             .load(std::sync::atomic::Ordering::Acquire)
         {
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: self.dimensions,
-                present_mode: SETTINGS.graphics.present_mode().into(),
+                present_mode: self.graphics.present_mode().into(),
                 ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
@@ -114,17 +132,15 @@ impl Draw {
                 }
             };
 
-            let resources = &RESOURCES;
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(
                 &new_images,
-                resources.vulkan().render_pass.clone(),
+                resources()?.vulkan().render_pass.clone(),
                 &mut VIEWPORT.write(),
             )
             .map_err(VulkanError::Other)?;
             loader.pipelines.clear();
-            SETTINGS
-                .graphics
+            self.graphics
                 .recreate_swapchain
                 .store(false, std::sync::atomic::Ordering::Release);
         };
@@ -138,8 +154,10 @@ impl Draw {
         clear_color: [f32; 4],
         loader: &Loader,
     ) -> Result<(RecordingCommandBuffer, RecordingCommandBuffer), VulkanError> {
-        let resources = &RESOURCES;
-        let vulkan = resources.vulkan().clone();
+        let vulkan = resources()
+            .map_err(|e| VulkanError::Other(e.into()))?
+            .vulkan()
+            .clone();
         let mut builder = RecordingCommandBuffer::new(
             loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
@@ -208,7 +226,7 @@ impl Draw {
         let zoom = 1.0 / camera_settings.zoom;
 
         // Projection matrix
-        let proj = utils::ortho_maker(
+        let proj = ortho_maker(
             camera_settings.mode,
             camera.transform.position,
             zoom,
@@ -236,7 +254,7 @@ impl Draw {
         &self,
         command_buffer: &mut RecordingCommandBuffer,
         loader: &mut Loader,
-    ) -> Result<(), VulkanError> {
+    ) -> Result<()> {
         for layer in SCENE.layers().iter() {
             let mut order: Vec<VisualObject> = Vec::with_capacity(layer.objects_map.lock().len());
             let mut instances: Vec<Instance> = vec![];
@@ -250,9 +268,8 @@ impl Draw {
                     continue;
                 };
 
-                let resources = &RESOURCES;
-                let vulkan = resources.vulkan();
-                let shapes = resources.shapes().clone();
+                let vulkan = resources()?.vulkan();
+                let shapes = resources()?.shapes().clone();
 
                 let model_data = match model {
                     Model::Custom(data) => data,
@@ -391,8 +408,7 @@ impl Draw {
                     .copy_from_slice(&data);
 
                 let mut descriptors = vec![];
-                let resources = &RESOURCES;
-                let vulkan = resources.vulkan();
+                let vulkan = resources()?.vulkan();
 
                 // The pipeline of the current object. Takes the default one if there is none.
                 let pipeline = if let Some(material) = &instance.material {
@@ -412,7 +428,7 @@ impl Draw {
                         .map_err(VulkanError::Other)?
                 };
 
-                let shapes = resources.shapes().clone();
+                let shapes = resources()?.shapes().clone();
                 let model = match &model {
                     Model::Custom(data) => data,
                     Model::Square => &shapes.square,
@@ -451,9 +467,8 @@ impl Draw {
         command_buffer: Arc<CommandBuffer>,
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
-    ) -> Result<(), VulkanError> {
-        let resources = &RESOURCES;
-        let vulkan = resources.vulkan().clone();
+    ) -> Result<()> {
+        let vulkan = resources()?.vulkan().clone();
         let future = self
             .previous_frame_end
             .take()
@@ -474,34 +489,32 @@ impl Draw {
                 self.previous_frame_end = Some(future.boxed());
             }
             Err(VulkanoError::OutOfDate) => {
-                SETTINGS
-                    .graphics
-                    .recreate_swapchain
-                    .store(true, std::sync::atomic::Ordering::Release);
+                self.mark_swapchain_outdated();
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
             }
             Err(e) => {
                 self.previous_frame_end = Some(sync::now(vulkan.device.clone()).boxed());
-                return Err(VulkanError::FlushFutureError(e.to_string()));
+                return Err(VulkanError::FlushFutureError(e.to_string()).into());
             }
         }
         Ok(())
     }
 
-    pub fn mark_swapchain_outdated() {
-        SETTINGS
-            .graphics
+    pub fn mark_swapchain_outdated(&self) {
+        self.graphics
             .recreate_swapchain
             .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Redraws the scene.
-    pub(crate) fn redraw_event(
+    pub fn redraw_event(
         &mut self,
         #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
     ) -> Result<(), VulkanError> {
-        let resources = &RESOURCES;
-        let mut loader = resources.loader().lock();
+        let mut loader = resources()
+            .map_err(|e| VulkanError::Other(e.into()))?
+            .loader()
+            .lock();
 
         let dimensions = self.window.inner_size();
         self.dimensions = [dimensions.x as u32, dimensions.y as u32];
@@ -517,13 +530,13 @@ impl Draw {
             return Ok(());
         }
 
-        Self::recreate_swapchain(self, &mut loader)?;
+        Self::recreate_swapchain(self, &mut loader).map_err(VulkanError::Other)?;
 
         let (image_num, suboptimal, acquire_future) =
             match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {
                 Ok(r) => r,
                 Err(VulkanoError::OutOfDate) => {
-                    Self::mark_swapchain_outdated();
+                    self.mark_swapchain_outdated();
                     return Err(VulkanError::SwapchainOutOfDate);
                 }
                 Err(e) => {
@@ -532,7 +545,7 @@ impl Draw {
             };
 
         if suboptimal {
-            Self::mark_swapchain_outdated();
+            self.mark_swapchain_outdated();
         }
 
         let (mut builder, mut secondary_builder) = Self::make_command_buffer(
@@ -542,7 +555,8 @@ impl Draw {
             &loader,
         )?;
 
-        Self::write_secondary_command_buffer(self, &mut secondary_builder, &mut loader)?;
+        Self::write_secondary_command_buffer(self, &mut secondary_builder, &mut loader)
+            .map_err(VulkanError::Other)?;
 
         builder
             .execute_commands(secondary_builder.end()?)
@@ -561,7 +575,212 @@ impl Draw {
             .map_err(|e| VulkanError::Other(e.into()))?;
         let command_buffer = builder.end()?;
 
-        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)?;
+        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)
+            .map_err(VulkanError::Other)?;
         Ok(())
+    }
+}
+
+/// Engine wide Graphics settings.
+///
+/// By default the present mode is determined by this order based on availability on the device:
+///
+/// 1. `Mailbox`
+/// 2. `Immediate`
+/// 3. `Fifo`
+///
+/// The framerate limit is `None`, so off.
+///
+/// Only alter settings after the game engine has been initialized. The initialisation of the game engine also
+/// initializes the settings.
+pub struct Graphics {
+    /// An option that determines something called "VSync".
+    pub(crate) present_mode: Mutex<PresentMode>,
+    /// Time waited before each frame.
+    framerate_limit: Mutex<Duration>,
+    pub(crate) available_present_modes: OnceLock<Vec<PresentMode>>,
+    pub(crate) recreate_swapchain: AtomicBool,
+}
+
+impl Graphics {
+    /// Creates a new graphics settings instance.
+    pub fn new(present_mode: PresentMode) -> Self {
+        Self {
+            present_mode: Mutex::new(present_mode),
+            framerate_limit: Mutex::new(Duration::from_secs(0)),
+            available_present_modes: OnceLock::new(),
+            recreate_swapchain: false.into(),
+        }
+    }
+
+    /// Returns the present mode of the game.
+    pub fn present_mode(&self) -> PresentMode {
+        *self.present_mode.lock()
+    }
+
+    /// Sets and applies the present mode of the game.
+    ///
+    /// Returns an error in case the present mode given is not supported by the device.
+    ///
+    /// Find out which present modes work using the [get_supported_present_modes](Graphics::get_supported_present_modes) function.
+    pub fn set_present_mode(&self, mode: PresentMode) -> anyhow::Result<()> {
+        if self.get_supported_present_modes().contains(&mode) {
+            *self.present_mode.lock() = mode;
+            self.recreate_swapchain
+                .store(true, std::sync::atomic::Ordering::Release);
+            Ok(())
+        } else {
+            Err(anyhow::Error::msg(format!(
+                "This present mode \"{:?}\" is not available on this device.\nAvailable modes on this device are {:?}",
+                mode, self.get_supported_present_modes()
+            )))
+        }
+    }
+
+    /// Returns waiting time between frames to wait.
+    pub fn framerate_limit(&self) -> Duration {
+        *self.framerate_limit.lock()
+    }
+
+    /// Sets the framerate limit as waiting time between frames.
+    ///
+    /// This should be able to be changed by the user in case they have a device with limited power capacity like a laptop with a battery.
+    ///
+    /// Setting the duration to no wait time at all will turn off the limit.
+    pub fn set_framerate_limit(&self, limit: Duration) {
+        *self.framerate_limit.lock() = limit;
+    }
+
+    /// Sets the cap for the max frames per second the game should be able to output.
+    ///
+    /// This method is the same as setting the `set_framerate_limit` of this setting to `1.0 / cap` in seconds.
+    ///
+    /// Turns off the framerate cap if 0 was given.
+    pub fn set_fps_cap(&self, cap: u64) {
+        if cap == 0 {
+            self.set_framerate_limit(Duration::from_secs(cap));
+            return;
+        }
+        self.set_framerate_limit(Duration::from_secs_f64(1.0 / cap as f64));
+    }
+
+    /// Returns all the present modes this device supports.
+    ///
+    /// If the vec is empty the engine has not been initialized and the settings should not be changed at this state.
+    pub fn get_supported_present_modes(&self) -> Vec<PresentMode> {
+        self.available_present_modes
+            .get()
+            .cloned()
+            .unwrap_or(vec![])
+    }
+}
+
+/// The presentation action to take when presenting images to the window.
+///
+/// In game engine terms this affects "VSync".
+///
+/// `Immediate` mode is the only one that does not have "VSync".
+///
+/// When designing in game graphics settings this is the setting that gets changed when users select the VSync option.
+///
+/// The vsync options may include higher latency than the other ones.
+///
+/// It is not recommended dynamically switching between those during the game, as they may cause visual artifacts or noticable changes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum PresentMode {
+    /// This one has no vsync and presents the image as soon as it is available.
+    ///
+    /// This may happen while the image is presenting, so it may cause tearing.
+    ///
+    /// This present mode has the lowest latency compared to every other mode, so this is the option for most fast paced games where latency matters.
+    ///
+    /// This present mode may not be available on every device.
+    Immediate,
+    /// This present mode has a waiting slot for the next image to be presented after the current one has finished presenting.
+    /// This mode also does not block the drawing thread, drawing images, even when they will not get presented.
+    ///
+    /// This means there is no tearing and with just one waiting slot also not that much latency.
+    ///
+    /// This option is recommended if `Immediate` is not available and also for games that focus visual experience over latency, as this one does not have tearing.
+    ///
+    /// It may also not be available on every device.
+    Mailbox,
+    /// Means first in first out.
+    ///
+    /// This present mode is also known as "vsync on". It blocks the thread and only draws and presents images if the present buffer is finished drawing to the screen.
+    ///
+    /// It is guaranteed to be available on every device.
+    Fifo,
+}
+
+impl From<PresentMode> for vulkano::swapchain::PresentMode {
+    fn from(value: PresentMode) -> vulkano::swapchain::PresentMode {
+        use vulkano::swapchain::PresentMode as Pm;
+        match value {
+            PresentMode::Immediate => Pm::Immediate,
+            PresentMode::Mailbox => Pm::Mailbox,
+            PresentMode::Fifo => Pm::Fifo,
+        }
+    }
+}
+
+impl From<vulkano::swapchain::PresentMode> for PresentMode {
+    fn from(value: vulkano::swapchain::PresentMode) -> PresentMode {
+        use vulkano::swapchain::PresentMode as Pm;
+        match value {
+            Pm::Immediate => PresentMode::Immediate,
+            Pm::Mailbox => PresentMode::Mailbox,
+            _ => PresentMode::Fifo,
+        }
+    }
+}
+
+// Redraw errors
+
+use thiserror::Error;
+use vulkano::shader::spirv::SpirvBytesNotMultipleOf4;
+
+/// Errors that originate from Vulkan.
+#[derive(Error, Debug)]
+pub enum VulkanError {
+    #[error("The swapchain is out of date and needs to be updated.")]
+    SwapchainOutOfDate,
+    #[error("Failed to flush future:\n{0}")]
+    FlushFutureError(String),
+    #[error("A Validated error:\n{0}")]
+    Validated(VulkanoError),
+    #[error("An unexpected error with the shaders occured.")]
+    ShaderError,
+    #[error("An unexpected error occured:\n{0}")]
+    Other(anyhow::Error),
+}
+
+impl From<Validated<VulkanoError>> for VulkanError {
+    fn from(value: Validated<VulkanoError>) -> Self {
+        Self::Validated(value.unwrap())
+    }
+}
+
+/// Errors that occur from the creation of Shaders.
+#[derive(Error, Debug)]
+pub enum ShaderError {
+    #[error("The given entry point to those shaders is not present in the given shaders.")]
+    ShaderEntryPoint,
+    #[error("The provided bytes are not SpirV.")]
+    InvalidSpirV,
+    #[error("Something happened and the shader can not be made.: {0:?}")]
+    Other(VulkanError),
+}
+
+impl From<Validated<VulkanoError>> for ShaderError {
+    fn from(value: Validated<VulkanoError>) -> Self {
+        Self::Other(value.into())
+    }
+}
+
+impl From<SpirvBytesNotMultipleOf4> for ShaderError {
+    fn from(_value: SpirvBytesNotMultipleOf4) -> Self {
+        Self::InvalidSpirV
     }
 }
