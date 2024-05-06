@@ -1,9 +1,10 @@
-use let_engine_core::{resources::RESOURCES, window::WINDOW, EngineError};
 // mods
 #[cfg(feature = "client")]
 pub use let_engine_core::window;
 #[cfg(feature = "client")]
 use let_engine_core::{draw::Draw, resources::Resources};
+#[cfg(feature = "client")]
+use let_engine_core::{resources::RESOURCES, window::WINDOW};
 #[cfg(all(feature = "egui", feature = "client"))]
 mod egui;
 #[cfg(feature = "client")]
@@ -114,6 +115,7 @@ pub struct Engine {
 /// Makes sure the engine struct only gets constructed a single time.
 static INIT: parking_lot::Once = parking_lot::Once::new();
 
+use let_engine_core::EngineError;
 impl Engine {
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
     ///
@@ -260,9 +262,8 @@ impl Engine {
                                 }),
                             ),
                             WindowEvent::RedrawRequested => {
-                                #[cfg(feature = "labels")]
                                 {
-                                    let labelifier = &let_engine_core::objects::labels::LABELIFIER;
+                                    let labelifier = &let_engine_widgets::labels::LABELIFIER;
                                     labelifier.lock().update().unwrap();
                                 }
 

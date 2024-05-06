@@ -42,34 +42,3 @@ pub enum Direction {
     W,
     Nw,
 }
-
-#[cfg(feature = "labels")]
-impl From<Direction> for (glyph_brush::HorizontalAlign, glyph_brush::VerticalAlign) {
-    fn from(value: Direction) -> Self {
-        use glyph_brush::{HorizontalAlign, VerticalAlign};
-        let horizontal = match value {
-            Direction::Center => HorizontalAlign::Center,
-            Direction::N => HorizontalAlign::Center,
-            Direction::No => HorizontalAlign::Right,
-            Direction::O => HorizontalAlign::Right,
-            Direction::So => HorizontalAlign::Right,
-            Direction::S => HorizontalAlign::Center,
-            Direction::Sw => HorizontalAlign::Left,
-            Direction::W => HorizontalAlign::Left,
-            Direction::Nw => HorizontalAlign::Left,
-        };
-
-        let vertical = match value {
-            Direction::Center => VerticalAlign::Center,
-            Direction::N => VerticalAlign::Top,
-            Direction::No => VerticalAlign::Top,
-            Direction::O => VerticalAlign::Center,
-            Direction::So => VerticalAlign::Bottom,
-            Direction::S => VerticalAlign::Bottom,
-            Direction::Sw => VerticalAlign::Bottom,
-            Direction::W => VerticalAlign::Center,
-            Direction::Nw => VerticalAlign::Top,
-        };
-        (horizontal, vertical)
-    }
-}

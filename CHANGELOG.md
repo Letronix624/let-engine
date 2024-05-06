@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Crash when syncing a label and removing it afterwards.
 - Cursor visible function just being the cursor grab function.
 
+### Removed
+
+- `InputEvent::ReceivedCharacter` in favour of Key::Chararcter
+
 ## [0.10.0] - 2024-2-10
 
 ### Added

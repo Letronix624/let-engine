@@ -21,10 +21,6 @@ crossbeam = { workspace = true }
 indexmap = "2.2"
 paste = "1.0.14"
 
-  [dependencies.glyph_brush]
-  version = "0.7.8"
-  optional = true
-
   [dependencies.glam]
   workspace = true
   features = [ "bytemuck", "mint" ]
@@ -57,7 +53,6 @@ vulkan_debug_utils = [ ]
 client = [ "dep:vulkano", "dep:winit", "dep:image" ]
 physics = [ "dep:rapier2d" ]
 serde = [ "glam/serde" ]
-labels = [ "dep:glyph_brush", "client" ]
 
 rand = [ "glam/rand" ]
 fast-math = [ "glam/fast-math" ]

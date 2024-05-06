@@ -5,15 +5,14 @@
 //!
 //! A Game engine made in Rust.
 mod game;
-use std::sync::Arc;
 
 #[cfg(feature = "asset_system")]
 pub use asset_system;
 pub use game::*;
 pub mod prelude;
-pub use settings;
 #[cfg(feature = "audio")]
-pub mod sounds;
+pub use let_engine_audio;
+pub use settings;
 
 pub use glam::{vec2, Vec2};
 
@@ -21,8 +20,6 @@ pub use glam::{vec2, Vec2};
 mod check_feature_dependency {
     #[cfg(feature = "egui")]
     compile_error!("`egui` requires the `client` feature to be enabled.");
-    #[cfg(feature = "labels")]
-    compile_error!("`labels` requires the `client` feature to be enabled.");
     #[cfg(feature = "audio")]
     compile_error!("`audio` requires the `client` feature to be enabled.");
 }
@@ -31,7 +28,7 @@ mod check_feature_dependency {
 #[cfg(feature = "egui")]
 pub use egui_winit_vulkano::egui;
 
-pub use let_engine_core::{camera, make_circle, objects, resources, Direction};
+pub use let_engine_core::{camera, objects, resources, Direction};
 
 /// Structs about drawing related things.
 pub mod draw {
@@ -47,12 +44,105 @@ pub static INPUT: Lazy<input::Input> = Lazy::new(input::Input::new);
 
 /// General settings for the game engine.
 #[cfg(all(feature = "client", feature = "audio"))]
-pub static SETTINGS: Lazy<game::settings::Settings<Arc<draw::Graphics>, sounds::Audio>> =
-    Lazy::new(game::settings::Settings::new);
+pub static SETTINGS: Lazy<
+    game::settings::Settings<std::sync::Arc<draw::Graphics>, let_engine_audio::Audio>,
+> = Lazy::new(game::settings::Settings::new);
 /// General settings for the game engine.
 #[cfg(all(feature = "client", not(feature = "audio")))]
-pub static SETTINGS: Lazy<game::settings::Settings<Arc<Graphics>>> =
+pub static SETTINGS: Lazy<game::settings::Settings<std::sync::Arc<Graphics>>> =
     Lazy::new(game::settings::Settings::new);
 /// General settings for the game engine.
 #[cfg(not(feature = "client"))]
 pub static SETTINGS: Lazy<game::settings::Settings> = Lazy::new(game::settings::Settings::new);
+
+/// A macro that makes it easy to create circles.
+///
+/// Returns [Data] with vertices and indices.
+///
+/// ### $corners
+/// Using this with a `u32` makes a circle fan with as many corners as given.
+///
+/// ### $percent
+/// Using this with a `f64` makes a circle fan that looks like a pie with the given percentage missing.
+///
+/// ## usage:
+/// ```rust
+/// use let_engine::prelude::*;
+///
+/// let hexagon: Data = make_circle!(6); // Makes a hexagon.
+///
+/// // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
+/// let pie: Data = make_circle!(20, 0.75);
+/// ```
+#[macro_export]
+macro_rules! make_circle {
+    // Full circle fan
+    ($corners:expr) => {{
+        use let_engine::prelude::{vec2, Data, Vertex};
+
+        let corners = $corners;
+        if corners == 0 {
+            panic!("Number of corners must be greater than zero")
+        }
+
+        let mut vertices: Vec<Vertex> = vec![];
+        let mut indices: Vec<u32> = vec![];
+        use core::f64::consts::TAU;
+
+        // first point in the middle
+        vertices.push(Vertex {
+            position: vec2(0.0, 0.0),
+            tex_position: vec2(0.0, 0.0),
+        });
+
+        // Generate vertices
+        for i in 0..corners {
+            vertices.push(vert(
+                (TAU * ((i as f64) / corners as f64)).cos() as f32,
+                (TAU * ((i as f64) / corners as f64)).sin() as f32,
+            ));
+        }
+
+        // Generate indices
+        for i in 0..corners - 1 {
+            // -1 so the last index doesn't go above the total amounts of indices.
+            indices.extend([0, i + 1, i + 2]);
+        }
+        indices.extend([0, corners, 1]);
+
+        Data::Dynamic { vertices, indices }
+    }};
+    // Pie circle
+    ($corners:expr, $percent:expr) => {{
+        use let_engine::prelude::{vec2, Data, Vertex};
+
+        let corners = $corners;
+        if corners == 0 {
+            panic!("Number of corners must be greater than zero")
+        }
+
+        let percent: f64 = ($percent as f64).clamp(0.0, 1.0);
+        let mut vertices: Vec<Vertex> = vec![];
+        let mut indices: Vec<u32> = vec![];
+        use core::f64::consts::TAU;
+
+        let count = TAU * percent;
+
+        vertices.push(vert(0.0, 0.0));
+
+        // Generate vertices
+        for i in 0..corners + 1 {
+            vertices.push(vert(
+                (count * ((i as f64) / corners as f64)).cos() as f32,
+                (count * ((i as f64) / corners as f64)).sin() as f32,
+            ));
+        }
+
+        // Generate indices
+        for i in 0..corners {
+            indices.extend([0, i + 1, i + 2]);
+        }
+
+        Data::Dynamic { vertices, indices }
+    }};
+}
