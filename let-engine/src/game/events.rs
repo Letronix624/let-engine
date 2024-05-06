@@ -74,8 +74,6 @@ pub enum InputEvent {
     MouseWheel(ScrollDelta),
     /// A mouse button was pressed.
     MouseInput(MouseButton, ElementState),
-    /// A unicode character was received by the window.
-    ReceivedCharacter(char),
     /// Input by the keyboard.
     KeyboardInput { input: KeyboardInput },
     /// The modifiers were changed.

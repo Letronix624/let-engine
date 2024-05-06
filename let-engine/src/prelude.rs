@@ -7,18 +7,17 @@
 //! - imports everything this engine has to offer.
 
 // Resources only exists if client is enabled.
-#[cfg(feature = "client")]
+
 pub use let_engine_core::resources::*;
 
 pub use let_engine_core::{camera::*, objects::*};
 
+pub use crate::*;
+pub use data::*;
+
 // Client structs
 #[cfg(feature = "client")]
 pub use crate::events::*;
-#[cfg(feature = "client")]
-pub use crate::*;
-#[cfg(feature = "client")]
-pub use data::*;
 #[cfg(feature = "client")]
 pub use let_engine_core::draw::PresentMode;
 #[cfg(feature = "client")]
@@ -35,12 +34,11 @@ pub use joints::*;
 pub use physics::*;
 
 // Label structs
-#[cfg(feature = "labels")]
-pub use labels::*;
+pub use let_engine_widgets::labels::*;
 
 // Audio structs
 #[cfg(feature = "audio")]
-pub use crate::sounds::*;
+pub use let_engine_audio::*;
 
 // Asset system
 #[cfg(feature = "asset_system")]

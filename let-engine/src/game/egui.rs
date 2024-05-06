@@ -10,7 +10,10 @@ pub(crate) fn init(draw: &Draw, event_loop: &EventLoop<()>) -> Gui {
         draw.surface.clone(),
         vulkan.queue.clone(),
         vulkan.subpass.clone(),
-        vulkano::format::Format::R8G8B8A8_UNORM,
-        GuiConfig::default(),
+        draw.swapchain.image_format(),
+        GuiConfig {
+            allow_srgb_render_target: true,
+            ..Default::default()
+        },
     )
 }

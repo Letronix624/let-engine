@@ -14,9 +14,6 @@ pub mod physics;
 #[cfg(feature = "physics")]
 use physics::*;
 
-#[cfg(feature = "labels")]
-pub mod labels;
-
 pub mod scenes;
 use scenes::Layer;
 
@@ -286,8 +283,7 @@ impl NewObject {
     }
 
     /// Initializes the object into a layer with an optional parent object.
-    #[allow(unused_mut)]
-    fn init_with_optional_parent(
+    pub fn init_with_optional_parent(
         mut self,
         layer: &Arc<Layer>,
         parent: Option<&Object>,

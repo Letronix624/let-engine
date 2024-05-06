@@ -13,19 +13,17 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::{
+use glam::{vec2, Vec2};
+use let_engine_core::{
     objects::{scenes::Layer, Appearance, NewObject, Object, ObjectError, Transform},
     resources::{
         data::{tvert, Data, Vertex},
         materials::{Material, MaterialSettingsBuilder, Shaders},
-        resources,
         textures::{Format, Sampler, Texture, TextureSettings},
-        vulkan::shaders::*,
         Model, ModelData,
     },
     Direction,
 };
-use glam::{vec2, Vec2};
 
 pub static LABELIFIER: Lazy<Mutex<Labelifier>> =
     Lazy::new(|| Mutex::new(Labelifier::new().unwrap()));
@@ -202,7 +200,7 @@ impl<T> Label<T> {
             extra: Extra { id },
         };
 
-        let (h, v): (HorizontalAlign, VerticalAlign) = self.align.into();
+        let (h, v): (HorizontalAlign, VerticalAlign) = glyph_direction(self.align);
         let x = match h {
             HorizontalAlign::Left => 0.0,
             HorizontalAlign::Center => dimensions.0 * 0.5,
@@ -313,12 +311,13 @@ impl Labelifier {
             settings,
         )?;
 
-        let vulkan = resources()?.vulkan().clone();
-        let text_shaders = Shaders::from_modules(
-            vertex_shader(vulkan.device.clone())?,
-            text_fragment_shader(vulkan.device.clone())?,
-            "main",
-        );
+        let text_shaders = unsafe {
+            Shaders::from_bytes(
+                include_bytes!("shaders/default_vert.spv"),
+                include_bytes!("shaders/text_frag.spv"),
+                "main",
+            )?
+        };
 
         let material_settings = MaterialSettingsBuilder::default().build()?;
 
@@ -390,9 +389,6 @@ impl Labelifier {
 
         for task in queued.into_iter() {
             let mut label = task.label.clone();
-            let Ok(node) = label.object.as_node() else {
-                continue;
-            };
 
             //temp
             if !task.vertices.is_empty() {
@@ -407,8 +403,7 @@ impl Labelifier {
                 .object
                 .appearance
                 .set_material(Some(self.material.clone()));
-            let mut object = node.lock();
-            object.object = label.object.clone();
+            label.object.sync()?;
         }
         Ok(())
     }
@@ -616,4 +611,32 @@ impl Font {
     pub fn id(&self) -> FontId {
         self.id
     }
+}
+
+fn glyph_direction(value: Direction) -> (glyph_brush::HorizontalAlign, glyph_brush::VerticalAlign) {
+    use glyph_brush::{HorizontalAlign, VerticalAlign};
+    let horizontal = match value {
+        Direction::Center => HorizontalAlign::Center,
+        Direction::N => HorizontalAlign::Center,
+        Direction::No => HorizontalAlign::Right,
+        Direction::O => HorizontalAlign::Right,
+        Direction::So => HorizontalAlign::Right,
+        Direction::S => HorizontalAlign::Center,
+        Direction::Sw => HorizontalAlign::Left,
+        Direction::W => HorizontalAlign::Left,
+        Direction::Nw => HorizontalAlign::Left,
+    };
+
+    let vertical = match value {
+        Direction::Center => VerticalAlign::Center,
+        Direction::N => VerticalAlign::Top,
+        Direction::No => VerticalAlign::Top,
+        Direction::O => VerticalAlign::Center,
+        Direction::So => VerticalAlign::Bottom,
+        Direction::S => VerticalAlign::Bottom,
+        Direction::Sw => VerticalAlign::Bottom,
+        Direction::W => VerticalAlign::Center,
+        Direction::Nw => VerticalAlign::Top,
+    };
+    (horizontal, vertical)
 }

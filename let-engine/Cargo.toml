@@ -41,10 +41,6 @@ once_cell = { workspace = true }
   workspace = true
   optional = true
 
-  [dependencies.kira]
-  version = "0.8"
-  optional = true
-
   [dependencies.glam]
   workspace = true
   features = [ "bytemuck", "mint" ]
@@ -67,22 +63,30 @@ once_cell = { workspace = true }
   version = "0.11"
   path = "../let-engine-core"
 
+  [dependencies.let-engine-widgets]
+  version = "0.1"
+  path = "../let-engine-widgets"
+
+  [dependencies.let-engine-audio]
+  version = "0.1"
+  path = "../let-engine-audio"
+  optional = true
+
 [dev-dependencies]
 egui_demo_lib = "0.27"
 
 [features]
-default = [ "client", "labels", "physics", "audio" ]
+default = [ "client", "physics", "audio" ]
 egui = [ "let-engine-core/egui", "dep:egui_winit_vulkano", "client" ]
 vulkan_debug_utils = [ "let-engine-core/vulkan_debug_utils" ]
 client = [ "dep:vulkano", "dep:winit", "dep:image", "let-engine-core/client" ]
-labels = [ "client", "let-engine-core/labels" ]
-audio = [ "dep:kira", "client" ]
+audio = [ "dep:let-engine-audio", "client" ]
 physics = [ "dep:rapier2d" ]
 asset_system = [ "dep:asset-system" ]
-serde = [ "glam/serde", "let-engine-core/serde" ]
+serde = [ "glam/serde", "let-engine-core/serde", "let-engine-widgets/serde" ]
 
-rand = [ "glam/rand", "let-engine-core/rand" ]
-fast-math = [ "glam/fast-math", "let-engine-core/fast-math" ]
+rand = [ "glam/rand", "let-engine-core/rand", "let-engine-widgets/rand" ]
+fast-math = [ "glam/fast-math", "let-engine-core/fast-math", "let-engine-widgets/fast-math" ]
 
 # asset system compression algorithms
 deflate = [ "asset-system/deflate" ]

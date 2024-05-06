@@ -1,14 +1,13 @@
 //! Engine wide settings that are applicable using the [Settings](crate::settings::Settings) struct.
 
-use std::sync::Arc;
-
 use derive_builder::Builder;
 
+#[cfg(feature = "client")]
 use let_engine_core::draw::{Graphics, PresentMode};
 // audio feature
 #[cfg(feature = "audio")]
 #[cfg(feature = "client")]
-use crate::sounds::Audio;
+use let_engine_audio::Audio;
 
 #[cfg(feature = "client")]
 use super::WindowBuilder;
@@ -39,14 +38,14 @@ pub struct Settings<#[cfg(feature = "client")] G, #[cfg(feature = "client")] A> 
 }
 
 #[cfg(feature = "client")]
-impl Settings<Arc<Graphics>, Audio> {
+impl Settings<std::sync::Arc<Graphics>, Audio> {
     pub(crate) fn new() -> Self {
         Self {
             tick_system: TickSystem::new(),
             #[cfg(feature = "client")]
-            graphics: Arc::new(Graphics::new(PresentMode::Fifo)),
+            graphics: std::sync::Arc::new(Graphics::new(PresentMode::Fifo)),
             #[cfg(feature = "audio")]
-            audio: Audio::new(),
+            audio: Audio::default(),
         }
     }
 
@@ -56,12 +55,11 @@ impl Settings<Arc<Graphics>, Audio> {
     /// This function clears the asset cache, gpu resource cache and label pixel buffer cache.
     #[cfg(feature = "client")]
     pub fn clean_caches(&self) {
-        use let_engine_core::objects::labels::LABELIFIER;
+        use let_engine_widgets::labels::LABELIFIER;
 
         #[cfg(feature = "asset_system")]
         asset_system::clear_cache();
 
-        #[cfg(feature = "labels")]
         LABELIFIER.lock().clear_cache();
     }
 }

@@ -6,7 +6,6 @@ use std::{
 
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
-use let_engine_core::objects::scenes::SCENE;
 use parking_lot::Mutex;
 
 use crate::{Game, SETTINGS, TIME};
@@ -42,7 +41,10 @@ impl TickSystem {
 
             // update the physics in case they are active in the tick settings.
             #[cfg(feature = "physics")]
-            if SCENE.update(settings.update_physics).is_err() {
+            if let_engine_core::objects::scenes::SCENE
+                .update(settings.update_physics)
+                .is_err()
+            {
                 // Disable physics updating if it fails. Return running this tick system.
                 SETTINGS.tick_system.tick_settings.lock().update_physics = false;
             };

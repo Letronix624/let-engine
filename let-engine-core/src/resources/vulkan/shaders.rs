@@ -55,9 +55,3 @@ pub fn instanced_texture_array_fragment_shader(device: Arc<Device>) -> Result<Ar
     )
     .context("There was a problem making the default instanced texture array fragment shader.")
 }
-
-#[cfg(feature = "labels")]
-pub fn text_fragment_shader(device: Arc<Device>) -> Result<Arc<ShaderModule>> {
-    from_bytes(include_bytes!("shaders/text_frag.spv"), device)
-        .context("There was a problem making the labels fragment shader.")
-}
