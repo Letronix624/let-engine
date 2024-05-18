@@ -390,7 +390,11 @@ impl Labelifier {
         for task in queued.into_iter() {
             let mut label = task.label.clone();
 
-            //temp
+            // Early return if this object was removed after the update call.
+            if !label.object.is_initialized() {
+                continue;
+            }
+
             if !task.vertices.is_empty() {
                 let model = ModelData::new(task.into_data())?;
                 label

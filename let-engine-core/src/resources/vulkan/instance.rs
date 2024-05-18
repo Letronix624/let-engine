@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use std::sync::Arc;
 use vulkano::device::physical::PhysicalDevice;
 use vulkano::device::{
@@ -118,8 +119,8 @@ pub fn create_device_and_queues(
     .map_err(|e| EngineError::RequirementError(e.to_string()))?;
     Ok((
         device,
-        queues.next().ok_or(EngineError::Other(
-            "The graphics queue has no slots.".to_string(),
-        ))?,
+        queues.next().ok_or(EngineError::Other(anyhow!(
+            "The graphics queue has no slots.".to_string()
+        )))?,
     ))
 }

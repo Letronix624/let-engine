@@ -8,6 +8,7 @@ use indexmap::{indexset, IndexSet};
 
 #[cfg(feature = "audio")]
 use kira::spatial::listener::ListenerHandle;
+use nalgebra::Isometry2;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
@@ -395,10 +396,11 @@ impl Layer {
         let mut physics = self.physics.lock();
         physics.update_query_pipeline();
 
+        let point = mint::Point2::from(position);
         let result = physics.query_pipeline.project_point(
             &physics.rigid_body_set,
             &physics.collider_set,
-            &position.into(),
+            &point.into(),
             true,
             QueryFilter::default(),
         );
@@ -421,10 +423,12 @@ impl Layer {
         let mut physics = self.physics.lock();
         physics.update_query_pipeline();
 
+        let point = mint::Point2::from(position);
+        let direction = mint::Vector2::from(direction);
         let result = physics.query_pipeline.cast_ray(
             &physics.rigid_body_set,
             &physics.collider_set,
-            &Ray::new(position.into(), direction.into()),
+            &Ray::new(point.into(), direction.into()),
             time_of_impact,
             solid,
             QueryFilter::default(),
@@ -447,19 +451,22 @@ impl Layer {
         let mut physics = self.physics.lock();
         physics.update_query_pipeline();
 
+        let point = mint::Point2::from(position);
+        let direction = mint::Vector2::from(direction);
         let result = physics.query_pipeline.cast_ray_and_get_normal(
             &physics.rigid_body_set,
             &physics.collider_set,
-            &Ray::new(position.into(), direction.into()),
+            &Ray::new(point.into(), direction.into()),
             time_of_impact,
             solid,
             QueryFilter::default(),
         );
 
         if let Some((handle, intersection)) = result {
+            let inter = intersection.normal;
             Some((
                 physics.collider_set.get(handle).unwrap().user_data as usize,
-                intersection.normal.into(),
+                vec2(inter.x, inter.y),
             ))
         } else {
             None
@@ -486,19 +493,21 @@ impl Layer {
             true
         };
 
+        let point = mint::Point2::from(position);
         if direction.eq(&vec2(0.0, 0.0)) {
             physics.query_pipeline.intersections_with_point(
                 bodies,
                 colliders,
-                &position.into(),
+                &point.into(),
                 filter,
                 callback,
             );
         } else {
+            let direction = mint::Vector2::from(direction);
             physics.query_pipeline.intersections_with_ray(
                 bodies,
                 colliders,
-                &Ray::new(position.into(), direction.into()),
+                &Ray::new(point.into(), direction.into()),
                 time_of_impact,
                 solid,
                 filter,
@@ -517,10 +526,12 @@ impl Layer {
         let mut physics = self.physics.lock();
         physics.update_query_pipeline();
 
+        let vec = mint::Vector2::from(position.0);
+        let iso = Isometry2::new(vec.into(), position.1);
         let result = physics.query_pipeline.intersection_with_shape(
             &physics.rigid_body_set,
             &physics.collider_set,
-            &position.into(),
+            &iso,
             shape.0.as_ref(),
             QueryFilter::default(),
         );
@@ -542,10 +553,12 @@ impl Layer {
             true
         };
 
+        let vec = mint::Vector2::from(position.0);
+        let iso = Isometry2::new(vec.into(), position.1);
         physics.query_pipeline.intersections_with_shape(
             &physics.rigid_body_set,
             &physics.collider_set,
-            &position.into(),
+            &iso,
             shape.0.as_ref(),
             QueryFilter::default(),
             callback,
@@ -564,20 +577,23 @@ impl Layer {
                     .rigid_body_set
                     .get(node.object.rigidbody_handle().unwrap())
                     .unwrap();
-                let position: Vec2 = (*rigid_body.translation()).into();
+                let pos = *rigid_body.translation();
                 node.object
-                    .set_isometry(position, rigid_body.rotation().angle());
+                    .set_isometry(vec2(pos.x, pos.y), rigid_body.rotation().angle());
             }
         }
     }
 
     /// Gets the gravity parameter.
     pub fn gravity(&self) -> Vec2 {
-        self.physics.lock().gravity.into()
+        let vec = self.physics.lock().gravity;
+
+        vec2(vec.x, vec.y)
     }
     /// Sets the gravity parameter.
     pub fn set_gravity(&self, gravity: Vec2) {
-        self.physics.lock().gravity = gravity.into();
+        let vec = mint::Vector2::from(gravity);
+        self.physics.lock().gravity = vec.into();
     }
     /// Returns if physics is enabled.
     pub fn physics_enabled(&self) -> bool {

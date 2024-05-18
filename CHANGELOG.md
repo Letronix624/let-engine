@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exclusive fullscreen.
 - Monitor representations and video modes.
 - Cleaning functions that clean the built up memory usage of the engine.
+- `is_initialized` function for object.
 
 ### Changed
 
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switched from dynamic to fixed viewports, hopefully making games faster when not resizing windows.
 - Split crate features into multiple crates including `asset-system`, `let-engine-core`, `let-engine-audio`, `let-engine-widgets` and `let-engine`
 - Playing spatial sounds now requires a `Listener` to be existant.
+- Updated Rapier
 
 ### Fixed
 

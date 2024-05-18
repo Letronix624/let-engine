@@ -106,6 +106,22 @@ impl Collider {
         self.0.set_mass(mass)
     }
 
+    /// Sets the contact skin of the collider.
+    ///
+    /// This acts as if the collider was enlarged with the given skin width around it, keeping other colliders further away when colliding.
+    ///
+    /// When this is not zero, performance could increase at dense collider areas.
+    /// When the skin is small enough to not be seen or hidden behind the rendered appearance that goes beyond the collider
+    /// this could improve performance.
+    pub fn set_contact_skin(&mut self, skin_thickness: Real) {
+        self.0.set_contact_skin(skin_thickness)
+    }
+
+    /// Returns the contact skin.
+    pub fn contact_skin(&mut self) -> f32 {
+        self.0.contact_skin()
+    }
+
     /// The total force magnitude beyond which a contact force event can be emitted.
     pub fn contact_force_event_threshold(&self) -> Real {
         self.0.contact_force_event_threshold()
@@ -128,6 +144,7 @@ pub struct ColliderBuilder {
     pub solver_groups: InteractionGroups,
     pub enabled: bool,
     pub contact_force_event_threshold: Real,
+    pub contact_skin: Real,
 }
 
 impl ColliderBuilder {
@@ -149,6 +166,7 @@ impl ColliderBuilder {
             solver_groups: InteractionGroups::all(),
             enabled: true,
             contact_force_event_threshold: 0.0,
+            contact_skin: 0.0,
         }
     }
 
@@ -171,6 +189,7 @@ impl ColliderBuilder {
                 contact_force_event_threshold: self.contact_force_event_threshold,
                 user_data: 0,
                 position: self.transform.into(),
+                contact_skin: self.contact_skin,
             }
             .build(),
         )
@@ -384,6 +403,18 @@ impl ColliderBuilder {
         self.enabled = enabled;
         self
     }
+
+    /// Sets the contact skin of the collider.
+    ///
+    /// This acts as if the collider was enlarged with the given skin width around it, keeping other colliders further away when colliding.
+    ///
+    /// When this is not zero, performance could increase at dense collider areas.
+    /// When the skin is small enough to not be seen or hidden behind the rendered appearance that goes beyond the collider
+    /// this could improve performance.
+    pub fn contact_skin(mut self, skin_thickness: Real) -> Self {
+        self.contact_skin = skin_thickness;
+        self
+    }
 }
 
 pub struct Shape(pub(crate) SharedShape);
@@ -394,7 +425,12 @@ impl Shape {
         Self(SharedShape::compound(
             shapes
                 .into_iter()
-                .map(|x| ((x.0.position, x.0.rotation).into(), x.1 .0))
+                .map(|x| {
+                    let pos = mint::Vector2::from(x.0.position);
+                    let iso = nalgebra::Isometry2::new(pos.into(), x.0.rotation);
+
+                    (iso, x.1 .0)
+                })
                 .collect(),
         ))
     }
@@ -416,6 +452,8 @@ impl Shape {
 
     /// Initialize a capsule shape from its endpoints and radius.
     pub fn capsule(a: Vec2, b: Vec2, radius: Real) -> Self {
+        let a = mint::Point2::from(a);
+        let b = mint::Point2::from(b);
         Self(SharedShape::capsule(a.into(), b.into(), radius))
     }
 
@@ -431,16 +469,24 @@ impl Shape {
 
     /// Initialize a segment shape from its endpoints.
     pub fn segment(a: Vec2, b: Vec2) -> Self {
+        let a = mint::Point2::from(a);
+        let b = mint::Point2::from(b);
         Self(SharedShape::segment(a.into(), b.into()))
     }
 
     /// Initializes a triangle shape.
     pub fn triangle(a: Vec2, b: Vec2, c: Vec2) -> Self {
+        let a = mint::Point2::from(a);
+        let b = mint::Point2::from(b);
+        let c = mint::Point2::from(c);
         Self(SharedShape::triangle(a.into(), b.into(), c.into()))
     }
 
     /// Initializes a triangle shape with round corners.
     pub fn round_triangle(a: Vec2, b: Vec2, c: Vec2, radius: Real) -> Self {
+        let a = mint::Point2::from(a);
+        let b = mint::Point2::from(b);
+        let c = mint::Point2::from(c);
         Self(SharedShape::round_triangle(
             a.into(),
             b.into(),
@@ -454,7 +500,13 @@ impl Shape {
     /// If no index buffer is provided, the polyline is assumed to describe a line strip.
     pub fn polyline(vertices: Vec<Vec2>, indices: Option<Vec<[u32; 2]>>) -> Self {
         Self(SharedShape::polyline(
-            vertices.into_iter().map(|x| x.into()).collect(),
+            vertices
+                .into_iter()
+                .map(|x| {
+                    let x = mint::Point2::from(x);
+                    x.into()
+                })
+                .collect(),
             indices,
         ))
     }
@@ -463,7 +515,13 @@ impl Shape {
     #[cfg(feature = "client")]
     pub fn trimesh(data: Data) -> Self {
         Self(SharedShape::trimesh(
-            data.vertices().iter().map(|x| x.position.into()).collect(),
+            data.vertices()
+                .iter()
+                .map(|x| {
+                    let x = mint::Point2::from(x.position);
+                    x.into()
+                })
+                .collect(),
             data.indices()
                 .chunks(3)
                 .map(|x| [x[0], x[1], x[2]])
@@ -586,6 +644,7 @@ impl Shape {
     /// Initializes an heightfield shape defined by its set of height and a scale
     /// factor along each coordinate axis.
     pub fn heightfield(heights: Vec<Real>, scale: Vec2) -> Self {
+        let scale = mint::Vector2::from(scale);
         Self(SharedShape::heightfield(heights.into(), scale.into()))
     }
 

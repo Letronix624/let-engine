@@ -1,6 +1,6 @@
 [package]
 name = "let-engine"
-version = "0.11.0"
+version = "0.11.0-alpha"
 authors = [ "let" ]
 edition = "2021"
 description = "game engine"
@@ -21,7 +21,7 @@ bincode = { workspace = true }
 thiserror = { workspace = true }
 derive_builder = { workspace = true }
 crossbeam = { workspace = true }
-atomic_float = "0.1"
+atomic_float = "1.0"
 spin_sleep = "1.2"
 once_cell = { workspace = true }
 
@@ -46,8 +46,8 @@ once_cell = { workspace = true }
   features = [ "bytemuck", "mint" ]
 
   [dependencies.nalgebra]
-  version = "0.32.4"
-  features = [ "convert-glam025" ]
+  version = "0.32"
+  features = [ "convert-mint" ]
 
   [dependencies.rapier2d]
   workspace = true
@@ -60,7 +60,7 @@ once_cell = { workspace = true }
   optional = true
 
   [dependencies.let-engine-core]
-  version = "0.11"
+  version = "0.11.0-alpha"
   path = "../let-engine-core"
 
   [dependencies.let-engine-widgets]

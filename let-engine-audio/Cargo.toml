@@ -25,7 +25,7 @@ parking_lot = { workspace = true }
   version = "0.8"
 
   [dependencies.let-engine-core]
-  version = "0.11"
+  version = "0.11.0-alpha"
   path = "../let-engine-core"
 
 

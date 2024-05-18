@@ -57,7 +57,7 @@ pub static SETTINGS: Lazy<game::settings::Settings> = Lazy::new(game::settings::
 
 /// A macro that makes it easy to create circles.
 ///
-/// Returns [Data] with vertices and indices.
+/// Returns [Data](let_engine_core::resources::data::Data) with vertices and indices.
 ///
 /// ### $corners
 /// Using this with a `u32` makes a circle fan with as many corners as given.

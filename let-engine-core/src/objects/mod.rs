@@ -452,6 +452,11 @@ impl Object {
         self.parent_node.as_ref().unwrap().upgrade().unwrap()
     }
 
+    /// Returns false if the `remove` function was called on another instance of this object before.
+    pub fn is_initialized(&self) -> bool {
+        self.as_node().is_ok()
+    }
+
     /// Removes the object from it's layer in case it is still initialized.
     #[allow(unused_mut)]
     pub fn remove(mut self) -> Result<NewObject> {

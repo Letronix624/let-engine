@@ -19,7 +19,7 @@ glyph_brush = "0.7"
 parking_lot = { workspace = true }
 
   [dependencies.let-engine-core]
-  version = "0.11"
+  version = "0.11.0-alpha"
   path = "../let-engine-core"
 
   [dependencies.glam]

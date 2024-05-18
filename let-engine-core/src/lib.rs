@@ -26,7 +26,7 @@ pub enum EngineError {
     #[error("The game engine is not ready to load resources right now. You have to initialize the game engine first.")]
     NotReady,
     #[error("Could not start the game engine for some reason:\n{0}")]
-    Other(String),
+    Other(anyhow::Error),
 }
 
 /// Cardinal direction
