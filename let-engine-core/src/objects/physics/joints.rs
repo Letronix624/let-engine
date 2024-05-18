@@ -1,6 +1,6 @@
 //! Wrapping of Rapiers joints to be used with Let Engine and Glam.
 
-use glam::Vec2;
+use glam::{vec2, Vec2};
 use rapier2d::{
     dynamics::GenericJoint as RGenericJoint,
     prelude::{JointAxis, JointEnabled, JointLimits, JointMotor, MotorModel, Real, UnitVector},
@@ -49,63 +49,75 @@ impl GenericJoint {
 
     /// Sets the joint’s frame, expressed in the first rigid-body’s local-space.
     pub fn set_local_frame1(&mut self, local_frame: (Vec2, f32)) -> &mut Self {
-        self.data.set_local_frame1(local_frame.into());
+        let frame_pos = mint::Vector2::from(local_frame.0);
+        let iso = nalgebra::Isometry2::new(frame_pos.into(), local_frame.1);
+        self.data.set_local_frame1(iso);
         self
     }
 
     /// Sets the joint’s frame, expressed in the second rigid-body’s local-space.
     pub fn set_local_frame2(&mut self, local_frame: (Vec2, f32)) -> &mut Self {
-        self.data.set_local_frame2(local_frame.into());
+        let frame_pos = mint::Vector2::from(local_frame.0);
+        let iso = nalgebra::Isometry2::new(frame_pos.into(), local_frame.1);
+        self.data.set_local_frame2(iso);
         self
     }
 
     /// The principal (local X) axis of this joint, expressed in the first rigid-body’s local-space.
     #[must_use]
     pub fn local_axis1(&self) -> Vec2 {
-        self.data.local_axis1().into()
+        let axis = self.data.local_axis1();
+        vec2(axis.x, axis.y)
     }
 
     /// Sets the principal (local X) axis of this joint, expressed in the first rigid-body’s local-space.
     pub fn set_local_axis1(&mut self, local_axis: Vec2) -> &mut Self {
+        let axis = mint::Vector2::from(local_axis);
         self.data
-            .set_local_axis1(UnitVector::new_normalize(local_axis.into()));
+            .set_local_axis1(UnitVector::new_normalize(axis.into()));
         self
     }
 
     /// The principal (local X) axis of this joint, expressed in the second rigid-body’s local-space.
     #[must_use]
     pub fn local_axis2(&self) -> Vec2 {
-        self.data.local_axis2().into()
+        let axis = self.data.local_axis2();
+        vec2(axis.x, axis.y)
     }
 
     /// Sets the principal (local X) axis of this joint, expressed in the second rigid-body’s local-space.
     pub fn set_local_axis2(&mut self, local_axis: Vec2) -> &mut Self {
+        let axis = mint::Vector2::from(local_axis);
         self.data
-            .set_local_axis2(UnitVector::new_normalize(local_axis.into()));
+            .set_local_axis2(UnitVector::new_normalize(axis.into()));
         self
     }
 
     /// The anchor of this joint, expressed in the first rigid-body’s local-space.
     #[must_use]
     pub fn local_anchor1(&self) -> Vec2 {
-        self.data.local_anchor1().into()
+        let anch = self.data.local_anchor1();
+        vec2(anch.x, anch.y)
     }
 
     /// Sets anchor of this joint, expressed in the first rigid-body’s local-space.
     pub fn set_local_anchor1(&mut self, anchor1: Vec2) -> &mut Self {
-        self.data.set_local_anchor1(anchor1.into());
+        let anch = mint::Point2::from(anchor1);
+        self.data.set_local_anchor1(anch.into());
         self
     }
 
     /// The anchor of this joint, expressed in the second rigid-body’s local-space.
     #[must_use]
     pub fn local_anchor2(&self) -> Vec2 {
-        self.data.local_anchor2().into()
+        let anch = self.data.local_anchor2();
+        vec2(anch.x, anch.y)
     }
 
     /// Sets anchor of this joint, expressed in the second rigid-body’s local-space.
     pub fn set_local_anchor2(&mut self, anchor2: Vec2) -> &mut Self {
-        self.data.set_local_anchor2(anchor2.into());
+        let anch = mint::Point2::from(anchor2);
+        self.data.set_local_anchor2(anch.into());
         self
     }
 
@@ -380,7 +392,13 @@ impl FixedJoint {
     /// The joint’s frame, expressed in the first rigid-body’s local-space.
     #[must_use]
     pub fn local_frame1(&self) -> (Vec2, f32) {
-        self.data.data.local_frame1.into()
+        let translation = vec2(
+            self.data.data.local_frame1.translation.x,
+            self.data.data.local_frame1.translation.y,
+        );
+        let rot = self.data.data.local_frame1.rotation;
+
+        (translation, rot.angle())
     }
 
     /// Sets the joint’s frame, expressed in the first rigid-body’s local-space.
@@ -392,7 +410,13 @@ impl FixedJoint {
     /// The joint’s frame, expressed in the second rigid-body’s local-space.
     #[must_use]
     pub fn local_frame2(&self) -> (Vec2, f32) {
-        self.data.data.local_frame2.into()
+        let translation = vec2(
+            self.data.data.local_frame2.translation.x,
+            self.data.data.local_frame2.translation.y,
+        );
+        let rot = self.data.data.local_frame2.rotation;
+
+        (translation, rot.angle())
     }
 
     /// Sets joint’s frame, expressed in the second rigid-body’s local-space.

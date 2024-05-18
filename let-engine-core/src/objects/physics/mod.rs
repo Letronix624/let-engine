@@ -1,7 +1,8 @@
 //! Physics related structs.
 
 use crate::objects::Transform;
-use glam::f32::{vec2, Vec2};
+use glam::f32::Vec2;
+use nalgebra::Isometry2;
 use parking_lot::Mutex;
 pub use rapier2d::parry::transformation::vhacd::VHACDParameters;
 use rapier2d::prelude::*;
@@ -27,7 +28,7 @@ pub(crate) struct Physics {
     pub gravity: Vector<Real>,
     pub integration_parameters: IntegrationParameters,
     pub island_manager: IslandManager,
-    pub broad_phase: BroadPhase,
+    pub broad_phase: BroadPhaseMultiSap,
     pub narrow_phase: NarrowPhase,
     pub impulse_joint_set: ImpulseJointSet,
     pub multibody_joint_set: MultibodyJointSet,
@@ -51,7 +52,7 @@ impl Physics {
             gravity: vector!(0.0, 9.81),
             integration_parameters: IntegrationParameters::default(),
             island_manager: IslandManager::new(),
-            broad_phase: BroadPhase::new(),
+            broad_phase: BroadPhaseMultiSap::new(),
             narrow_phase: NarrowPhase::new(),
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
@@ -203,7 +204,9 @@ impl ObjectPhysics {
             (Some(collider), Some(rigid_body), None, None) => {
                 rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
-                collider.0.set_position(self.local_collider_position.into());
+                let pos = mint::Vector2::from(self.local_collider_position);
+                let iso = Isometry2::new(pos.into(), 0.0);
+                collider.0.set_position(iso);
                 collider.0.user_data = id;
                 let rigid_body_handle = physics.rigid_body_set.insert(rigid_body.0.clone());
                 self.collider_handle =
@@ -235,7 +238,9 @@ impl ObjectPhysics {
                 rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let rigid_body_handle = Some(physics.rigid_body_set.insert(rigid_body.0.clone()));
-                collider.0.set_position(vec2(0.0, 0.0).into());
+                let pos = mint::Vector2::from(self.local_collider_position);
+                let iso = Isometry2::new(pos.into(), 0.0);
+                collider.0.set_position(iso);
                 physics.set_parent(*collider_handle, rigid_body_handle);
                 let public_collider = physics.collider_set.get_mut(*collider_handle)?;
                 *public_collider = collider.0.clone();
@@ -267,7 +272,9 @@ impl ObjectPhysics {
                 rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
 
-                collider.0.set_position(self.local_collider_position.into());
+                let pos = mint::Vector2::from(self.local_collider_position);
+                let iso = Isometry2::new(pos.into(), 0.0);
+                collider.0.set_position(iso);
                 collider.0.user_data = id;
                 self.collider_handle =
                     Some(physics.insert_with_parent(collider.0.clone(), *rigid_body_handle));
@@ -303,7 +310,9 @@ impl ObjectPhysics {
             }
             // Updates everything in it's sets.
             (Some(collider), Some(rigid_body), Some(collider_handle), Some(rigid_body_handle)) => {
-                collider.0.set_position(vec2(0.0, 0.0).into());
+                let pos = mint::Vector2::from(self.local_collider_position);
+                let iso = Isometry2::new(pos.into(), 0.0);
+                collider.0.set_position(iso);
                 let public_collider = physics.collider_set.get_mut(*collider_handle)?;
                 *public_collider = collider.0.clone();
 
@@ -346,7 +355,8 @@ impl ObjectPhysics {
 
 impl From<Transform> for Isometry<Real> {
     fn from(val: Transform) -> Self {
-        (val.position, val.rotation).into()
+        let pos = mint::Vector2::from(val.position);
+        Isometry2::new(pos.into(), val.rotation)
     }
 }
 

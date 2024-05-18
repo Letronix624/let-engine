@@ -125,10 +125,9 @@ impl Engine {
             #[cfg(feature = "client")]
             let event_loop = winit::event_loop::EventLoopBuilder::new()
                 .build()
-                .map_err(|e| EngineError::Other(e.to_string()))?;
+                .map_err(|e| EngineError::Other(e.into()))?;
             #[cfg(feature = "client")]
-            let resources =
-                Resources::new(&event_loop).map_err(|e| EngineError::Other(e.to_string()))?;
+            let resources = Resources::new(&event_loop).map_err(EngineError::Other)?;
             #[cfg(feature = "client")]
             RESOURCES.get_or_init(|| resources);
             INIT.call_once(|| {});
