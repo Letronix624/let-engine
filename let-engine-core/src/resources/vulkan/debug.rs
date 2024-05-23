@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::instance::{debug::*, Instance};
 
+use log::{info, warn};
+
 pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
     unsafe {
         DebugUtilsMessenger::new(
@@ -16,18 +18,6 @@ pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
                     | DebugUtilsMessageType::PERFORMANCE,
                 ..DebugUtilsMessengerCreateInfo::user_callback(DebugUtilsMessengerCallback::new(
                     |severity, message_type, callback_data| {
-                        let severity = if severity.intersects(DebugUtilsMessageSeverity::ERROR) {
-                            "error"
-                        } else if severity.intersects(DebugUtilsMessageSeverity::WARNING) {
-                            "warning"
-                        } else if severity.intersects(DebugUtilsMessageSeverity::INFO) {
-                            "information"
-                        } else if severity.intersects(DebugUtilsMessageSeverity::VERBOSE) {
-                            "verbose"
-                        } else {
-                            panic!("no-impl");
-                        };
-
                         let ty = if message_type.intersects(DebugUtilsMessageType::GENERAL) {
                             "general"
                         } else if message_type.intersects(DebugUtilsMessageType::VALIDATION) {
@@ -38,13 +28,36 @@ pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
                             panic!("no-impl");
                         };
 
-                        println!(
-                            "{} {} {}: {}",
-                            callback_data.message_id_name.unwrap_or("unknown"),
-                            ty,
-                            severity,
-                            callback_data.message
-                        );
+                        if severity.intersects(DebugUtilsMessageSeverity::ERROR) {
+                            warn!(
+                                "{} {} error: {}",
+                                callback_data.message_id_name.unwrap_or("unknown"),
+                                ty,
+                                callback_data.message
+                            );
+                        } else if severity.intersects(DebugUtilsMessageSeverity::WARNING) {
+                            warn!(
+                                "{} {}: {}",
+                                callback_data.message_id_name.unwrap_or("unknown"),
+                                ty,
+                                callback_data.message
+                            );
+                        } else if severity.intersects(DebugUtilsMessageSeverity::INFO) {
+                            info!(
+                                "{} {}: {}",
+                                callback_data.message_id_name.unwrap_or("unknown"),
+                                ty,
+                                callback_data.message
+                            );
+                        } else if severity.intersects(DebugUtilsMessageSeverity::VERBOSE) {
+                            info!(
+                                "{} {} verbose: {}",
+                                callback_data.message_id_name.unwrap_or("unknown"),
+                                ty,
+                                callback_data.message
+                            );
+                        };
+
                     },
                 ))
             },

@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Split crate features into multiple crates including `asset-system`, `let-engine-core`, `let-engine-audio`, `let-engine-widgets` and `let-engine`
 - Playing spatial sounds now requires a `Listener` to be existant.
 - Updated Rapier
+- Log crate macros instead of println are getting used for the vulkan validation layer feature.
 
 ### Fixed
 

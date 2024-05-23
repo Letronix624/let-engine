@@ -75,6 +75,7 @@ fn audio_server() -> Sender<AudioUpdate> {
                             sample_rate: sound.data.sample_rate,
                             frames: sound.data.frames,
                             settings,
+                            slice: sound.data.slice,
                         });
                         sound.handle.lock().take();
                         let _ = sound.handle.lock().set(handle.map_err(|x| x.into()));
@@ -116,13 +117,12 @@ pub enum AudioUpdate {
 }
 
 pub use kira::{
-    dsp::Frame,
     sound::{
         EndPosition, IntoOptionalRegion, PlaybackPosition, PlaybackRate, PlaybackState, Region,
     },
     spatial::emitter::EmitterDistances as Distances,
     tween::Easing,
-    Volume,
+    Frame, Volume,
 };
 
 /// "Inbetween"
@@ -164,11 +164,11 @@ impl From<Tween> for kira::tween::Tween {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct AudioSettings {
     /// The limit of how many sounds can exist at the same time.
-    pub sound_capacity: usize,
+    pub sound_capacity: u16,
     /// The limit of how many sounds can be bound to objects to make them spatial.
-    pub object_bound_sound_capacity: usize,
+    pub object_bound_sound_capacity: u16,
     /// The limit of how many scenes can play spatial sounds.
-    pub spatial_scene_capacity: usize,
+    pub spatial_scene_capacity: u16,
 }
 
 impl AudioSettings {
@@ -178,34 +178,34 @@ impl AudioSettings {
     }
 
     /// Sets the maximum amount of sounds.
-    pub fn set_sound_capacities(&mut self, sound_capacity: usize) {
+    pub fn set_sound_capacities(&mut self, sound_capacity: u16) {
         self.sound_capacity = sound_capacity;
     }
 
     /// Sets the maximum amount of sounds and returns self.
-    pub fn sound_capacity(mut self, sound_capacity: usize) -> Self {
+    pub fn sound_capacity(mut self, sound_capacity: u16) -> Self {
         self.sound_capacity = sound_capacity;
         self
     }
 
     /// Sets the maximum amount of sounds you can bind on objects to make them spatial.
-    pub fn set_object_bound_sound_capacity(&mut self, sound_capacity: usize) {
+    pub fn set_object_bound_sound_capacity(&mut self, sound_capacity: u16) {
         self.object_bound_sound_capacity = sound_capacity;
     }
 
     /// Sets the maximum amount of sounds you can bind on objects to make them spatial and returns self.
-    pub fn object_bound_sound_capacity(mut self, sound_capacity: usize) -> Self {
+    pub fn object_bound_sound_capacity(mut self, sound_capacity: u16) -> Self {
         self.object_bound_sound_capacity = sound_capacity;
         self
     }
 
     /// Sets the maximum amount of scenes that can play spatial sounds.
-    pub fn set_spatial_scene_capacity(&mut self, scene_capacity: usize) {
+    pub fn set_spatial_scene_capacity(&mut self, scene_capacity: u16) {
         self.spatial_scene_capacity = scene_capacity;
     }
 
     /// Sets the maximum amount of scenes that can play spatial sounds and returns self.
-    pub fn spatial_scene_capacity(mut self, scene_capacity: usize) -> Self {
+    pub fn spatial_scene_capacity(mut self, scene_capacity: u16) -> Self {
         self.spatial_scene_capacity = scene_capacity;
         self
     }
@@ -251,16 +251,18 @@ use let_engine_core::objects::Object;
 pub struct SoundData {
     pub sample_rate: u32,
     pub frames: Arc<[Frame]>,
+    pub slice: Option<(usize, usize)>,
 }
 
 impl SoundData {
     /// Loads a sound from a filesystem path.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, FromFileError> {
-        let sound_data = StaticSoundData::from_file(path, StaticSoundSettings::default())?;
+        let sound_data = StaticSoundData::from_file(path)?;
 
         Ok(Self {
             sample_rate: sound_data.sample_rate,
             frames: sound_data.frames,
+            slice: None,
         })
     }
 
@@ -268,11 +270,12 @@ impl SoundData {
     pub fn from_cursor<T: AsRef<[u8]> + Send + Sync + 'static>(
         cursor: Cursor<T>,
     ) -> Result<Self, FromFileError> {
-        let sound_data = StaticSoundData::from_cursor(cursor, StaticSoundSettings::default())?;
+        let sound_data = StaticSoundData::from_cursor(cursor)?;
 
         Ok(Self {
             sample_rate: sound_data.sample_rate,
             frames: sound_data.frames,
+            slice: None,
         })
     }
 
@@ -309,6 +312,7 @@ impl SoundData {
         Self {
             sample_rate,
             frames: Arc::from(frames),
+            slice: None,
         }
     }
     /// Generates sine wave sound data with length as seconds.
@@ -330,6 +334,7 @@ impl SoundData {
         Self {
             sample_rate,
             frames: Arc::from(frames),
+            slice: None,
         }
     }
 }
@@ -453,64 +458,45 @@ impl Sound {
     /// Sets the volume of the sound.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn set_volume(&mut self, volume: impl Into<Volume>, tween: Tween) -> Result<()> {
+    pub fn set_volume(&mut self, volume: impl Into<Volume>, tween: Tween) {
         let volume = volume.into();
         let value_volume = Value::Fixed(volume);
         self.settings.volume = volume;
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.set_volume(value_volume, tween.into())?;
+            handle.set_volume(value_volume, tween.into());
         }
-        Ok(())
     }
     /// Sets the rate, at which the sound is getting played.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn set_playback_rate(
-        &mut self,
-        playback_rate: impl Into<PlaybackRate>,
-        tween: Tween,
-    ) -> Result<()> {
+    pub fn set_playback_rate(&mut self, playback_rate: impl Into<PlaybackRate>, tween: Tween) {
         let playback_rate = playback_rate.into();
         let value_playback_rate = Value::Fixed(playback_rate);
         self.settings.playback_rate = playback_rate;
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.set_playback_rate(value_playback_rate, tween.into())?;
+            handle.set_playback_rate(value_playback_rate, tween.into());
         }
-        Ok(())
     }
 
     /// Sets the panning of the sound, where 0.0 is left and 1.0 is right.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn set_panning(&mut self, panning: f64, tween: Tween) -> Result<()> {
+    pub fn set_panning(&mut self, panning: f64, tween: Tween) {
         let value_panning = Value::Fixed(panning);
         self.settings.panning = panning;
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.set_panning(value_panning, tween.into())?;
+            handle.set_panning(value_panning, tween.into());
         }
-        Ok(())
-    }
-
-    /// Sets the region, where the sound is getting played.
-    ///
-    /// Returns an error in case the command queue is full.
-    pub fn set_playback_region(&mut self, playback_region: impl Into<Region>) -> Result<()> {
-        self.settings.playback_region = playback_region.into();
-        if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.set_playback_region(self.settings.playback_region)?;
-        }
-        Ok(())
     }
 
     /// Sets the optional region, where the sound is getting looped.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn set_loop_region(&mut self, loop_region: impl IntoOptionalRegion) -> Result<()> {
-        self.settings.loop_region = loop_region.into_optional_loop_region();
+    pub fn set_loop_region(&mut self, loop_region: impl IntoOptionalRegion) {
+        self.settings.loop_region = loop_region.into_optional_region();
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.set_loop_region(self.settings.loop_region)?;
+            handle.set_loop_region(self.settings.loop_region);
         }
-        Ok(())
     }
 
     /// Binds an object to this sound and plays it where this object is located at.
@@ -529,7 +515,7 @@ impl Sound {
     pub fn update(&mut self, tween: Tween) -> Result<()> {
         if let (Some(emitter), Some(object)) = (self.emitter.lock().get_mut(), &mut self.object) {
             object.update()?;
-            emitter.set_position(object.transform.position.extend(0.0), tween.into())?
+            emitter.set_position(object.transform.position.extend(0.0), tween.into())
         }
         Ok(())
     }
@@ -548,65 +534,58 @@ impl Sound {
     /// Pauses this sound.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn pause(&mut self, tween: Tween) -> Result<()> {
+    pub fn pause(&mut self, tween: Tween) {
         if self.state() != PlaybackState::Paused {
             if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-                handle.pause(tween.into())?;
+                handle.pause(tween.into());
             }
         }
-        Ok(())
     }
 
     /// Resumes the playback of this sound.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn resume(&mut self, tween: Tween) -> Result<()> {
+    pub fn resume(&mut self, tween: Tween) {
         if self.state() != PlaybackState::Playing {
             if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-                handle.resume(tween.into())?;
+                handle.resume(tween.into());
             }
         }
-        Ok(())
     }
 
     /// Stops this sound.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn stop(&mut self, tween: Tween) -> Result<()> {
+    pub fn stop(&mut self, tween: Tween) {
         if self.state() != PlaybackState::Stopped {
             if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-                handle.stop(tween.into())?;
+                handle.stop(tween.into());
             }
         }
-        Ok(())
     }
 
     /// Sets the playhead to the given position in seconds.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn seek_to(&mut self, position: f64) -> Result<()> {
+    pub fn seek_to(&mut self, position: f64) {
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.seek_to(position)?;
+            handle.seek_to(position);
         }
-        Ok(())
     }
 
     /// Sets the playhead ahead by the given seconds.
     ///
     /// Returns an error in case the command queue is full.
-    pub fn seek_by(&mut self, position: f64) -> Result<()> {
+    pub fn seek_by(&mut self, position: f64) {
         if let Some(Ok(handle)) = self.handle.lock().get_mut() {
-            handle.seek_by(position)?;
+            handle.seek_by(position);
         }
-        Ok(())
     }
 }
 
 /// Settings that determine the appearance of the sound.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SoundSettings {
-    /// The portion of the sound that should be played.
-    pub playback_region: Region,
     /// The portion of the sound that should be looped.
     pub loop_region: Option<Region>,
     /// Whether the sound should be played in reverse.
@@ -646,7 +625,6 @@ impl SoundSettings {
                 unreachable!()
             };
         Self {
-            playback_region: settings.playback_region,
             loop_region: settings.loop_region,
             reverse: settings.reverse,
             volume,
@@ -655,7 +633,6 @@ impl SoundSettings {
             fade_in_tween: settings.fade_in_tween.map(Tween::from),
         }
     }
-    builder_pattern!(playback_region, "the playback region", Region);
     builder_pattern!(loop_region, "the optional loop region", Option<Region>);
     builder_pattern!(reverse, "whether this sound plays reverse", bool);
     builder_pattern!(volume, "the volume", Volume);
@@ -667,7 +644,6 @@ impl SoundSettings {
 impl From<SoundSettings> for StaticSoundSettings {
     fn from(value: SoundSettings) -> StaticSoundSettings {
         StaticSoundSettings::new()
-            .playback_region(value.playback_region)
             .loop_region(value.loop_region)
             .reverse(value.reverse)
             .volume(value.volume)
@@ -688,7 +664,6 @@ impl From<StaticSoundSettings> for SoundSettings {
                 unreachable!()
             };
         Self::new()
-            .playback_region(value.playback_region)
             .loop_region(value.loop_region)
             .reverse(value.reverse)
             .volume(volume)
@@ -753,11 +728,11 @@ impl Listener {
     pub fn update(&mut self, tween: Tween) -> Result<()> {
         self.object.update()?;
         self.listener
-            .set_position(self.object.transform.position.extend(0.0), tween.into())?;
+            .set_position(self.object.transform.position.extend(0.0), tween.into());
         self.listener.set_orientation(
             Quat::from_rotation_z(self.object.transform.rotation),
             tween.into(),
-        )?;
+        );
         Ok(())
     }
 }
