@@ -241,8 +241,12 @@ impl Engine {
                             WindowEvent::KeyboardInput { event, .. } => {
                                 events::Event::Input(InputEvent::KeyboardInput {
                                     input: events::KeyboardInput {
-                                        keycode: event.logical_key,
+                                        physical_key: event.physical_key,
+                                        key: event.logical_key,
+                                        text: event.text,
+                                        key_location: event.location,
                                         state: event.state,
+                                        repeat: event.repeat,
                                     },
                                 })
                             }

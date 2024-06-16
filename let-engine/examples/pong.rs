@@ -180,7 +180,7 @@ impl let_engine::Game for Game {
             }
             Event::Input(InputEvent::KeyboardInput { input }) => {
                 if input.state == ElementState::Pressed {
-                    match input.keycode {
+                    match input.key {
                         // Exit when the escape key is pressed.
                         Key::Named(NamedKey::Escape) => self.exit = true,
                         Key::Character(e) => {
