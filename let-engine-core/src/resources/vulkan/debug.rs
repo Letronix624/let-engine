@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::sync::Arc;
 use vulkano::instance::{debug::*, Instance};
 
-use log::{info, warn};
+use log::{error, info, warn};
 
 pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
     unsafe {
@@ -29,8 +29,8 @@ pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
                         };
 
                         if severity.intersects(DebugUtilsMessageSeverity::ERROR) {
-                            warn!(
-                                "{} {} error: {}",
+                            error!(
+                                "{} {}: {}",
                                 callback_data.message_id_name.unwrap_or("unknown"),
                                 ty,
                                 callback_data.message

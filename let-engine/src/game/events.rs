@@ -55,7 +55,7 @@ pub enum WindowEvent {
     CursorEntered,
     /// The cursor has left the window.
     CursorLeft,
-    /// THe cursor has moved on the window.
+    /// The cursor has moved on the window.
     ///
     /// Cursor position in pixels relative the the top left corner of the screen.
     CursorMoved(dpi::PhysicalPosition<f64>),
@@ -94,8 +94,26 @@ pub enum ScrollDelta {
 /// Input received from the keyboard.
 #[derive(Debug, Clone)]
 pub struct KeyboardInput {
+    /// Layout independent key position based on the US QWERTY layout.
+    ///
+    /// May not apply to certain keyboards that implements functions for manually changing key positions.
+    pub physical_key: PhysicalKey,
     /// A representation of the pressed or released key.
-    pub keycode: Key,
+    ///
+    /// Affected by the current modifiers.
+    pub key: Key,
+    /// Contains the text which is produced by this keypress.
+    ///
+    /// Returns `None`, if the key can not be interpreted as text.
+    pub text: Option<SmolStr>,
+    /// The location of this key on the keyboard, if the same key appears more than once.
+    ///
+    /// For example right and left shift, or the numbers which appear above the alphabetical characters or the keypad.
+    pub key_location: KeyLocation,
     /// Pressed or released,
     pub state: ElementState,
+    /// True if this key comes from a repeat event.
+    ///
+    /// On most operating systems, holding down a key makes that key repeat multiple times.
+    pub repeat: bool,
 }

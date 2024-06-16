@@ -3,10 +3,7 @@
 use let_engine_core::objects::scenes::Layer;
 use std::{
     collections::HashSet,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicBool, Ordering},
 };
 pub use winit::event::MouseButton;
 use winit::event::{ElementState, Event, WindowEvent};
@@ -19,30 +16,29 @@ use parking_lot::Mutex;
 /// Holds the input information to be used in game.
 ///
 /// Updates each frame.
-#[derive(Clone)]
 pub struct Input {
     //pressed keyboard keycodes.
-    keys_down: Arc<Mutex<HashSet<Key>>>,
+    keys_down: Mutex<HashSet<Key>>,
     //pressed keyboard modifiers
-    keyboard_modifiers: Arc<Mutex<ModifiersState>>,
+    keyboard_modifiers: Mutex<ModifiersState>,
     //pressed mouse buttons
-    mouse_down: Arc<Mutex<HashSet<MouseButton>>>,
+    mouse_down: Mutex<HashSet<MouseButton>>,
     //mouse position
-    cursor_position: Arc<AtomicCell<Vec2>>,
-    cursor_inside: Arc<AtomicBool>,
+    cursor_position: AtomicCell<Vec2>,
+    cursor_inside: AtomicBool,
     //dimensions of the window
-    dimensions: Arc<AtomicCell<Vec2>>, // lazylock future
+    dimensions: AtomicCell<Vec2>, // lazylock future
 }
 
 impl Input {
     pub(crate) fn new() -> Self {
         Self {
-            keys_down: Arc::new(Mutex::new(HashSet::new())),
-            keyboard_modifiers: Arc::new(Mutex::new(ModifiersState::empty())),
-            mouse_down: Arc::new(Mutex::new(HashSet::new())),
-            cursor_position: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
-            cursor_inside: Arc::new(AtomicBool::new(false)),
-            dimensions: Arc::new(AtomicCell::new(vec2(0.0, 0.0))),
+            keys_down: Mutex::new(HashSet::new()),
+            keyboard_modifiers: Mutex::new(ModifiersState::empty()),
+            mouse_down: Mutex::new(HashSet::new()),
+            cursor_position: AtomicCell::new(vec2(0.0, 0.0)),
+            cursor_inside: AtomicBool::new(false),
+            dimensions: AtomicCell::new(vec2(0.0, 0.0)),
         }
     }
     /// Updates the input with the event.
@@ -87,6 +83,11 @@ impl Input {
     /// Returns true if the given keycode is pressed on the keyboard.
     pub fn key_down(&self, key: &Key) -> bool {
         self.keys_down.lock().contains(key)
+    }
+
+    /// Returns all the pressed keys in a HashSet
+    pub fn pressed_keys(&self) -> HashSet<Key> {
+        self.keys_down.lock().clone()
     }
 
     /// Returns true if the given mouse button is pressed.

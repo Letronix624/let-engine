@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Playing spatial sounds now requires a `Listener` to be existant.
 - Updated Rapier
 - Log crate macros instead of println are getting used for the vulkan validation layer feature.
+- Updated winit, therefore updated `keycode` to `key`and added most of the key parts to the `KeyboardEvent` struct.
 
 ### Fixed
 
