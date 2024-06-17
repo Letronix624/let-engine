@@ -135,7 +135,6 @@ impl Layer {
         let root = Arc::new_cyclic(|weak| {
             Mutex::new(Node {
                 object: Object::root(weak.clone()),
-                // parent: None,
                 #[cfg(feature = "physics")]
                 rigid_body_parent: None,
                 children: vec![],

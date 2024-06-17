@@ -212,7 +212,7 @@ impl Draw {
         camera: &Object,
         camera_settings: CameraSettings,
     ) -> (Mat4, Mat4, Mat4) {
-        let transform = object.transform.combine(*object.appearance.get_transform());
+        let transform = object.appearance.get_transform().combine(object.transform);
         let scaling = Vec3::new(transform.size[0], transform.size[1], 0.0);
         let rotation = Quat::from_rotation_z(transform.rotation);
         let translation = Vec3::new(transform.position[0], transform.position[1], 0.0);

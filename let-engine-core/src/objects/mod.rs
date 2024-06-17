@@ -45,11 +45,23 @@ pub struct Transform {
 impl Eq for Transform {}
 impl Transform {
     /// Combines two Transforms with each other. It adds position, multiplies size and adds rotation.
-    pub fn combine(self, rhs: Self) -> Self {
-        Self {
-            position: self.position + rhs.position.rotate(Vec2::from_angle(self.rotation)),
-            size: self.size * rhs.size,
-            rotation: self.rotation + rhs.rotation,
+    pub fn combine(self, parent: Self) -> Self {
+        // Calculate the rotation matrix for the parent's rotation
+        let rotation_matrix = glam::Mat2::from_angle(parent.rotation);
+
+        // Apply the parent's rotation to the child's position
+        let new_position = rotation_matrix * self.position + parent.position;
+
+        // Combine the sizes (assuming sizes scale multiplicatively)
+        let new_size = self.size * parent.size;
+
+        // Combine the rotations
+        let new_rotation = self.rotation + parent.rotation;
+
+        Transform {
+            position: new_position,
+            size: new_size,
+            rotation: new_rotation,
         }
     }
 
@@ -107,9 +119,9 @@ pub(crate) struct VisualObject {
 #[cfg(feature = "client")]
 impl VisualObject {
     /// Combines the object position data.
-    pub fn combined(object: &Object, other: &Object) -> Self {
-        let transform = object.transform.combine(other.transform);
-        let appearance = other.appearance().clone();
+    pub fn combined(object: &Object, parent: &Object) -> Self {
+        let transform = object.transform.combine(parent.public_transform());
+        let appearance = object.appearance().clone();
         Self {
             transform,
             appearance,
@@ -140,7 +152,7 @@ impl Node<Object> {
             if !child.object.appearance.get_visible() {
                 continue;
             }
-            let object = VisualObject::combined(&objects.object, &child.object);
+            let object = VisualObject::combined(&child.object, &objects.object);
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();
@@ -148,7 +160,7 @@ impl Node<Object> {
                     continue;
                 }
                 order.push(VisualObject {
-                    transform: object.transform.combine(child.object.transform),
+                    transform: child.object.transform.combine(object.transform),
                     appearance: child.object.appearance().clone(),
                 });
                 Self::order_position(order, &child);
@@ -585,7 +597,7 @@ impl Object {
                 .unwrap();
         }
         let mut node = node.lock();
-        node.update_children_position(self.public_transform());
+        node.update_children_position(self.parent_transform);
         node.object = self.clone();
         Ok(())
     }
