@@ -79,15 +79,13 @@ impl Physics {
             &(),
         );
         // So it updates here.
-        self.query_pipeline
-            .update(&self.rigid_body_set, &self.collider_set);
+        self.query_pipeline.update(&self.collider_set);
         self.query_pipeline_out_of_date = false;
     }
     /// Updates the query pipeline if it requires one after someone manually moved a collider.
     pub fn update_query_pipeline(&mut self) {
         if self.query_pipeline_out_of_date {
-            self.query_pipeline
-                .update(&self.rigid_body_set, &self.collider_set);
+            self.query_pipeline.update(&self.collider_set);
             self.query_pipeline_out_of_date = false;
         }
     }

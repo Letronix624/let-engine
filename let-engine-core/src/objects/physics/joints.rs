@@ -597,19 +597,19 @@ impl PrismaticJoint {
     /// The motor affecting the joint’s translational degree of freedom.
     #[must_use]
     pub fn motor(&self) -> Option<&JointMotor> {
-        self.data.motor(JointAxis::X)
+        self.data.motor(JointAxis::LinX)
     }
 
     /// Set the spring-like model used by the motor to reach the desired target velocity and position.
     pub fn set_motor_model(&mut self, model: MotorModel) -> &mut Self {
-        self.data.set_motor_model(JointAxis::X, model);
+        self.data.set_motor_model(JointAxis::LinX, model);
         self
     }
 
     /// Sets the target velocity this motor needs to reach.
     pub fn set_motor_velocity(&mut self, target_vel: Real, factor: Real) -> &mut Self {
         self.data
-            .set_motor_velocity(JointAxis::X, target_vel, factor);
+            .set_motor_velocity(JointAxis::LinX, target_vel, factor);
         self
     }
 
@@ -621,7 +621,7 @@ impl PrismaticJoint {
         damping: Real,
     ) -> &mut Self {
         self.data
-            .set_motor_position(JointAxis::X, target_pos, stiffness, damping);
+            .set_motor_position(JointAxis::LinX, target_pos, stiffness, damping);
         self
     }
 
@@ -634,25 +634,25 @@ impl PrismaticJoint {
         damping: Real,
     ) -> &mut Self {
         self.data
-            .set_motor(JointAxis::X, target_pos, target_vel, stiffness, damping);
+            .set_motor(JointAxis::LinX, target_pos, target_vel, stiffness, damping);
         self
     }
 
     /// Sets the maximum force the motor can deliver.
     pub fn set_motor_max_force(&mut self, max_force: Real) -> &mut Self {
-        self.data.set_motor_max_force(JointAxis::X, max_force);
+        self.data.set_motor_max_force(JointAxis::LinX, max_force);
         self
     }
 
     /// The limit distance attached bodies can translate along the joint’s principal axis.
     #[must_use]
     pub fn limits(&self) -> Option<&JointLimits<Real>> {
-        self.data.limits(JointAxis::X)
+        self.data.limits(JointAxis::LinX)
     }
 
     /// Sets the `[min,max]` limit distances attached bodies can translate along the joint’s principal axis.
     pub fn set_limits(&mut self, limits: [Real; 2]) -> &mut Self {
-        self.data.set_limits(JointAxis::X, limits);
+        self.data.set_limits(JointAxis::LinX, limits);
         self
     }
 }
@@ -1114,8 +1114,8 @@ impl RopeJoint {
 
     /// Set the spring-like model used by the motor to reach the desired target velocity and position.
     pub fn set_motor_model(&mut self, model: MotorModel) -> &mut Self {
-        self.data.set_motor_model(JointAxis::X, model);
-        self.data.set_motor_model(JointAxis::Y, model);
+        self.data.set_motor_model(JointAxis::LinX, model);
+        self.data.set_motor_model(JointAxis::LinY, model);
         // #[cfg(feature = "dim3")]
         // self.data.set_motor_model(JointAxis::Z, model);
         self
@@ -1124,9 +1124,9 @@ impl RopeJoint {
     /// Sets the target velocity this motor needs to reach.
     pub fn set_motor_velocity(&mut self, target_vel: Real, factor: Real) -> &mut Self {
         self.data
-            .set_motor_velocity(JointAxis::X, target_vel, factor);
+            .set_motor_velocity(JointAxis::LinX, target_vel, factor);
         self.data
-            .set_motor_velocity(JointAxis::Y, target_vel, factor);
+            .set_motor_velocity(JointAxis::LinY, target_vel, factor);
         // #[cfg(feature = "dim3")]
         // self.data
         //     .set_motor_velocity(JointAxis::Z, target_vel, factor);
@@ -1141,9 +1141,9 @@ impl RopeJoint {
         damping: Real,
     ) -> &mut Self {
         self.data
-            .set_motor_position(JointAxis::X, target_pos, stiffness, damping);
+            .set_motor_position(JointAxis::LinX, target_pos, stiffness, damping);
         self.data
-            .set_motor_position(JointAxis::Y, target_pos, stiffness, damping);
+            .set_motor_position(JointAxis::LinY, target_pos, stiffness, damping);
         // #[cfg(feature = "dim3")]
         // self.data
         //     .set_motor_position(JointAxis::Z, target_pos, stiffness, damping);
@@ -1159,9 +1159,9 @@ impl RopeJoint {
         damping: Real,
     ) -> &mut Self {
         self.data
-            .set_motor(JointAxis::X, target_pos, target_vel, stiffness, damping);
+            .set_motor(JointAxis::LinX, target_pos, target_vel, stiffness, damping);
         self.data
-            .set_motor(JointAxis::Y, target_pos, target_vel, stiffness, damping);
+            .set_motor(JointAxis::LinY, target_pos, target_vel, stiffness, damping);
         // #[cfg(feature = "dim3")]
         // self.data
         //     .set_motor(JointAxis::Y, target_pos, target_vel, stiffness, damping);
@@ -1170,8 +1170,8 @@ impl RopeJoint {
 
     /// Sets the maximum force the motor can deliver.
     pub fn set_motor_max_force(&mut self, max_force: Real) -> &mut Self {
-        self.data.set_motor_max_force(JointAxis::X, max_force);
-        self.data.set_motor_max_force(JointAxis::Y, max_force);
+        self.data.set_motor_max_force(JointAxis::LinX, max_force);
+        self.data.set_motor_max_force(JointAxis::LinY, max_force);
         // #[cfg(feature = "dim3")]
         // self.data.set_motor_max_force(JointAxis::Z, max_force);
         self
@@ -1185,8 +1185,8 @@ impl RopeJoint {
 
     /// Sets the `[min,max]` limit distances attached bodies can translate.
     pub fn set_limits(&mut self, limits: [Real; 2]) -> &mut Self {
-        self.data.set_limits(JointAxis::X, limits);
-        self.data.set_limits(JointAxis::Y, limits);
+        self.data.set_limits(JointAxis::LinX, limits);
+        self.data.set_limits(JointAxis::LinY, limits);
         // #[cfg(feature = "dim3")]
         // self.data.set_limits(JointAxis::Z, limits);
         self
