@@ -653,3 +653,9 @@ impl Shape {
         Self(shape)
     }
 }
+
+impl Default for ColliderBuilder {
+    fn default() -> Self {
+        Self::circle(0.5)
+    }
+}
