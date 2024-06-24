@@ -265,7 +265,7 @@ impl Layer {
 
         if count < index {
             return Err(ObjectError::Move(format!(
-                "This object can not be moved to {index}.\nYou can not go above {count}"
+                "This object can not be moved to {index}. You can not go above {count}"
             )));
         } else {
             Self::move_object_to(node, index);

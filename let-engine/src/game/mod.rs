@@ -127,7 +127,7 @@ impl Engine {
                 .build()
                 .map_err(|e| EngineError::Other(e.into()))?;
             #[cfg(feature = "client")]
-            let resources = Resources::new(&event_loop).map_err(EngineError::Other)?;
+            let resources = Resources::new(&event_loop)?;
             #[cfg(feature = "client")]
             RESOURCES.get_or_init(|| resources);
             INIT.call_once(|| {});

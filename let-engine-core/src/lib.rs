@@ -12,20 +12,20 @@ use thiserror::Error;
 pub enum EngineError {
     /// Your device's specifications do not hold up to the minimum requirements of this engine.
     #[error(
-        "Your device does not fulfill the required specification to run this application:\n{0}"
+        "Your device does not fulfill the required specification to run this application: {0}"
     )]
     RequirementError(String),
     /// Engine can only be made once.
     #[error("You can only initialize this game engine one single time.")]
     EngineInitialized,
     /// Failed to initialize drawing backend of the game engine.
-    #[error("Failed to initialize drawing backend:\n{0}")]
+    #[error("Failed to initialize drawing backend: {0}")]
     #[cfg(feature = "client")]
     DrawingBackendError(anyhow::Error),
     /// The game engine is not ready to load resources.
     #[error("The game engine is not ready to load resources right now. You have to initialize the game engine first.")]
     NotReady,
-    #[error("Could not start the game engine for some reason:\n{0}")]
+    #[error("Could not start the game engine for some reason: {0}")]
     Other(anyhow::Error),
 }
 

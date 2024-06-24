@@ -28,7 +28,7 @@ log = "0.4.21"
   features = [ "bytemuck", "mint" ]
 
   [dependencies.nalgebra]
-  version = "0.32"
+  workspace = true
   features = [ "convert-mint" ]
 
   [dependencies.vulkano]

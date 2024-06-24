@@ -46,7 +46,7 @@ once_cell = { workspace = true }
   features = [ "bytemuck", "mint" ]
 
   [dependencies.nalgebra]
-  version = "0.32"
+  workspace = true
   features = [ "convert-mint" ]
 
   [dependencies.rapier2d]
