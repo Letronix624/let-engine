@@ -325,7 +325,7 @@ use thiserror::Error;
 pub enum TextureError {
     /// This error gets returned when you set the texture ID of an Appearance object higher than the
     /// actual frame count of the texture this object is holding.
-    #[error("The layer you set for this object does not exist:\n{0}")]
+    #[error("The layer you set for this object does not exist: {0}")]
     Layer(String),
     /// This error gets returned when a function gets called that requires an object to have a textured material
     /// but it does not have one.
@@ -335,9 +335,9 @@ pub enum TextureError {
     NoTexture,
     /// This error gets returned when you give the wrong format to the texture when trying to create a
     /// new texture.
-    #[error("The given format does not match with the bytes provided:\n{0}")]
+    #[error("The given format does not match with the bytes provided: {0}")]
     InvalidFormat(String),
     /// If the texture for some reason can not be made.
-    #[error("There was an error loading this texture:\n{0}")]
+    #[error("There was an error loading this texture: {0}")]
     Other(anyhow::Error),
 }

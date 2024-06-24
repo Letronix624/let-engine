@@ -43,14 +43,18 @@ pub struct Resources {
 }
 
 impl Resources {
-    pub fn new(event_loop: &EventLoop<()>) -> Result<Self> {
-        let (materials, vulkan) = Vulkan::init(event_loop)?;
+    pub fn new(event_loop: &EventLoop<()>) -> Result<Self, EngineError> {
+        let (materials, vulkan) =
+            Vulkan::init(event_loop).map_err(|e| EngineError::RequirementError(e.to_string()))?;
 
-        let loader = Arc::new(Mutex::new(Loader::init(&vulkan, materials).context(
-            "Failed to create the graphics loading environment for the game engine.",
-        )?));
+        let loader = Arc::new(Mutex::new(
+            Loader::init(&vulkan, materials)
+                .context("Failed to create the graphics loading environment for the game engine.")
+                .map_err(EngineError::Other)?,
+        ));
         let shapes = BasicShapes::new(&loader)
-            .context("Failed to load default shapes into the GPU memory.")?;
+            .context("Failed to load default shapes into the GPU memory.")
+            .map_err(EngineError::Other)?;
         #[cfg(feature = "audio")]
         let audio_server = sounds::audio_server();
         Ok(Self {

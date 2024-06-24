@@ -68,7 +68,7 @@ pub fn create_physical_device(
         .enumerate_physical_devices()
         .map_err(|e| {
             EngineError::RequirementError(format!(
-                "There was an error enumerating the physical devices of this instance:\n{e}"
+                "There was an error enumerating the physical devices of this instance: {e}"
             ))
         })?
         .filter(|p| p.supported_extensions().contains(&device_extensions))

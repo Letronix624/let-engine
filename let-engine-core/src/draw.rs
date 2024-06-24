@@ -631,7 +631,7 @@ impl Graphics {
             Ok(())
         } else {
             Err(anyhow::Error::msg(format!(
-                "This present mode \"{:?}\" is not available on this device.\nAvailable modes on this device are {:?}",
+                "This present mode \"{:?}\" is not available on this device. Available modes on this device are {:?}",
                 mode, self.get_supported_present_modes()
             )))
         }
@@ -746,13 +746,13 @@ use vulkano::shader::spirv::SpirvBytesNotMultipleOf4;
 pub enum VulkanError {
     #[error("The swapchain is out of date and needs to be updated.")]
     SwapchainOutOfDate,
-    #[error("Failed to flush future:\n{0}")]
+    #[error("Failed to flush future: {0}")]
     FlushFutureError(String),
-    #[error("A Validated error:\n{0}")]
+    #[error("A Validated error: {0}")]
     Validated(VulkanoError),
     #[error("An unexpected error with the shaders occured.")]
     ShaderError,
-    #[error("An unexpected error occured:\n{0}")]
+    #[error("An unexpected error occured: {0}")]
     Other(anyhow::Error),
 }
 

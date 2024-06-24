@@ -57,7 +57,7 @@ sudo pacman -Sy vulkan-devel
 ### Zypper based dependencies
 
 ```
-sudo zypper install alsa-devel
+sudo zypper install alsa-devel cmake
 sudo zypper install --type pattern devel_base devel_C_C++ devel_vulkan
 ```
 

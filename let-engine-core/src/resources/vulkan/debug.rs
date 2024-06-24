@@ -61,6 +61,6 @@ pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
                     },
                 ))
             },
-        ).context("There was a problem setting up a vulkan debug reporter.\nConsider turning off the `vulkan_debug_utils` feature for this build.")
+        ).context("There was a problem setting up a vulkan debug reporter. Consider turning off the `vulkan_debug_utils` feature for this build.")
     }
 }
