@@ -600,6 +600,12 @@ impl RigidBodyBuilder {
     }
 }
 
+impl Default for RigidBodyBuilder {
+    fn default() -> Self {
+        Self::dynamic()
+    }
+}
+
 impl From<RigidBodyBuilder> for RigidBody {
     fn from(val: RigidBodyBuilder) -> Self {
         val.build()
