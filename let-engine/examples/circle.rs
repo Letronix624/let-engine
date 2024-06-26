@@ -1,16 +1,18 @@
 //! Simple circle scene.
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 use std::sync::Arc;
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 use let_engine::prelude::*;
 
-#[cfg(not(feature = "client"))]
+#[cfg(any(not(feature = "client"), feature = "networking"))]
 fn main() {
-    eprintln!("This example requires you to have the `client` feature enabled.");
+    eprintln!(
+        "This example requires you to have the `client` feature enabled and `networking` disabled."
+    );
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
@@ -31,7 +33,7 @@ fn main() {
 }
 
 /// Makes a game struct containing
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 struct Game {
     /// the main layer, where the scene gets put inside,
     main_layer: Arc<Layer>,
@@ -39,7 +41,7 @@ struct Game {
     exit: bool,
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 impl Game {
     /// Constructor for this scene.
     pub fn new() -> Self {
@@ -52,9 +54,9 @@ impl Game {
 }
 
 /// Implement the Game trait into the Game struct.
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 impl let_engine::Game for Game {
-    fn start(&mut self) {
+    async fn start(&mut self) {
         // Makes the view zoomed out and not stretchy.
         self.main_layer.set_camera_settings(CameraSettings {
             zoom: 0.5,
@@ -72,7 +74,7 @@ impl let_engine::Game for Game {
         // Initializes the object to the layer
         circle.init(&self.main_layer).unwrap();
     }
-    fn event(&mut self, event: Event) {
+    async fn event(&mut self, event: Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {

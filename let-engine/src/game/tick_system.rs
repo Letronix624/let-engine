@@ -1,32 +1,30 @@
 use std::{
-    sync::{atomic::AtomicBool, Arc},
-    thread::{self, JoinHandle},
+    sync::atomic::AtomicBool,
     time::{Duration, SystemTime},
 };
 
+use async_std::sync::{Arc, Mutex};
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
-use parking_lot::Mutex;
 
 use crate::{Game, SETTINGS, TIME};
 
 pub(crate) struct TickSystem {
-    handle: Option<Mutex<JoinHandle<()>>>,
     stop: Arc<AtomicBool>,
 }
 
 impl TickSystem {
     pub fn new() -> Self {
         Self {
-            handle: None,
             stop: Arc::new(AtomicBool::new(false)),
         }
     }
     /// Runs the games `tick` function after every iteration.
-    pub fn run(&mut self, game: Arc<Mutex<impl Game + Send + 'static>>) {
+    pub async fn run(&mut self, game: Arc<Mutex<impl Game + Send + 'static>>) {
         let mut index: usize = 0;
         let stop = self.stop.clone();
-        self.handle = Some(Mutex::new(thread::spawn(move || loop {
+        let game = game.clone();
+        loop {
             // wait if paused
             SETTINGS
                 .tick_system
@@ -37,7 +35,7 @@ impl TickSystem {
             // capture tick start time.
             let start_time = SystemTime::now();
             // Run the logic
-            game.lock().tick();
+            game.lock().await.tick().await;
 
             // update the physics in case they are active in the tick settings.
             #[cfg(feature = "physics")]
@@ -88,7 +86,7 @@ impl TickSystem {
             if stop.load(std::sync::atomic::Ordering::Acquire) {
                 break;
             }
-        })));
+        }
     }
 }
 

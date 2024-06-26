@@ -29,7 +29,7 @@ pub struct EngineSettings {
 }
 
 /// General in game settings built into the game engine.
-pub struct Settings<#[cfg(feature = "client")] G, #[cfg(feature = "client")] A> {
+pub struct Settings<#[cfg(feature = "client")] G, #[cfg(feature = "audio")] A> {
     pub tick_system: TickSystem,
     #[cfg(feature = "client")]
     pub graphics: G,
@@ -38,7 +38,19 @@ pub struct Settings<#[cfg(feature = "client")] G, #[cfg(feature = "client")] A> 
 }
 
 #[cfg(feature = "client")]
-impl Settings<std::sync::Arc<Graphics>, Audio> {
+macro_rules! impl_settings {
+    { impl Settings $implementation:tt } => {
+        #[cfg(not(feature = "audio"))]
+        impl Settings<std::sync::Arc<Graphics>> $implementation
+
+        #[cfg(feature = "audio")]
+        impl Settings<std::sync::Arc<Graphics>, Audio> $implementation
+    };
+}
+
+#[cfg(feature = "client")]
+impl_settings! {
+impl Settings {
     pub(crate) fn new() -> Self {
         Self {
             tick_system: TickSystem::new(),
@@ -62,6 +74,7 @@ impl Settings<std::sync::Arc<Graphics>, Audio> {
 
         LABELIFIER.lock().clear_cache();
     }
+}
 }
 
 #[cfg(not(feature = "client"))]

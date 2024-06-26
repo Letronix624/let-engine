@@ -1,8 +1,8 @@
 //#![windows_subsystem = "windows"]
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 use let_engine::prelude::*;
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
     sync::Arc,
@@ -10,15 +10,17 @@ use std::{
 };
 
 // A const that contains the constant window resolution.
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 const RESOLUTION: Vec2 = vec2(800.0, 600.0);
 
-#[cfg(not(feature = "client"))]
+#[cfg(any(not(feature = "client"), feature = "networking"))]
 fn main() {
-    eprintln!("This example requires you to have the `client` feature enabled.");
+    eprintln!(
+        "This example requires you to have the `client` feature enabled and `networking` disabled."
+    );
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 fn main() {
     // Describing the window.
     let window_builder = WindowBuilder::default()
@@ -49,7 +51,7 @@ fn main() {
     engine.start(game);
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 struct Game {
     /// Exits the program on true.
     exit: bool,
@@ -61,7 +63,7 @@ struct Game {
     left_score: Label<Object>,
     right_score: Label<Object>,
 }
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 impl Game {
     pub fn new() -> Self {
         let game_layer = SCENE.new_layer();
@@ -160,9 +162,9 @@ impl Game {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 impl let_engine::Game for Game {
-    fn update(&mut self) {
+    async fn update(&mut self) {
         // run the update functions of the paddles.
         self.left_paddle.update();
         self.right_paddle.update();
@@ -172,7 +174,7 @@ impl let_engine::Game for Game {
         self.right_score
             .update_text(format!("{}", self.ball.wins[1]));
     }
-    fn event(&mut self, event: events::Event) {
+    async fn event(&mut self, event: events::Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {
@@ -212,14 +214,14 @@ impl let_engine::Game for Game {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 struct Paddle {
     controls: (Key, Key), //up/down
     object: Object,
     height: f32,
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 impl Paddle {
     pub fn new(layer: &Arc<Layer>, controls: (Key, Key), x: f32) -> Self {
         let height = 0.05;
@@ -273,7 +275,7 @@ impl Paddle {
     }
 }
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 struct Ball {
     object: Object,
     layer: Arc<Layer>,
@@ -286,7 +288,7 @@ struct Ball {
 }
 
 /// Ball logic.
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(feature = "networking")))]
 impl Ball {
     pub fn new(layer: &Arc<Layer>) -> Self {
         let lifetime = SystemTime::now();

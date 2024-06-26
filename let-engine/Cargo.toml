@@ -21,9 +21,12 @@ bincode = { workspace = true }
 thiserror = { workspace = true }
 derive_builder = { workspace = true }
 crossbeam = { workspace = true }
+async-std = { workspace = true }
 atomic_float = "1.0"
 spin_sleep = "1.2"
 once_cell = { workspace = true }
+local-ip-addr = "0.1.1"
+serde = { workspace = true }
 
   [dependencies.vulkano]
   workspace = true
@@ -84,6 +87,7 @@ audio = [ "dep:let-engine-audio", "client" ]
 physics = [ "dep:rapier2d" ]
 asset_system = [ "dep:asset-system" ]
 serde = [ "glam/serde", "let-engine-core/serde", "let-engine-widgets/serde" ]
+networking = []
 
 rand = [ "glam/rand", "let-engine-core/rand", "let-engine-widgets/rand" ]
 fast-math = [ "glam/fast-math", "let-engine-core/fast-math", "let-engine-widgets/fast-math" ]
