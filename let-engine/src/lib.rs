@@ -49,7 +49,7 @@ pub static SETTINGS: Lazy<
 > = Lazy::new(game::settings::Settings::new);
 /// General settings for the game engine.
 #[cfg(all(feature = "client", not(feature = "audio")))]
-pub static SETTINGS: Lazy<game::settings::Settings<std::sync::Arc<Graphics>>> =
+pub static SETTINGS: Lazy<game::settings::Settings<std::sync::Arc<draw::Graphics>>> =
     Lazy::new(game::settings::Settings::new);
 /// General settings for the game engine.
 #[cfg(not(feature = "client"))]

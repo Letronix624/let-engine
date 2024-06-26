@@ -22,7 +22,7 @@ fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
     // Then you start the engine allowing you to load resources and layers.
-    let engine = Engine::new(
+    let engine = Engine::<()>::new(
         EngineSettingsBuilder::default()
             .window_settings(window_builder)
             .build()
@@ -55,7 +55,7 @@ impl Game {
 
 #[cfg(feature = "egui")]
 impl let_engine::Game for Game {
-    fn start(&mut self) {
+    async fn start(&mut self) {
         // Makes the view zoomed out and not stretchy.
         self.layer.set_camera_settings(CameraSettings {
             zoom: 0.5,
@@ -74,7 +74,7 @@ impl let_engine::Game for Game {
         // Initializes the object to the layer
         circle.init(&self.layer).unwrap();
     }
-    fn event(&mut self, event: Event) {
+    async fn event(&mut self, event: Event) {
         match event {
             // Exit when the X button is pressed.
             Event::Window(WindowEvent::CloseRequested) => {
