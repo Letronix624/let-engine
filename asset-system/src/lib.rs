@@ -100,7 +100,7 @@
 #[allow(unused_imports)]
 use std::io::{Read, Write};
 
-use std::{fs, path::PathBuf, sync::Arc};
+use async_std::{fs, sync::Arc};
 
 use ahash::HashMap;
 
@@ -110,7 +110,7 @@ use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 /// Every resource path to the disk path where the asset is located with the compression algorithm.
-static MAP: Lazy<HashMap<String, (PathBuf, Compression)>> = Lazy::new(|| {
+static MAP: Lazy<HashMap<String, (std::path::PathBuf, Compression)>> = Lazy::new(|| {
     let data = include_bytes!(concat!(env!("OUT_DIR"), "/map_data"));
     if let Ok(data) = bincode::deserialize(data) {
         data
@@ -216,8 +216,8 @@ pub enum AssetError {
 /// This function can also be called to precache assets here.
 ///
 /// It takes the asset directory relative path to a resource found inside and returns it.
-pub fn asset(path: &str) -> Result<Arc<[u8]>, AssetError> {
-    CACHE.get_or_load(path)
+pub async fn asset(path: &str) -> Result<Arc<[u8]>, AssetError> {
+    CACHE.get_or_load(path).await
 }
 
 /// Clears the asset cache for unused keys and removes them. When calling the `asset` function for an unloaded asset it takes the same time
@@ -234,7 +234,7 @@ struct Cache {
 
 impl Cache {
     /// Returns the data to an asset using the asset directory relative path to the asset you are trying to access.
-    pub fn get_or_load(&self, key: &str) -> Result<Arc<[u8]>, AssetError> {
+    pub async fn get_or_load(&self, key: &str) -> Result<Arc<[u8]>, AssetError> {
         // Return data if it is listed in the cache
         if let Some(data) = self.map.read().get(key) {
             return Ok(data.clone());
@@ -257,7 +257,7 @@ impl Cache {
         // Decompressed and deserialized HashMap of keys and data
         let map: HashMap<String, Vec<u8>> = {
             // Read from disk,
-            let data = fs::read(asset_path).map_err(AssetError::Io)?;
+            let data = fs::read(asset_path).await.map_err(AssetError::Io)?;
             // Uncompress if it has compression or return an error if it does not have a supported format.
             let data = compression
                 .decompress(&data)

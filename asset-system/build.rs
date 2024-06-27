@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     let assets_path = PathBuf::from(assets_path);
     let output_path = PathBuf::from(&out_dir).join("../../..");
     let config = {
-        let contents = std::fs::read_to_string(assets_path.join("config.toml"))
+        let contents = fs::read_to_string(assets_path.join("config.toml"))
             .map_err(|_| Error::msg("Could not find config.toml in the set assets folder."))?;
         toml::from_str::<Config>(&contents)?
     };
@@ -53,7 +53,7 @@ fn main() -> Result<()> {
         }
 
         let group_config = {
-            let contents = std::fs::read_to_string(group_path.join("config.toml")).ok();
+            let contents = fs::read_to_string(group_path.join("config.toml")).ok();
             if let Some(contents) = contents {
                 println!("Group config for {group_path:?} found.");
                 Some(toml::from_str::<GroupConfig>(&contents)?)
