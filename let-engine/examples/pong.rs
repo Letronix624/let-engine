@@ -28,7 +28,7 @@ fn main() {
         .inner_size(RESOLUTION)
         .title("Pong 2");
     // Initialize the engine.
-    let engine = Engine::new(
+    let mut engine = Engine::new(
         EngineSettingsBuilder::default()
             .window_settings(window_builder)
             // Do not update physics because there are no physics.
