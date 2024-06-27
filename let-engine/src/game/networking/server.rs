@@ -53,15 +53,6 @@ where
         })
     }
 
-    pub(crate) async fn stop(&mut self) -> Result<()> {
-        let connections = std::mem::take(&mut *self.connections.lock_arc().await);
-        for connection in connections.into_values() {
-            connection.shutdown(std::net::Shutdown::Both)?;
-        }
-
-        Ok(())
-    }
-
     /// Creates a new server only accessable on this machine with the given port.
     pub(crate) fn new_local(port: u16) -> Result<Self> {
         let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port);
@@ -75,7 +66,7 @@ where
         Self::new(addr)
     }
 
-    pub(crate) fn accept_connetions(&mut self, listener: TcpListener) {
+    fn accept_connetions(&mut self, listener: TcpListener) {
         let messages = self.messages.0.clone();
         let connections = self.connections.clone();
         task::spawn(async {
@@ -96,7 +87,7 @@ where
         });
     }
 
-    pub(crate) fn recv_udp_messages(&mut self) {
+    fn recv_udp_messages(&mut self) {
         let messages = self.messages.0.clone();
         let connections = self.connections.clone();
         let udp_socket = self.udp_socket.clone();
@@ -181,6 +172,16 @@ impl<Msg> GameServer<Msg>
 where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone + 'static,
 {
+    /// Stops the server
+    pub async fn stop(&mut self) -> Result<()> {
+        let connections = std::mem::take(&mut *self.connections.lock_arc().await);
+        for connection in connections.into_values() {
+            connection.shutdown(std::net::Shutdown::Both)?;
+        }
+
+        Ok(())
+    }
+
     /// Broadcasts a message to every client through TCP.
     ///
     /// This function should be used to broadcast important messages.

@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A new asset system for managing and loading resources from the disk with ease.
+- A new async asset system for managing and loading resources from the disk with ease.
 - Scale function for camera scaling.
 - `Model` now has a `Data` function allowing you to get the model data.
 - Error handling for removed objects.
@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated Rapier
 - Log crate macros instead of println are getting used for the vulkan validation layer feature.
 - Updated winit, therefore updated `keycode` to `key`and added most of the key parts to the `KeyboardEvent` struct.
-- `Game` functions are now all async, except for `exit`
+- `Game` functions are now all async, except for `exit`.
+- `Engine` now requires a generic `Game`, being the game struct.
 
 ### Fixed
 
