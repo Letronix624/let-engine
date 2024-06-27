@@ -28,10 +28,11 @@ pub use tick_system::*;
 #[cfg(feature = "networking")]
 pub mod networking;
 #[cfg(feature = "networking")]
-use self::networking::GameServer;
+use networking::{GameServer, RemoteMessage};
 #[cfg(feature = "networking")]
 use serde::{Deserialize, Serialize};
 
+use std::marker::PhantomData;
 use std::{
     sync::{atomic::Ordering, Arc},
     time::Duration,
@@ -43,29 +44,54 @@ use std::{
 use crate::INPUT;
 use crate::{SETTINGS, TIME};
 
-/// Represents the game application with essential methods for a game's lifetime.
-/// # Usage
-///
-/// ```
-/// use let_engine::prelude::*;
-///
-/// struct Game {
-///     exit: bool,
-/// }
-///
-/// impl let_engine::Game for Game {
-///     fn exit(&self) -> bool {
-///        // exits the program in case self.exit is true
-///        self.exit
-///     }
-///     async fn update(&mut self) {
-///         // runs every frame or every engine loop update.
-///         //...
-///     }
-/// }
-/// ```
+#[cfg_attr(
+    feature = "networking",
+    doc = "
+Represents the game application with essential methods for a game's lifetime.
+# Usage
+```
+use let_engine::prelude::*;
+struct Game {
+    exit: bool,
+}
+impl let_engine::Game<()> for Game {
+    fn exit(&self) -> bool {
+       // exits the program in case self.exit is true
+       self.exit
+    }
+    async fn update(&mut self) {
+        // runs every frame or every engine loop update.
+        //...
+    }
+}
+```
+        "
+)]
+#[cfg_attr(
+    not(feature = "networking"),
+    doc = "
+Represents the game application with essential methods for a game's lifetime.
+# Usage
+```
+use let_engine::prelude::*;
+struct Game {
+    exit: bool,
+}
+impl let_engine::Game for Game {
+    fn exit(&self) -> bool {
+       // exits the program in case self.exit is true
+       self.exit
+    }
+    async fn update(&mut self) {
+        // runs every frame or every engine loop update.
+        //...
+    }
+}
+```
+        "
+)]
 #[allow(async_fn_in_trait)]
-pub trait Game {
+pub trait Game<#[cfg(feature = "networking")] Msg> {
     #[cfg_attr(
         feature = "client",
         doc = "Runs right before the first frame is drawn and the window gets displayed, initializing the instance."
@@ -92,6 +118,10 @@ pub trait Game {
     #[allow(unused_variables)]
     #[cfg(feature = "client")]
     async fn event(&mut self, event: events::Event) {}
+    /// A network event coming from the server or client, receiving a user specified message format.
+    #[cfg(feature = "networking")]
+    #[allow(unused_variables)]
+    async fn net_event(&mut self, addr: std::net::SocketAddr, message: RemoteMessage<Msg>) {}
     #[cfg_attr(
         feature = "client",
         doc = "If true exits the program, stopping the loop and closing the window."
@@ -106,12 +136,12 @@ pub trait Game {
 macro_rules! impl_engine_features {
     { impl Engine $implementations:tt } => {
         #[cfg(not(feature = "networking"))]
-        impl Engine $implementations
+        impl<G: Game + Send + Sync + 'static> Engine<G> $implementations
 
         #[cfg(feature = "networking")]
-        impl<Msg> Engine<Msg>
+        impl<G: Game<Msg> + Send + Sync + 'static , Msg> Engine<G, Msg>
         where
-            for<'a> Msg: Send + Serialize + Deserialize<'a> $implementations
+            for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone + 'static $implementations
     };
 }
 
@@ -120,32 +150,38 @@ macro_rules! impl_engine_features {
 /// Generic `Msg` that requires to be serde serialisable and deserialisable, is the message that can be sent/received from a remote
 /// to be interpreted in the `net_event` function of `game`.
 #[cfg(feature = "networking")]
-pub struct Engine<Msg>
+pub struct Engine<G, Msg>
 where
-    for<'a> Msg: Send + Serialize + Deserialize<'a>,
+    G: Game<Msg> + Send + Sync + 'static,
+    for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone + 'static,
 {
     #[cfg(all(feature = "egui", feature = "client"))]
     gui: egui_winit_vulkano::Gui,
-    tick_system: Option<TickSystem>,
+    tick_system: Option<TickSystem<G, Msg>>,
     #[cfg(feature = "client")]
     event_loop: Option<winit::event_loop::EventLoop<()>>,
 
     #[cfg(feature = "client")]
     draw: Draw,
     server: Option<GameServer<Msg>>,
+    _game: PhantomData<G>,
 }
 
 /// The struct that holds and executes all of the game data.
 #[cfg(not(feature = "networking"))]
-pub struct Engine {
+pub struct Engine<G>
+where
+    G: Game + Send + Sync + 'static,
+{
     #[cfg(all(feature = "egui", feature = "client"))]
     gui: egui_winit_vulkano::Gui,
-    tick_system: Option<TickSystem>,
+    tick_system: Option<TickSystem<G>>,
     #[cfg(feature = "client")]
     event_loop: Option<winit::event_loop::EventLoop<()>>,
 
     #[cfg(feature = "client")]
     draw: Draw,
+    _game: PhantomData<G>,
 }
 
 /// Makes sure the engine struct only gets constructed a single time.
@@ -198,10 +234,38 @@ impl_engine_features! {
                     draw,
                     #[cfg(feature = "networking")]
                     server: None,
+                    _game: PhantomData
                 })
             } else {
                 Err(EngineError::EngineInitialized)
             }
+        }
+
+        /// Hosts a server in this engine struct with the given ip and port to accept users and send/receive messages.
+        #[cfg(feature = "networking")]
+        pub fn start_server(&mut self, addr: std::net::SocketAddr) -> Result<GameServer<Msg>> {
+            let server = GameServer::new(addr)?;
+            self.server = Some(server.clone());
+            Ok(server)
+        }
+
+        /// Hosts a server in this engine struct with the given port to accept clients from the same device and send/receive messages.
+        #[cfg(feature = "networking")]
+        pub fn start_local_server(&mut self, port: u16) -> Result<GameServer<Msg>> {
+            let server = GameServer::new_local(port)?;
+            self.server = Some(server.clone());
+            Ok(server)
+        }
+
+        /// Hosts a server in this engine struct with the given port to accept users from anywhere and send/receive messages.
+        ///
+        /// Allows users from the local network to join the game using the given port and allows users from around the world to join
+        /// if this port is forwarded in your network.
+        #[cfg(feature = "networking")]
+        pub fn start_public_server(&mut self, port: u16) -> Result<GameServer<Msg>> {
+            let server = GameServer::new_public(port)?;
+            self.server = Some(server.clone());
+            Ok(server)
         }
 
         /// Returns the window of the game.
@@ -209,9 +273,10 @@ impl_engine_features! {
         pub fn get_window(&self) -> &Window {
             self.draw.window()
         }
+
         /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
         #[cfg(not(feature = "client"))]
-        pub fn start(mut self, game: impl Game + Send + 'static) {
+        pub fn start(mut self, game: G) {
             async_std::task::block_on(async {
                 let game = async_std::sync::Arc::new(async_std::sync::Mutex::new(game));
 
@@ -234,22 +299,35 @@ impl_engine_features! {
                 }
             })
         }
-        /// Client start function running all the methods of the given game object as documented in the [trait](Game).
+
         #[cfg(feature = "client")]
-        pub fn start(mut self, game: impl Game + Send + 'static) {
-                use let_engine_core::draw::VulkanError;
-                use winit::event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent};
-                let game = async_std::sync::Arc::new(async_std::sync::Mutex::new(game));
+        pub fn start(&mut self, game: G) {
+            use let_engine_core::draw::VulkanError;
+            use winit::event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent};
+            let game = async_std::sync::Arc::new(async_std::sync::Mutex::new(game));
 
-                let event_loop = std::mem::take(&mut self.event_loop).unwrap();
+            let event_loop = std::mem::take(&mut self.event_loop).unwrap();
 
-                event_loop
-                    .run(move |event, control_flow| {
-                        async_std::task::block_on(async {
+            event_loop
+                .run(move |event, control_flow| {
+                    async_std::task::block_on(async {
                         INPUT.update(&event, self.get_window().inner_size());
                         if game.lock().await.exit() {
+                            #[cfg(feature = "networking")]
+                            if let Some(server) = &mut self.server {
+                                server.stop().await.unwrap();
+                            }
                             control_flow.exit();
                         }
+
+                        #[cfg(feature = "networking")]
+                        if let Some(server) = &mut self.server {
+                            let messages = server.receive_messages().await;
+                            for message in messages {
+                                game.lock().await.net_event(message.0, message.1).await;
+                            }
+                        }
+
                         use glam::vec2;
                         match event {
                             Event::WindowEvent { event, .. } => {

@@ -17,7 +17,7 @@ fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
     // Then you start the engine allowing you to load resources and layers.
-    let engine = Engine::new(
+    let mut engine = Engine::new(
         EngineSettingsBuilder::default()
             .window_settings(window_builder)
             .build()
