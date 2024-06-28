@@ -4,8 +4,12 @@ use crate::{objects::Transform, resources::data::Data};
 use glam::Vec2;
 use rapier2d::{parry::transformation::vhacd::VHACDParameters, prelude::*};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
-pub struct Collider(pub rapier2d::geometry::Collider);
+pub struct Collider(pub(crate) rapier2d::geometry::Collider);
 
 impl Collider {
     /// Is this collider a sensor?
@@ -417,6 +421,7 @@ impl ColliderBuilder {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Shape(pub(crate) SharedShape);
 
 impl Shape {

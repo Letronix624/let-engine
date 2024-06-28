@@ -28,7 +28,7 @@ pub use tick_system::*;
 #[cfg(feature = "networking")]
 pub mod networking;
 #[cfg(feature = "networking")]
-use networking::{GameServer, RemoteMessage};
+use networking::{GameClient, GameServer, RemoteMessage};
 #[cfg(feature = "networking")]
 use serde::{Deserialize, Serialize};
 
@@ -164,6 +164,7 @@ where
     #[cfg(feature = "client")]
     draw: Draw,
     server: Option<GameServer<Msg>>,
+    client: Option<GameClient<Msg>>,
     _game: PhantomData<G>,
 }
 
@@ -234,38 +235,13 @@ impl_engine_features! {
                     draw,
                     #[cfg(feature = "networking")]
                     server: None,
+                    #[cfg(feature = "networking")]
+                    client: None,
                     _game: PhantomData
                 })
             } else {
                 Err(EngineError::EngineInitialized)
             }
-        }
-
-        /// Hosts a server in this engine struct with the given ip and port to accept users and send/receive messages.
-        #[cfg(feature = "networking")]
-        pub fn start_server(&mut self, addr: std::net::SocketAddr) -> Result<GameServer<Msg>> {
-            let server = GameServer::new(addr)?;
-            self.server = Some(server.clone());
-            Ok(server)
-        }
-
-        /// Hosts a server in this engine struct with the given port to accept clients from the same device and send/receive messages.
-        #[cfg(feature = "networking")]
-        pub fn start_local_server(&mut self, port: u16) -> Result<GameServer<Msg>> {
-            let server = GameServer::new_local(port)?;
-            self.server = Some(server.clone());
-            Ok(server)
-        }
-
-        /// Hosts a server in this engine struct with the given port to accept users from anywhere and send/receive messages.
-        ///
-        /// Allows users from the local network to join the game using the given port and allows users from around the world to join
-        /// if this port is forwarded in your network.
-        #[cfg(feature = "networking")]
-        pub fn start_public_server(&mut self, port: u16) -> Result<GameServer<Msg>> {
-            let server = GameServer::new_public(port)?;
-            self.server = Some(server.clone());
-            Ok(server)
         }
 
         /// Returns the window of the game.
@@ -291,10 +267,27 @@ impl_engine_features! {
                     });
                 }
                 loop {
-                    if game.lock().await.exit() {
+                    let mut game = game.lock().await;
+                    if game.exit() {
                         break;
                     }
-                    game.lock().await.update().await;
+                    #[cfg(feature = "networking")]
+                    {
+                        if let Some(server) = &mut self.server {
+                            let messages = server.receive_messages().await;
+                            for message in messages {
+                                game.net_event(message.0, message.1).await;
+                            }
+                        }
+                        if let Some(client) = &mut self.client {
+                            let messages = client.receive_messages().await;
+                            for message in messages {
+                                game.net_event(message.0, message.1).await;
+                            }
+                        }
+                    }
+
+                    game.update().await;
                     TIME.update();
                 }
             })
@@ -321,14 +314,21 @@ impl_engine_features! {
                         }
 
                         #[cfg(feature = "networking")]
-                        if let Some(server) = &mut self.server {
-                            let messages = server.receive_messages().await;
-                            for message in messages {
-                                game.lock().await.net_event(message.0, message.1).await;
+                        {
+                            if let Some(server) = &mut self.server {
+                                let messages = server.receive_messages().await;
+                                for message in messages {
+                                    game.lock().await.net_event(message.0, message.1).await;
+                                }
+                            }
+                            if let Some(client) = &mut self.client {
+                                let messages = client.receive_messages().await;
+                                for message in messages {
+                                    game.lock().await.net_event(message.0, message.1).await;
+                                }
                             }
                         }
 
-                        use glam::vec2;
                         match event {
                             Event::WindowEvent { event, .. } => {
                                 #[cfg(feature = "egui")]
@@ -386,7 +386,7 @@ impl_engine_features! {
                                     WindowEvent::MouseWheel { delta, .. } => events::Event::Window(
                                         events::WindowEvent::MouseWheel(match delta {
                                             MouseScrollDelta::LineDelta(x, y) => {
-                                                ScrollDelta::LineDelta(vec2(x, y))
+                                                ScrollDelta::LineDelta(glam::vec2(x, y))
                                             }
                                             MouseScrollDelta::PixelDelta(x) => {
                                                 ScrollDelta::PixelDelta(x)
@@ -436,7 +436,7 @@ impl_engine_features! {
                             Event::DeviceEvent { event, .. } => match event {
                                 DeviceEvent::MouseMotion { delta } => {
                                     game.lock().await
-                                        .event(events::Event::Input(InputEvent::MouseMotion(vec2(
+                                        .event(events::Event::Input(InputEvent::MouseMotion(glam::vec2(
                                             delta.0 as f32,
                                             delta.1 as f32,
                                         )))).await;
@@ -446,7 +446,7 @@ impl_engine_features! {
                                         .event(events::Event::Input(InputEvent::MouseWheel(
                                             match delta {
                                                 MouseScrollDelta::LineDelta(x, y) => {
-                                                    ScrollDelta::LineDelta(vec2(x, y))
+                                                    ScrollDelta::LineDelta(glam::vec2(x, y))
                                                 }
                                                 MouseScrollDelta::PixelDelta(delta) => {
                                                     ScrollDelta::PixelDelta(delta)
@@ -512,6 +512,48 @@ impl_engine_features! {
                 });
             })
             .unwrap();
+        }
+    }
+}
+
+#[cfg(feature = "networking")]
+impl_engine_features! {
+    impl Engine {
+        /// Hosts a server in this engine struct with the given ip and port to accept users and send/receive messages.
+        pub fn new_server(&mut self, addr: std::net::SocketAddr) -> Result<GameServer<Msg>> {
+            let server = GameServer::<Msg>::new(addr)?;
+            self.server = Some(server.clone());
+            Ok(server)
+        }
+
+        /// Hosts a server in this engine struct with the given port to accept clients from the same device and send/receive messages.
+        pub fn new_local_server(&mut self, port: u16) -> Result<GameServer<Msg>> {
+            let addr = std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 0, 0, 1), port);
+            let server = GameServer::<Msg>::new(addr.into())?;
+            self.server = Some(server.clone());
+            Ok(server)
+        }
+
+        /// Hosts a server in this engine struct with the given port to accept users from anywhere and send/receive messages.
+        ///
+        /// Allows users from the local network to join the game using the given port and allows users from around the world to join
+        /// if this port is forwarded in your network.
+        pub fn new_public_server(&mut self, port: u16) -> Result<GameServer<Msg>> {
+            let addr = local_ip_addr::get_local_ip_address()?;
+            use std::str::FromStr;
+            let addr = std::net::SocketAddr::new(std::net::Ipv4Addr::from_str(&addr)?.into(), port);
+            let server = GameServer::<Msg>::new(addr)?;
+            self.server = Some(server.clone());
+            Ok(server)
+        }
+
+        /// Creates a client that you can connect to the given server address with it's `connect` function.
+        ///
+        /// Pipes the remote messages created by that client to the games `net_event` function.
+        pub fn new_client(&mut self, addr: std::net::SocketAddr) -> Result<GameClient<Msg>> {
+            let client = GameClient::<Msg>::new(addr)?;
+            self.client = Some(client.clone());
+            Ok(client)
         }
     }
 }

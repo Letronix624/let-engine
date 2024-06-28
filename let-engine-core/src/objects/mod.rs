@@ -35,7 +35,11 @@ type ObjectsMap = HashMap<usize, NObject>;
 pub(crate) type NObject = Arc<Mutex<Node<Object>>>;
 type WeakObject = Weak<Mutex<Node<Object>>>;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// Holds position size and rotation of an object.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Transform {
     pub position: Vec2,
@@ -218,6 +222,7 @@ impl Node<Object> {
 }
 
 /// Object to be initialized to the layer.
+// #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default, Clone, Builder, PartialEq, Debug)]
 pub struct NewObject {
     #[builder(setter(into), default)]

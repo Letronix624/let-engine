@@ -11,6 +11,10 @@ use thiserror::Error;
 #[error("One of the objects does not have a rigid body")]
 pub struct NoRigidBodyError;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Default, Debug)]
 pub struct RigidBody(pub(crate) rapier2d::dynamics::RigidBody);
 
