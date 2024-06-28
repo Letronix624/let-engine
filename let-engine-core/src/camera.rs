@@ -11,6 +11,10 @@ use glam::{vec2, Vec2};
 ///
 /// Those are the options in this game engine:
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CameraScaling {
     /// Goes from -1 to 1 in both x and y. So the camera view stretches when the window is not square.
@@ -63,6 +67,7 @@ impl CameraScaling {
 }
 
 /// Settings that determine your camera vision.
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy)]
 pub struct CameraSettings {
     /// The camera zoom level. Default is `1.0`.

@@ -1,33 +1,29 @@
-use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
 
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
 use async_std::{
-    channel::{unbounded, Receiver, Sender},
+    channel::{unbounded, Sender},
     io::{ReadExt, WriteExt},
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpListener, TcpStream, UdpSocket},
+    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
     sync::{Arc, Mutex},
     task,
 };
 use serde::{Deserialize, Serialize};
 
-use super::RemoteMessage;
+use super::{Messages, RemoteMessage};
 
 /// A server instance that allows you to send messages to your client.
 #[derive(Clone)]
 pub struct GameServer<Msg>
 where
-    for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone,
+    for<'a> Msg: Send + Sync + Serialize + Deserialize<'a>,
 {
     udp_socket: Arc<UdpSocket>,
     connections: Arc<Mutex<HashMap<SocketAddr, TcpStream>>>,
     messages: Messages<Msg>,
+    running: Arc<AtomicBool>,
 }
-
-type Messages<Msg> = (
-    Sender<(SocketAddr, RemoteMessage<Msg>)>,
-    Receiver<(SocketAddr, RemoteMessage<Msg>)>,
-);
 
 impl<Msg> GameServer<Msg>
 where
@@ -40,10 +36,11 @@ where
 
             let udp_socket = Arc::new(UdpSocket::bind(addr).await?);
 
-            let mut server = Self {
+            let server = Self {
                 udp_socket,
                 connections: Arc::new(Mutex::new(HashMap::default())),
                 messages: unbounded(),
+                running: Arc::new(false.into()),
             };
 
             server.accept_connetions(tcp_listener);
@@ -53,33 +50,23 @@ where
         })
     }
 
-    /// Creates a new server only accessable on this machine with the given port.
-    pub(crate) fn new_local(port: u16) -> Result<Self> {
-        let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), port);
-        Self::new(addr.into())
-    }
-
-    /// Creates a new server accessable by every device trying to connect with the given port.
-    pub(crate) fn new_public(port: u16) -> Result<Self> {
-        let addr = local_ip_addr::get_local_ip_address()?;
-        let addr = SocketAddr::new(Ipv4Addr::from_str(&addr)?.into(), port);
-        Self::new(addr)
-    }
-
-    fn accept_connetions(&mut self, listener: TcpListener) {
+    fn accept_connetions(&self, listener: TcpListener) {
         let messages = self.messages.0.clone();
         let connections = self.connections.clone();
+        let running = self.running.clone();
         task::spawn(async {
             let messages = messages;
             let connections = connections;
             let listener = listener;
+            let running = running;
             while let Ok((stream, addr)) = listener.accept().await {
-                let stream2 = stream.clone();
-                if messages
-                    .send((addr, RemoteMessage::Connected))
-                    .await
-                    .is_ok()
+                if running.load(std::sync::atomic::Ordering::Acquire)
+                    && messages
+                        .send((addr, RemoteMessage::Connected))
+                        .await
+                        .is_ok()
                 {
+                    let stream2 = stream.clone();
                     task::spawn(Self::recv_messages(stream2, addr, messages.clone()));
                     connections.lock_arc().await.insert(addr, stream);
                 }
@@ -87,18 +74,26 @@ where
         });
     }
 
-    fn recv_udp_messages(&mut self) {
+    fn recv_udp_messages(&self) {
         let messages = self.messages.0.clone();
         let connections = self.connections.clone();
         let udp_socket = self.udp_socket.clone();
+        let running = self.running.clone();
         task::spawn(async {
             let messages = messages;
             let connections = connections;
             let udp_socket = udp_socket;
+            let running = running;
             loop {
                 let mut buf = [0; 1024];
 
                 if let Ok((size, addr)) = udp_socket.recv_from(&mut buf).await {
+                    if running.load(std::sync::atomic::Ordering::Acquire) {
+                        if messages.is_closed() {
+                            break;
+                        }
+                        continue;
+                    }
                     if connections.lock().await.contains_key(&addr) {
                         if let Ok(message) = bincode::deserialize::<Msg>(&buf[..size]) {
                             if messages
@@ -159,7 +154,7 @@ where
         }
     }
 
-    pub(crate) async fn receive_messages(&mut self) -> Vec<(SocketAddr, RemoteMessage<Msg>)> {
+    pub(crate) async fn receive_messages(&self) -> Vec<(SocketAddr, RemoteMessage<Msg>)> {
         let mut messages: Vec<(SocketAddr, RemoteMessage<Msg>)> = vec![];
         while let Ok(message) = self.messages.1.try_recv() {
             messages.push((message.0, message.1));
@@ -173,7 +168,9 @@ where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone + 'static,
 {
     /// Stops the server
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
+        self.running
+            .store(false, std::sync::atomic::Ordering::Release);
         let connections = std::mem::take(&mut *self.connections.lock_arc().await);
         for connection in connections.into_values() {
             connection.shutdown(std::net::Shutdown::Both)?;
@@ -182,10 +179,16 @@ where
         Ok(())
     }
 
+    /// Starts the server up.
+    pub fn start(&self) {
+        self.running
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
     /// Broadcasts a message to every client through TCP.
     ///
     /// This function should be used to broadcast important messages.
-    pub async fn broadcast(&mut self, message: &Msg) -> Result<()> {
+    pub async fn broadcast(&self, message: &Msg) -> Result<()> {
         for connection in self.connections.lock_arc().await.values_mut() {
             connection.write_all(&bincode::serialize(message)?).await?;
         }
@@ -195,7 +198,7 @@ where
     /// Sends a message to a specific target through TCP.
     ///
     /// This function should be used to send important messages.
-    pub async fn send(&mut self, receiver: SocketAddr, message: &Msg) -> Result<()> {
+    pub async fn send(&self, receiver: SocketAddr, message: &Msg) -> Result<()> {
         self.connections
             .lock_arc()
             .await
@@ -209,7 +212,7 @@ where
     /// Broadcasts a message to every client through UDP.
     ///
     /// This function should be used to broadcast messages with the lowest latency possible.
-    pub async fn udp_broadcast(&mut self, message: &Msg) -> Result<()> {
+    pub async fn udp_broadcast(&self, message: &Msg) -> Result<()> {
         for connection in self.connections.lock_arc().await.keys() {
             self.udp_socket
                 .send_to(&bincode::serialize(message)?, connection)
@@ -229,7 +232,7 @@ where
     }
 
     /// Disconnects the specified user.
-    pub async fn disconnect_user(&mut self, user: SocketAddr) -> Result<()> {
+    pub async fn disconnect_user(&self, user: SocketAddr) -> Result<()> {
         self.messages
             .0
             .send((user, RemoteMessage::Disconnected))

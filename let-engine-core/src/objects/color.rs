@@ -1,6 +1,10 @@
 /// A struct that represents a color to use on objects, the clear color or labels.
 use glam::{vec3, vec4, Vec3, Vec4};
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     rgba: [f32; 4],
