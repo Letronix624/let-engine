@@ -66,10 +66,6 @@ serde = { workspace = true }
   version = "0.11.0-alpha"
   path = "../let-engine-core"
 
-  [dependencies.let-engine-widgets]
-  version = "0.1"
-  path = "../let-engine-widgets"
-
   [dependencies.let-engine-audio]
   version = "0.1"
   path = "../let-engine-audio"
@@ -77,6 +73,7 @@ serde = { workspace = true }
 
 [dev-dependencies]
 egui_demo_lib = "0.27"
+let-engine-widgets = { path = "../let-engine-widgets" }
 
 [features]
 default = [ "client", "physics", "audio" ]
@@ -84,13 +81,13 @@ egui = [ "let-engine-core/egui", "dep:egui_winit_vulkano", "client" ]
 vulkan_debug_utils = [ "let-engine-core/vulkan_debug_utils" ]
 client = [ "dep:vulkano", "dep:winit", "dep:image", "let-engine-core/client" ]
 audio = [ "dep:let-engine-audio", "client" ]
-physics = [ "dep:rapier2d" ]
+physics = [ "dep:rapier2d", "let-engine-core/physics" ]
 asset_system = [ "dep:asset-system" ]
-serde = [ "glam/serde", "let-engine-core/serde", "let-engine-widgets/serde", "rapier2d/serde-serialize" ]
+serde = [ "glam/serde", "let-engine-core/serde", "rapier2d/serde-serialize" ]
 networking = [ ]
 
-rand = [ "glam/rand", "let-engine-core/rand", "let-engine-widgets/rand" ]
-fast-math = [ "glam/fast-math", "let-engine-core/fast-math", "let-engine-widgets/fast-math" ]
+rand = [ "glam/rand", "let-engine-core/rand" ]
+fast-math = [ "glam/fast-math", "let-engine-core/fast-math" ]
 
 # asset system compression algorithms
 deflate = [ "asset-system/deflate" ]

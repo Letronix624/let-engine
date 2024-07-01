@@ -28,9 +28,12 @@ mod check_feature_dependency {
 #[cfg(feature = "egui")]
 pub use egui_winit_vulkano::egui;
 
-pub use let_engine_core::{camera, objects, resources, Direction};
+#[cfg(feature = "client")]
+pub use let_engine_core::resources;
+pub use let_engine_core::{camera, objects, Direction};
 
 /// Structs about drawing related things.
+#[cfg(feature = "client")]
 pub mod draw {
     pub use let_engine_core::draw::{Graphics, PresentMode, ShaderError, VulkanError};
 }
@@ -75,6 +78,7 @@ pub static SETTINGS: Lazy<game::settings::Settings> = Lazy::new(game::settings::
 /// let pie: Data = make_circle!(20, 0.75);
 /// ```
 #[macro_export]
+#[cfg(feature = "client")]
 macro_rules! make_circle {
     // Full circle fan
     ($corners:expr) => {{

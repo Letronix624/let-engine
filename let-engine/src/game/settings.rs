@@ -63,16 +63,12 @@ impl Settings {
 
     /// Cleans all caches on both ram and vram for unused data. This decreases memory usage and may not
     /// hurt to be called between levels from time to time.
-    ///
-    /// This function clears the asset cache, gpu resource cache and label pixel buffer cache.
     #[cfg(feature = "client")]
     pub fn clean_caches(&self) {
-        use let_engine_widgets::labels::LABELIFIER;
 
         #[cfg(feature = "asset_system")]
         asset_system::clear_cache();
 
-        LABELIFIER.lock().clear_cache();
     }
 }
 }

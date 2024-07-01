@@ -394,10 +394,6 @@ impl_engine_features! {
                                         }),
                                     ),
                                     WindowEvent::RedrawRequested => {
-                                        {
-                                            let labelifier = &let_engine_widgets::labels::LABELIFIER;
-                                            labelifier.lock().update().unwrap();
-                                        }
 
                                         // fps limit logic
                                         let start_time = SystemTime::now();

@@ -1,8 +1,11 @@
 pub mod camera;
+#[cfg(feature = "client")]
 pub mod draw;
 pub mod objects;
+#[cfg(feature = "client")]
 pub mod resources;
 pub mod utils;
+#[cfg(feature = "client")]
 pub mod window;
 
 use thiserror::Error;

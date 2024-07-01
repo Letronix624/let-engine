@@ -46,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `InputEvent::ReceivedCharacter` in favour of Key::Chararcter
+- Labels from the game engine. To access them import the let-engine-widgets library.
 
 ## [0.10.0] - 2024-2-10
 

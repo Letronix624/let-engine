@@ -21,6 +21,7 @@ parking_lot = { workspace = true }
   [dependencies.let-engine-core]
   version = "0.11.0-alpha"
   path = "../let-engine-core"
+  features = [ "client" ]
 
   [dependencies.glam]
   workspace = true

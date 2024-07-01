@@ -3,6 +3,9 @@
 use let_engine::prelude::*;
 
 #[cfg(all(feature = "client", not(feature = "networking")))]
+use let_engine_widgets::labels::{Font, Label, LabelCreateInfo};
+
+#[cfg(all(feature = "client", not(feature = "networking")))]
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
     sync::Arc,
@@ -165,6 +168,9 @@ impl Game {
 #[cfg(all(feature = "client", not(feature = "networking")))]
 impl let_engine::Game for Game {
     async fn update(&mut self) {
+        // When using widgets do not forget to update the widgets used with the let-engine-widgets crate.
+        let_engine_widgets::update();
+
         // run the update functions of the paddles.
         self.left_paddle.update();
         self.right_paddle.update();
