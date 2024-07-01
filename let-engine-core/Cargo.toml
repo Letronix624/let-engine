@@ -57,7 +57,6 @@ log = "0.4.21"
 shaderc = "0.8"
 
 [features]
-default = [ "client", "physics" ]
 egui = [ "dep:egui_winit_vulkano", "client" ]
 vulkan_debug_utils = [ ]
 client = [ "dep:vulkano", "dep:winit", "dep:image" ]

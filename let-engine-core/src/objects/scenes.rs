@@ -1,6 +1,4 @@
-use self::joints::NoJointError;
-
-use super::{physics::*, *};
+use super::*;
 use crate::camera::*;
 use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
@@ -8,7 +6,6 @@ use indexmap::{indexset, IndexSet};
 
 #[cfg(feature = "audio")]
 use kira::spatial::listener::ListenerHandle;
-use nalgebra::Isometry2;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
@@ -526,7 +523,7 @@ impl Layer {
         physics.update_query_pipeline();
 
         let vec = mint::Vector2::from(position.0);
-        let iso = Isometry2::new(vec.into(), position.1);
+        let iso = nalgebra::Isometry2::new(vec.into(), position.1);
         let result = physics.query_pipeline.intersection_with_shape(
             &physics.rigid_body_set,
             &physics.collider_set,
@@ -553,7 +550,7 @@ impl Layer {
         };
 
         let vec = mint::Vector2::from(position.0);
-        let iso = Isometry2::new(vec.into(), position.1);
+        let iso = nalgebra::Isometry2::new(vec.into(), position.1);
         physics.query_pipeline.intersections_with_shape(
             &physics.rigid_body_set,
             &physics.collider_set,
@@ -644,12 +641,12 @@ impl Layer {
         &self,
         data: impl Into<joints::GenericJoint>,
         handle: ImpulseJointHandle,
-    ) -> Result<(), NoJointError> {
+    ) -> Result<(), joints::NoJointError> {
         if let Some(joint) = self.physics.lock().impulse_joint_set.get_mut(handle) {
             joint.data = data.into().data;
             Ok(())
         } else {
-            Err(NoJointError)
+            Err(joints::NoJointError)
         }
     }
     /// Removes a joint.

@@ -300,6 +300,7 @@ impl NewObject {
     }
 
     /// Initializes the object into a layer with an optional parent object.
+    #[allow(unused_mut)]
     pub fn init_with_optional_parent(
         mut self,
         layer: &Arc<Layer>,
