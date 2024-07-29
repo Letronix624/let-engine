@@ -4,8 +4,6 @@ use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
 use indexmap::{indexset, IndexSet};
 
-#[cfg(feature = "audio")]
-use kira::spatial::listener::ListenerHandle;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
@@ -37,25 +35,9 @@ impl Scene {
         if physics {
             for layer in layers.iter() {
                 layer.step_physics(&mut pipeline);
-                #[cfg(feature = "audio")]
-                layer.update()?;
-            }
-        } else {
-            #[cfg(feature = "audio")]
-            for layer in layers.iter() {
-                layer.update()?;
             }
         }
         Ok(())
-    }
-
-    /// Updates all the layers.
-    #[cfg(all(feature = "audio", not(feature = "physics")))]
-    pub fn update(&self) {
-        let layers = self.layers.lock();
-        for layer in layers.iter() {
-            layer.update();
-        }
     }
 
     /// Initializes a new layer into the scene.
@@ -226,26 +208,27 @@ impl Layer {
     pub fn contains_object(&self, object_id: &usize) -> bool {
         self.objects_map.lock().contains_key(object_id)
     }
-    #[cfg(feature = "audio")]
-    pub(crate) fn update(&self) -> Result<()> {
-        use glam::Quat;
+    //TODO FIX FIXME
+    // #[cfg(feature = "audio")]
+    // pub(crate) fn update(&self) -> Result<()> {
+    //     use glam::Quat;
 
-        let mut old_camera = self.old_camera.lock();
-        let camera = self.camera.lock().lock().object.to_new();
-        if *old_camera != camera {
-            *old_camera = camera;
-            if let Some(listener) = self.listener.lock().get_mut() {
-                let cam_transform = self.camera_transform();
-                listener
-                    .set_position(cam_transform.position.extend(0.0), Tween::default().into())?;
-                listener.set_orientation(
-                    Quat::from_rotation_z(cam_transform.rotation),
-                    Tween::default().into(),
-                )?;
-            }
-        }
-        Ok(())
-    }
+    //     let mut old_camera = self.old_camera.lock();
+    //     let camera = self.camera.lock().lock().object.to_new();
+    //     if *old_camera != camera {
+    //         *old_camera = camera;
+    //         if let Some(listener) = self.listener.lock().get_mut() {
+    //             let cam_transform = self.camera_transform();
+    //             listener
+    //                 .set_position(cam_transform.position.extend(0.0), Tween::default().into())?;
+    //             listener.set_orientation(
+    //                 Quat::from_rotation_z(cam_transform.rotation),
+    //                 Tween::default().into(),
+    //             )?;
+    //         }
+    //     }
+    //     Ok(())
+    // }
     /// Increments the object ID counter by one and returns it.
     pub(crate) fn increment_id(&self) -> usize {
         self.latest_object.fetch_add(1, Ordering::AcqRel) as usize

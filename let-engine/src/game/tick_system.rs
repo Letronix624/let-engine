@@ -128,7 +128,7 @@ pub struct TickSettings {
     /// - 1 / 62 seconds
     ///
     /// 62 ticks per second.
-    #[builder(setter(into), default = "Duration::from_secs_f64(1.0/62.4)")]
+    #[builder(setter(into), default = "Duration::from_secs_f64(1.0/62.0)")]
     pub tick_wait: Duration,
     /// The waiting behaviour of this tick system.
     ///

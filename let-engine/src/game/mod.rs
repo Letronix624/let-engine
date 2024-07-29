@@ -121,7 +121,8 @@ pub trait Game<#[cfg(feature = "networking")] Msg> {
     /// A network event coming from the server or client, receiving a user specified message format.
     #[cfg(feature = "networking")]
     #[allow(unused_variables)]
-    async fn net_event(&mut self, addr: std::net::SocketAddr, message: RemoteMessage<Msg>) {}
+    async fn net_event(&mut self, connection: networking::Connection, message: RemoteMessage<Msg>) {
+    }
     #[cfg_attr(
         feature = "client",
         doc = "If true exits the program, stopping the loop and closing the window."

@@ -1,6 +1,6 @@
 //! Wrapping of Rapiers colliders to be used with Let Engine and Glam.
 
-use crate::{objects::Transform, resources::data::Data};
+use crate::objects::Transform;
 use glam::Vec2;
 use rapier2d::{parry::transformation::vhacd::VHACDParameters, prelude::*};
 
@@ -257,13 +257,12 @@ impl ColliderBuilder {
 
     /// Initializes a collider builder with a triangle mesh shape defined by its vertex and index buffers.
     #[cfg(feature = "client")]
-    pub fn trimesh(data: Data) -> Self {
+    pub fn trimesh(data: crate::resources::data::Data) -> Self {
         Self::new(Shape::trimesh(data))
     }
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.
-    #[cfg(not(feature = "client"))]
-    pub fn trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
-        Self::new(Shape::trimesh(data))
+    pub fn array_trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
+        Self::new(Shape::array_trimesh(data))
     }
 
     /// Initializes a collider builder with a compound shape obtained from the decomposition of
@@ -518,7 +517,7 @@ impl Shape {
 
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.
     #[cfg(feature = "client")]
-    pub fn trimesh(data: Data) -> Self {
+    pub fn trimesh(data: crate::resources::data::Data) -> Self {
         Self(SharedShape::trimesh(
             data.vertices()
                 .iter()
@@ -534,10 +533,15 @@ impl Shape {
         ))
     }
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.
-    #[cfg(not(feature = "client"))]
-    pub fn trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
+    pub fn array_trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
         Self(SharedShape::trimesh(
-            data.0.into_iter().map(|x| x.into()).collect(),
+            data.0
+                .into_iter()
+                .map(|x| {
+                    let x = mint::Point2::from(x);
+                    x.into()
+                })
+                .collect(),
             data.1,
         ))
     }

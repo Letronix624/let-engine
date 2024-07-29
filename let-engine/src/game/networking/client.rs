@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 
 use anyhow::Result;
 use async_std::{
-    channel::unbounded,
+    channel::{unbounded, Sender},
     io::{ReadExt, WriteExt},
     net::{TcpStream, UdpSocket},
     sync::{Arc, Mutex},
@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Messages, RemoteMessage};
+use super::{serialize_tcp, Connection, Disconnected, Messages, RemoteMessage};
 
 /// A client instance that allows you to connect to a server using the same game engine
 /// and send/receive messages.
@@ -25,7 +25,7 @@ where
     client: Arc<Mutex<Option<TcpStream>>>,
     udp_socket: Arc<UdpSocket>,
     messages: Messages<Msg>,
-    remote_addr: Arc<AtomicCell<SocketAddr>>,
+    remote_connection: Arc<AtomicCell<Connection>>,
 }
 
 impl<Msg> GameClient<Msg>
@@ -34,12 +34,19 @@ where
 {
     pub(crate) fn new(remote_addr: SocketAddr) -> Result<Self> {
         task::block_on(async {
-            let udp_socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await?);
+            let udp_socket = UdpSocket::bind("0.0.0.0:0")
+                .await
+                .map_err(ClientError::Io)?
+                .into();
+
             let client = Self {
                 client: Arc::new(Mutex::new(None)),
                 udp_socket,
                 messages: unbounded(),
-                remote_addr: Arc::new(AtomicCell::new(remote_addr)),
+                remote_connection: Arc::new(AtomicCell::new(Connection::new(
+                    remote_addr,
+                    remote_addr.port(),
+                ))),
             };
 
             client.recv_udp_messages();
@@ -52,47 +59,56 @@ where
         let client = self.client.clone();
         let messages = self.messages.0.clone();
 
-        let remote_addr = self.remote_addr.clone();
+        let remote_connection = self.remote_connection.clone();
         task::spawn(async {
-            let remote_addr = remote_addr;
-            let remote_addr = remote_addr.load();
+            let connection = remote_connection;
+            let connection = connection.load();
+
             let messages = messages;
             let client = client;
 
-            let Some(mut client) = client.lock_arc().await.clone() else {
-                return;
-            };
+            let disconnect_reason;
 
-            let mut buf = [0; 1024];
-            // let mut data = Vec::with_capacity(1024);
+            let mut size_buf = [0u8; 4];
+            loop {
+                let mut client = client.lock_arc().await.clone();
+                if let Some(stream) = client.as_mut() {
+                    // Get u32 size prefix
+                    if let Err(e) = stream.read_exact(&mut size_buf).await {
+                        disconnect_reason = e.into();
+                        break;
+                    };
 
-            while let Ok(size) = client.read(&mut buf).await {
-                if size == 0 {
-                    break;
-                };
+                    // Read as many bytes as in the size prefix
+                    let mut buf = vec![0u8; u32::from_le_bytes(size_buf) as usize];
+                    if let Err(e) = stream.read_exact(&mut buf).await {
+                        disconnect_reason = e.into();
+                        break;
+                    };
 
-                let Ok(message) = bincode::deserialize(&buf[..size]) else {
-                    continue;
-                };
-
-                if messages
-                    .send((remote_addr, RemoteMessage::Tcp(message)))
-                    .await
-                    .is_err()
-                {
-                    break;
-                };
+                    // Send the message if it's correctly deserialized.
+                    let _ = match bincode::deserialize::<Msg>(&buf) {
+                        Ok(message) => {
+                            messages
+                                .send((connection, RemoteMessage::Tcp(message)))
+                                .await
+                        }
+                        Err(e) => {
+                            messages
+                                .send((connection, RemoteMessage::DeserialisationError(e)))
+                                .await
+                        }
+                    };
+                }
             }
-            let _ = messages
-                .send((remote_addr, RemoteMessage::Disconnected))
-                .await;
+            Self::disconnect_with(messages, connection, disconnect_reason, client).await;
         });
     }
 
     fn recv_udp_messages(&self) {
         let udp_socket = self.udp_socket.clone();
         let messages = self.messages.0.clone();
-        let remote_addr = self.remote_addr.clone();
+        let remote_addr = self.remote_connection.clone();
         task::spawn(async {
             let udp_socket = udp_socket;
             let messages = messages;
@@ -101,11 +117,7 @@ where
             let mut buf = [0; 1024];
 
             'h: loop {
-                while let Ok((size, addr)) = udp_socket.recv_from(&mut buf).await {
-                    if addr != remote_addr.load() {
-                        continue;
-                    };
-
+                while let Ok(size) = udp_socket.recv(&mut buf).await {
                     let Ok(message) = bincode::deserialize(&buf[..size]) else {
                         continue;
                     };
@@ -122,8 +134,21 @@ where
         });
     }
 
-    pub(crate) async fn receive_messages(&self) -> Vec<(SocketAddr, RemoteMessage<Msg>)> {
-        let mut messages: Vec<(SocketAddr, RemoteMessage<Msg>)> = vec![];
+    async fn disconnect_with(
+        messages: Sender<(Connection, RemoteMessage<Msg>)>,
+        connection: Connection,
+        reason: Disconnected,
+        client: Arc<Mutex<Option<TcpStream>>>,
+    ) {
+        *client.lock_arc().await = None;
+
+        let _ = messages
+            .send((connection, RemoteMessage::Disconnected(reason)))
+            .await;
+    }
+
+    pub(crate) async fn receive_messages(&self) -> Vec<(Connection, RemoteMessage<Msg>)> {
+        let mut messages: Vec<(Connection, RemoteMessage<Msg>)> = vec![];
         while let Ok(message) = self.messages.1.try_recv() {
             messages.push((message.0, message.1));
         }
@@ -137,38 +162,62 @@ where
 {
     /// Returns the remote address of the server to connect to.
     pub fn remote_addr(&self) -> SocketAddr {
-        self.remote_addr.load()
+        self.remote_connection.load().tcp_addr
     }
 
     /// Changes the remote address of the server to connect to, but does not immediately connect to it
     /// when the server is still running.
     pub fn set_remote_addr(&self, addr: SocketAddr) {
-        self.remote_addr.store(addr);
+        self.remote_connection
+            .store(Connection::new(addr, addr.port()));
     }
 
     /// Connects to the servers remote address.
     pub async fn connect(&self) -> Result<(), ClientError> {
+        // Error if there is a connection.
         if self.client.lock_arc().await.is_some() {
             return Err(ClientError::StillConnected);
         }
-        let client = TcpStream::connect(self.remote_addr.load())
+
+        let addr = self.remote_addr();
+
+        // Use the UdpSocket connect function to allow receiving data without port forwarding or handling the NAT stuff.
+        self.udp_socket
+            .connect(&addr)
             .await
             .map_err(ClientError::Io)?;
-        *self.client.lock_arc().await = Some(client);
+
+        let mut tcp_socket = TcpStream::connect(addr).await.map_err(ClientError::Io)?;
+
+        // Send UDP port for identification
+        tcp_socket
+            .write(
+                &self
+                    .udp_socket
+                    .local_addr()
+                    .map_err(ClientError::Io)?
+                    .port()
+                    .to_le_bytes(),
+            )
+            .await
+            .map_err(ClientError::Io)?;
+
+        *self.client.lock_arc().await = Some(tcp_socket);
         self.recv_messages();
         Ok(())
     }
 
     /// Stops the connection to the server.
     pub async fn disconnect(&self) -> Result<(), ClientError> {
-        if let Some(client) = self.client.lock_arc().await.as_ref() {
+        let mut client = self.client.lock_arc().await;
+        if let Some(client) = client.as_ref() {
             client
                 .shutdown(std::net::Shutdown::Both)
                 .map_err(ClientError::Io)?;
         } else {
             return Err(ClientError::NotConnected);
         };
-        *self.client.lock_arc().await = None;
+        *client = None;
 
         Ok(())
     }
@@ -200,7 +249,7 @@ where
     pub async fn send(&self, message: &Msg) -> Result<(), ClientError> {
         if let Some(client) = self.client.lock_arc().await.as_mut() {
             client
-                .write_all(&bincode::serialize(message).map_err(ClientError::Bincode)?)
+                .write_all(&serialize_tcp(message).map_err(ClientError::Bincode)?)
                 .await
                 .map_err(ClientError::Io)?;
         } else {
@@ -237,10 +286,7 @@ where
     ///   Losing a packet or two might cause a noticable glitch, but it should run smoothly overall.
     pub async fn udp_send(&self, message: &Msg) -> Result<(), ClientError> {
         self.udp_socket
-            .send_to(
-                &bincode::serialize(message).map_err(ClientError::Bincode)?,
-                self.remote_addr(),
-            )
+            .send(&bincode::serialize(message).map_err(ClientError::Bincode)?)
             .await
             .map_err(ClientError::Io)?;
 
