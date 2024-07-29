@@ -58,7 +58,7 @@ sudo pacman -Sy vulkan-devel
 
 ```
 sudo zypper install alsa-devel cmake
-sudo zypper install --type pattern devel_base devel_C_C++ devel_vulkan mingw64-cross-gcc-c++ mingw64-cross-pkgconf
+sudo zypper install --type pattern devel_basis devel_C_C++ devel_vulkan mingw64-cross-gcc-c++ mingw64-cross-pkgconf
 ```
 
 ## Radicle
