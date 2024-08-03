@@ -196,7 +196,7 @@ impl Node<Object> {
         Ok(())
     }
 
-    /// Removes all children and their children from the layer.
+    /// Removes all children and their children recursively from the layer.
     pub fn remove_children(
         &mut self,
         objects: &mut ObjectsMap,

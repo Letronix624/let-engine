@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     let mut exclude = config.exclude.unwrap_or(vec![]);
     for path in exclude.iter_mut() {
         if path.is_relative() {
-            *path = assets_path.join(&path);
+            *path = assets_path.join(path.clone());
         }
     }
 

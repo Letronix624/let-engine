@@ -17,6 +17,7 @@ use anyhow::Result;
 use atomic_float::AtomicF64;
 use crossbeam::atomic::AtomicCell;
 use parking_lot::{Condvar, Mutex};
+use smol::Timer;
 
 #[cfg(feature = "client")]
 use self::{
@@ -102,10 +103,7 @@ pub trait Game<#[cfg(feature = "networking")] Msg> {
     )]
     async fn start(&mut self) {}
     #[cfg_attr(feature = "client", doc = "Runs before the frame is drawn.")]
-    #[cfg_attr(
-        not(feature = "client"),
-        doc = "Runs in a loop after the `start` function."
-    )]
+    #[cfg(feature = "client")]
     async fn update(&mut self) {}
     /// Runs after the frame is drawn.
     #[cfg(feature = "client")]
@@ -252,44 +250,57 @@ impl_engine_features! {
         }
 
         /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
-        #[cfg(not(feature = "client"))]
+        // #[cfg(not(feature = "client"))]
         pub fn start(mut self, game: G) {
-            async_std::task::block_on(async {
-                let game = async_std::sync::Arc::new(async_std::sync::Mutex::new(game));
+
+
+            smol::block_on(async {
+                let game = Arc::new(smol::lock::Mutex::new(game));
 
                 game.lock().await.start().await;
                 let tick_system = std::mem::take(&mut self.tick_system);
                 if let Some(tick_system) = tick_system {
                     let game_clone = Arc::clone(&game);
-                    async_std::task::spawn(async {
+                    smol::spawn(async {
                         let mut tick_system = tick_system;
                         let game = game_clone;
                         tick_system.run(game).await;
                     });
                 }
                 loop {
-                    let mut game = game.lock().await;
-                    if game.exit() {
+                    if game.lock().await.exit() {
                         break;
                     }
+
                     #[cfg(feature = "networking")]
                     {
-                        if let Some(server) = &mut self.server {
-                            let messages = server.receive_messages().await;
-                            for message in messages {
-                                game.net_event(message.0, message.1).await;
-                            }
-                        }
-                        if let Some(client) = &mut self.client {
-                            let messages = client.receive_messages().await;
-                            for message in messages {
-                                game.net_event(message.0, message.1).await;
-                            }
-                        }
-                    }
+                        use futures::future::{Either, select};
 
-                    game.update().await;
-                    TIME.update();
+                        let server = self.server.as_ref().map(|s| s.messages.1.clone());
+                        let client = self.client.as_ref().map(|c| c.messages.1.clone());
+
+                        match (server, client) {
+                            (Some(server), None) => {
+                                select(
+                                    Box::pin(server.recv()),
+                                    Timer::after(Duration::from_millis(50))
+                                );
+                            }
+                            (None, Some(client)) => {
+                                select(
+                                    Box::pin(client.recv()),
+                                    Timer::after(Duration::from_millis(50))
+                                );
+                            }
+                            (Some(server), Some(client)) => {
+                                smol::future::race(server.recv(), client.recv());
+                            }
+                            (None, None) => continue
+                        };
+
+                        // server_receiver.race();
+
+                    }
                 }
             })
         }
@@ -298,13 +309,13 @@ impl_engine_features! {
         pub fn start(&mut self, game: G) {
             use let_engine_core::draw::VulkanError;
             use winit::event::{DeviceEvent, Event, MouseScrollDelta, StartCause, WindowEvent};
-            let game = async_std::sync::Arc::new(async_std::sync::Mutex::new(game));
+            let game = Arc::new(smol::lock::Mutex::new(game));
 
             let event_loop = std::mem::take(&mut self.event_loop).unwrap();
 
             event_loop
                 .run(move |event, control_flow| {
-                    async_std::task::block_on(async {
+                    smol::block_on(async {
                         INPUT.update(&event, self.get_window().inner_size());
                         if game.lock().await.exit() {
                             #[cfg(feature = "networking")]
@@ -497,7 +508,7 @@ impl_engine_features! {
                                 let tick_system = std::mem::take(&mut self.tick_system);
                                 if let Some(tick_system) = tick_system {
                                     let game_clone = Arc::clone(&game);
-                                    async_std::task::spawn(async {
+                                    smol::spawn(async {
                                         let mut tick_system = tick_system;
                                         let game = game_clone;
                                         tick_system.run(game).await;
@@ -560,7 +571,9 @@ pub struct Time {
     /// Time since engine start.
     time: SystemTime,
     time_scale: AtomicF64,
+    #[cfg(feature = "client")]
     delta_instant: AtomicCell<SystemTime>,
+    #[cfg(feature = "client")]
     delta_time: AtomicF64,
     pub(crate) zero_cvar: (Mutex<()>, Condvar),
 }
@@ -570,7 +583,9 @@ impl Default for Time {
         Self {
             time: SystemTime::now(),
             time_scale: AtomicF64::new(1.0f64),
+            #[cfg(feature = "client")]
             delta_instant: AtomicCell::new(SystemTime::now()),
+            #[cfg(feature = "client")]
             delta_time: AtomicF64::new(0.0f64),
             zero_cvar: (Mutex::new(()), Condvar::new()),
         }
@@ -580,6 +595,7 @@ impl Default for Time {
 impl Time {
     /// Updates the time data on frame redraw.
     #[inline]
+    #[cfg(feature = "client")]
     pub(crate) fn update(&self) {
         self.delta_time.store(
             self.delta_instant.load().elapsed().unwrap().as_secs_f64(),
@@ -590,18 +606,21 @@ impl Time {
 
     /// Returns the time it took to execute last iteration.
     #[inline]
+    #[cfg(feature = "client")]
     pub fn delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire) * self.scale()
     }
 
     /// Returns the delta time of the update iteration that does not scale with the time scale.
     #[inline]
+    #[cfg(feature = "client")]
     pub fn unscaled_delta_time(&self) -> f64 {
         self.delta_time.load(Ordering::Acquire)
     }
 
     /// Returns the frames per second.
     #[inline]
+    #[cfg(feature = "client")]
     pub fn fps(&self) -> f64 {
         1.0 / self.delta_time.load(Ordering::Acquire)
     }

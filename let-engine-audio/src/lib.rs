@@ -4,7 +4,7 @@ use std::{
     f64::consts::PI,
     io::Cursor,
     path::Path,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock, OnceLock},
     thread,
     time::Duration,
 };
@@ -26,7 +26,7 @@ use kira::{
     tween::Value,
 };
 
-static AUDIO_SERVER: Lazy<Sender<AudioUpdate>> = Lazy::new(audio_server);
+static AUDIO_SERVER: LazyLock<Sender<AudioUpdate>> = LazyLock::new(audio_server);
 
 /// The audio server has not started.
 #[derive(Clone, Copy, Debug, Error)]
@@ -240,7 +240,6 @@ impl Default for AudioSettings {
     }
 }
 
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use thiserror::Error;
 

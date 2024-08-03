@@ -8,10 +8,10 @@ use std::{
     net::SocketAddr,
 };
 
-use async_std::channel::{Receiver, Sender};
 pub use client::*;
 use serde::Serialize;
 pub use server::*;
+use smol::channel::{Receiver, Sender};
 
 /// Messages received by a remote connection.
 #[derive(Debug)]

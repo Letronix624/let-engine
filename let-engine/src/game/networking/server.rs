@@ -1,15 +1,15 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
-use async_std::{
-    channel::{unbounded, Sender},
-    io::{ReadExt, WriteExt},
-    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
-    sync::{Arc, Mutex},
-    task,
-};
 use serde::{Deserialize, Serialize};
+use smol::{
+    channel::{unbounded, Sender},
+    future::FutureExt,
+    io::{AsyncReadExt, AsyncWriteExt},
+    lock::Mutex,
+    net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
+};
 
 use super::{serialize_tcp, Connection, Disconnected, Messages, RemoteMessage};
 
@@ -22,7 +22,7 @@ where
     udp_socket: Arc<UdpSocket>,
     stream_map: Arc<Mutex<HashMap<Connection, TcpStream>>>,
     connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
-    messages: Messages<Msg>,
+    pub(crate) messages: Messages<Msg>,
     running: Arc<AtomicBool>,
 }
 
@@ -32,7 +32,7 @@ where
 {
     /// Creates a new server using the given address.
     pub(crate) fn new(addr: SocketAddr) -> Result<Self> {
-        task::block_on(async {
+        smol::block_on(async {
             let tcp_listener = TcpListener::bind(addr).await?;
 
             let udp_socket = Arc::new(UdpSocket::bind(addr).await?);
@@ -57,7 +57,7 @@ where
         let connections = self.connections.clone();
         let tcp_map = self.stream_map.clone();
         let running = self.running.clone();
-        task::spawn(async {
+        smol::spawn(async {
             let messages = messages;
             let tcp_map = tcp_map;
             let connections = connections;
@@ -66,14 +66,25 @@ where
             while let Ok((mut stream, addr)) = listener.accept().await {
                 let mut buf = [0; 2];
 
-                let op = stream.read(&mut buf);
+                let op = stream.read_exact(&mut buf);
 
-                if async_std::future::timeout(std::time::Duration::from_secs(2), op)
-                    .await
-                    .is_err()
+                use futures::future::Either;
+
+                // 3 seconds or max ping limit
+                match futures::future::select(
+                    op,
+                    smol::Timer::after(std::time::Duration::from_secs(3)),
+                )
+                .await
                 {
-                    return;
+                    Either::Left(result) => {
+                        if result.0.is_err() {
+                            return;
+                        }
+                    }
+                    Either::Right(_) => return,
                 };
+
                 if buf == [0; 2] {
                     return;
                 }
@@ -93,7 +104,7 @@ where
                     let tcp_map2 = tcp_map.clone();
                     let connections2 = connections.clone();
                     let messages2 = messages.clone();
-                    task::spawn(async move {
+                    smol::spawn(async move {
                         let stream = stream2;
                         let tcp_map = tcp_map2;
                         let connections = connections2;
@@ -123,7 +134,7 @@ where
         let connections = self.connections.clone();
         let udp_socket = self.udp_socket.clone();
         let running = self.running.clone();
-        task::spawn(async {
+        smol::spawn(async {
             let messages = messages;
             let connections = connections;
             let udp_socket = udp_socket;
