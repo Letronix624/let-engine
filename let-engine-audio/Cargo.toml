@@ -16,7 +16,6 @@ license = "Apache-2.0"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 crossbeam = { workspace = true }
-once_cell = { workspace = true }
 parking_lot = { workspace = true }
   [dependencies.glam]
   workspace = true

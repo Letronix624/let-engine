@@ -7,9 +7,8 @@ use glyph_brush::{
     HorizontalAlign, Layout, OwnedSection, OwnedText, VerticalAlign,
 };
 use image::{ImageBuffer, Luma};
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Result;
 
@@ -25,8 +24,8 @@ use let_engine_core::{
     Direction,
 };
 
-pub static LABELIFIER: Lazy<Mutex<Labelifier>> =
-    Lazy::new(|| Mutex::new(Labelifier::new().unwrap()));
+pub static LABELIFIER: LazyLock<Mutex<Labelifier>> =
+    LazyLock::new(|| Mutex::new(Labelifier::new().unwrap()));
 
 /// Info to create default label objects with.
 #[derive(Clone)]

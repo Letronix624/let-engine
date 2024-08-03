@@ -98,19 +98,21 @@
 //! and get the data to be used in the game engine.
 
 #[allow(unused_imports)]
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    sync::{Arc, LazyLock},
+};
 
-use async_std::{fs, sync::Arc};
+use smol::fs;
 
 use ahash::HashMap;
 
 use anyhow::{anyhow, Result};
-use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
 /// Every resource path to the disk path where the asset is located with the compression algorithm.
-static MAP: Lazy<HashMap<String, (std::path::PathBuf, Compression)>> = Lazy::new(|| {
+static MAP: LazyLock<HashMap<String, (std::path::PathBuf, Compression)>> = LazyLock::new(|| {
     let data = include_bytes!(concat!(env!("OUT_DIR"), "/map_data"));
     if let Ok(data) = bincode::deserialize(data) {
         data
@@ -308,4 +310,4 @@ impl Default for Cache {
 }
 
 /// The cache holding each asset.
-static CACHE: Lazy<Cache> = Lazy::new(Cache::default);
+static CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);

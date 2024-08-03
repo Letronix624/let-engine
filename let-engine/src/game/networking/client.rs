@@ -1,14 +1,13 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
-use async_std::{
-    channel::{unbounded, Sender},
-    io::{ReadExt, WriteExt},
-    net::{TcpStream, UdpSocket},
-    sync::{Arc, Mutex},
-    task,
-};
 use crossbeam::atomic::AtomicCell;
+use smol::{
+    channel::{unbounded, Sender},
+    io::{AsyncReadExt, AsyncWriteExt},
+    lock::Mutex,
+    net::{TcpStream, UdpSocket},
+};
 use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
@@ -24,7 +23,7 @@ where
 {
     client: Arc<Mutex<Option<TcpStream>>>,
     udp_socket: Arc<UdpSocket>,
-    messages: Messages<Msg>,
+    pub(crate) messages: Messages<Msg>,
     remote_connection: Arc<AtomicCell<Connection>>,
 }
 
@@ -33,7 +32,7 @@ where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone + 'static,
 {
     pub(crate) fn new(remote_addr: SocketAddr) -> Result<Self> {
-        task::block_on(async {
+        smol::block_on(async {
             let udp_socket = UdpSocket::bind("0.0.0.0:0")
                 .await
                 .map_err(ClientError::Io)?
@@ -60,7 +59,7 @@ where
         let messages = self.messages.0.clone();
 
         let remote_connection = self.remote_connection.clone();
-        task::spawn(async {
+        smol::spawn(async {
             let connection = remote_connection;
             let connection = connection.load();
 
@@ -109,7 +108,7 @@ where
         let udp_socket = self.udp_socket.clone();
         let messages = self.messages.0.clone();
         let remote_addr = self.remote_connection.clone();
-        task::spawn(async {
+        smol::spawn(async {
             let udp_socket = udp_socket;
             let messages = messages;
             let remote_addr = remote_addr;
@@ -191,7 +190,7 @@ where
 
         // Send UDP port for identification
         tcp_socket
-            .write(
+            .write_all(
                 &self
                     .udp_socket
                     .local_addr()
@@ -303,7 +302,7 @@ pub enum ClientError {
     #[error("The client is not connected to any server.")]
     NotConnected,
     #[error("An Io error has occured: {0}")]
-    Io(async_std::io::Error),
+    Io(smol::io::Error),
     #[error("An unexplainable error has occured.")]
     Bincode(Box<bincode::ErrorKind>),
 }

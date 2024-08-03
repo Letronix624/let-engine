@@ -1,12 +1,12 @@
 use std::{
     marker::PhantomData,
-    sync::atomic::AtomicBool,
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, SystemTime},
 };
 
-use async_std::sync::{Arc, Mutex};
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
+use smol::lock::Mutex;
 
 use crate::{Game, SETTINGS, TIME};
 

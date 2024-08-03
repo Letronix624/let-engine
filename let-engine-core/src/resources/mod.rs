@@ -38,8 +38,6 @@ pub struct Resources {
     pub vulkan: Vulkan,
     pub loader: Arc<Mutex<Loader>>,
     pub shapes: BasicShapes,
-    #[cfg(feature = "audio")]
-    pub audio_server: crossbeam::channel::Sender<AudioUpdate>,
 }
 
 impl Resources {
@@ -55,14 +53,10 @@ impl Resources {
         let shapes = BasicShapes::new(&loader)
             .context("Failed to load default shapes into the GPU memory.")
             .map_err(EngineError::Other)?;
-        #[cfg(feature = "audio")]
-        let audio_server = sounds::audio_server();
         Ok(Self {
             vulkan,
             loader,
             shapes,
-            #[cfg(feature = "audio")]
-            audio_server,
         })
     }
 

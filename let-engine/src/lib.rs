@@ -13,6 +13,7 @@ pub mod prelude;
 #[cfg(feature = "audio")]
 pub use let_engine_audio;
 pub use settings;
+use std::sync::LazyLock;
 
 pub use glam::{vec2, Vec2};
 
@@ -37,26 +38,26 @@ pub use let_engine_core::{camera, objects, Direction};
 pub mod draw {
     pub use let_engine_core::draw::{Graphics, PresentMode, ShaderError, VulkanError};
 }
-use once_cell::sync::Lazy;
 
 /// General time methods of the game engine.
-pub static TIME: Lazy<Time> = Lazy::new(Time::default);
+pub static TIME: LazyLock<Time> = LazyLock::new(Time::default);
 /// The input system holding the state of every key and the mouse position.
 #[cfg(feature = "client")]
-pub static INPUT: Lazy<input::Input> = Lazy::new(input::Input::new);
+pub static INPUT: LazyLock<input::Input> = LazyLock::new(input::Input::new);
 
 /// General settings for the game engine.
 #[cfg(all(feature = "client", feature = "audio"))]
-pub static SETTINGS: Lazy<
+pub static SETTINGS: LazyLock<
     game::settings::Settings<std::sync::Arc<draw::Graphics>, let_engine_audio::Audio>,
-> = Lazy::new(game::settings::Settings::new);
+> = LazyLock::new(game::settings::Settings::new);
 /// General settings for the game engine.
 #[cfg(all(feature = "client", not(feature = "audio")))]
-pub static SETTINGS: Lazy<game::settings::Settings<std::sync::Arc<draw::Graphics>>> =
-    Lazy::new(game::settings::Settings::new);
+pub static SETTINGS: LazyLock<game::settings::Settings<std::sync::Arc<draw::Graphics>>> =
+    LazyLock::new(game::settings::Settings::new);
 /// General settings for the game engine.
 #[cfg(not(feature = "client"))]
-pub static SETTINGS: Lazy<game::settings::Settings> = Lazy::new(game::settings::Settings::new);
+pub static SETTINGS: LazyLock<game::settings::Settings> =
+    LazyLock::new(game::settings::Settings::new);
 
 /// A macro that makes it easy to create circles.
 ///

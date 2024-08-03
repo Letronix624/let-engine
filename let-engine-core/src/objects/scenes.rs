@@ -4,19 +4,18 @@ use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
 use indexmap::{indexset, IndexSet};
 
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
     collections::HashMap,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, LazyLock,
     },
 };
 
 /// The engine wide scene holding all objects in layers.
-pub static SCENE: Lazy<crate::objects::scenes::Scene> =
-    Lazy::new(crate::objects::scenes::Scene::default);
+pub static SCENE: LazyLock<crate::objects::scenes::Scene> =
+    LazyLock::new(crate::objects::scenes::Scene::default);
 
 /// The whole scene seen with all it's layers.
 pub struct Scene {
