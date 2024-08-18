@@ -101,7 +101,8 @@ where
                 }
             }
             Self::disconnect_with(messages, connection, disconnect_reason, client).await;
-        });
+        })
+        .detach();
     }
 
     fn recv_udp_messages(&self) {
@@ -130,7 +131,8 @@ where
                     };
                 }
             }
-        });
+        })
+        .detach();
     }
 
     async fn disconnect_with(
@@ -146,6 +148,7 @@ where
             .await;
     }
 
+    #[cfg(feature = "client")]
     pub(crate) async fn receive_messages(&self) -> Vec<(Connection, RemoteMessage<Msg>)> {
         let mut messages: Vec<(Connection, RemoteMessage<Msg>)> = vec![];
         while let Ok(message) = self.messages.1.try_recv() {
