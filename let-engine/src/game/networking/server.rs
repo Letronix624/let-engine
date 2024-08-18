@@ -5,7 +5,6 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use smol::{
     channel::{unbounded, Sender},
-    future::FutureExt,
     io::{AsyncReadExt, AsyncWriteExt},
     lock::Mutex,
     net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
@@ -117,7 +116,8 @@ where
                             connections,
                         )
                         .await;
-                    });
+                    })
+                    .detach();
                     tcp_map.lock_arc().await.insert(connection, stream);
 
                     let mut connections = connections.lock_arc().await;
@@ -126,7 +126,8 @@ where
                     connections.insert(connection.udp_addr(), connection);
                 }
             }
-        });
+        })
+        .detach();
     }
 
     fn recv_udp_messages(&self) {
@@ -162,7 +163,8 @@ where
                     }
                 }
             }
-        });
+        })
+        .detach();
     }
 
     /// Receives messages from each TCP connection.
@@ -216,6 +218,7 @@ where
         .await;
     }
 
+    #[cfg(feature = "client")]
     pub(crate) async fn receive_messages(&self) -> Vec<(Connection, RemoteMessage<Msg>)> {
         let mut messages: Vec<(Connection, RemoteMessage<Msg>)> = vec![];
         while let Ok(message) = self.messages.1.try_recv() {

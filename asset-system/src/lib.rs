@@ -222,6 +222,11 @@ pub async fn asset(path: &str) -> Result<Arc<[u8]>, AssetError> {
     CACHE.get_or_load(path).await
 }
 
+/// Exactly the same as [asset] but not async and blocking.
+pub fn asset_blocking(path: &str) -> Result<Arc<[u8]>, AssetError> {
+    smol::block_on(async { CACHE.get_or_load(path).await })
+}
+
 /// Clears the asset cache for unused keys and removes them. When calling the `asset` function for an unloaded asset it takes the same time
 /// as it did first again.
 pub fn clear_cache() {

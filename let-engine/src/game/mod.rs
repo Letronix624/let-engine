@@ -15,9 +15,7 @@ mod tick_system;
 
 use anyhow::Result;
 use atomic_float::AtomicF64;
-use crossbeam::atomic::AtomicCell;
 use parking_lot::{Condvar, Mutex};
-use smol::Timer;
 
 #[cfg(feature = "client")]
 use self::{
@@ -43,7 +41,7 @@ use std::{
 // client feature
 #[cfg(feature = "client")]
 use crate::INPUT;
-use crate::{SETTINGS, TIME};
+use crate::SETTINGS;
 
 #[cfg_attr(
     feature = "networking",
@@ -250,7 +248,7 @@ impl_engine_features! {
         }
 
         /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
-        // #[cfg(not(feature = "client"))]
+        #[cfg(not(feature = "client"))]
         pub fn start(mut self, game: G) {
 
 
@@ -265,8 +263,12 @@ impl_engine_features! {
                         let mut tick_system = tick_system;
                         let game = game_clone;
                         tick_system.run(game).await;
-                    });
+                    }).detach();
                 }
+
+                // loop: check exit and break, if networking is active future both at the same time and a timer future.
+                // if the timeout is reached roll the loop again
+
                 loop {
                     if game.lock().await.exit() {
                         break;
@@ -274,32 +276,61 @@ impl_engine_features! {
 
                     #[cfg(feature = "networking")]
                     {
-                        use futures::future::{Either, select};
+                        use futures::future::{select, Either};
+                        use smol::Timer;
 
                         let server = self.server.as_ref().map(|s| s.messages.1.clone());
                         let client = self.client.as_ref().map(|c| c.messages.1.clone());
 
-                        match (server, client) {
+                        let result = match (server, client) {
                             (Some(server), None) => {
-                                select(
+                                match select(
                                     Box::pin(server.recv()),
                                     Timer::after(Duration::from_millis(50))
-                                );
+                                ).await {
+                                    Either::Left((left, _)) => {
+                                        left
+                                    }
+                                    Either::Right(_) => {
+                                        continue;
+                                    }
+                                }
                             }
                             (None, Some(client)) => {
-                                select(
+                                match select(
                                     Box::pin(client.recv()),
                                     Timer::after(Duration::from_millis(50))
-                                );
+                                ).await {
+                                    Either::Left((left, _)) => {
+                                        left
+                                    }
+                                    Either::Right(_) => {
+                                        continue;
+                                    }
+                                }
                             }
                             (Some(server), Some(client)) => {
-                                smol::future::race(server.recv(), client.recv());
+                                match select(
+                                    Box::pin(smol::future::race(server.recv(), client.recv())),
+                                    Timer::after(Duration::from_millis(50))
+                                ).await {
+                                    Either::Left((left, _)) => {
+                                        left
+                                    }
+                                    Either::Right(_) => {
+                                        continue;
+                                    }
+                                }
                             }
-                            (None, None) => continue
+                            (None, None) => {
+                                spin_sleep::native_sleep(Duration::from_millis(50));
+                                continue
+                            }
                         };
 
-                        // server_receiver.race();
-
+                        if let Ok((connection, message)) = result {
+                            game.lock().await.net_event(connection, message).await;
+                        }
                     }
                 }
             })
@@ -429,7 +460,7 @@ impl_engine_features! {
                                                 .framerate_limit()
                                                 .saturating_sub(start_time.elapsed().unwrap() * 2),
                                         );
-                                        TIME.update();
+                                        crate::TIME.update();
                                         game.lock().await.frame_update().await;
                                         events::Event::Destroyed
                                     }
@@ -512,7 +543,7 @@ impl_engine_features! {
                                         let mut tick_system = tick_system;
                                         let game = game_clone;
                                         tick_system.run(game).await;
-                                    });
+                                    }).detach();
                                 }
                             }
                             _ => (),
@@ -572,7 +603,7 @@ pub struct Time {
     time: SystemTime,
     time_scale: AtomicF64,
     #[cfg(feature = "client")]
-    delta_instant: AtomicCell<SystemTime>,
+    delta_instant: crossbeam::atomic::AtomicCell<SystemTime>,
     #[cfg(feature = "client")]
     delta_time: AtomicF64,
     pub(crate) zero_cvar: (Mutex<()>, Condvar),
@@ -584,7 +615,7 @@ impl Default for Time {
             time: SystemTime::now(),
             time_scale: AtomicF64::new(1.0f64),
             #[cfg(feature = "client")]
-            delta_instant: AtomicCell::new(SystemTime::now()),
+            delta_instant: crossbeam::atomic::AtomicCell::new(SystemTime::now()),
             #[cfg(feature = "client")]
             delta_time: AtomicF64::new(0.0f64),
             zero_cvar: (Mutex::new(()), Condvar::new()),
