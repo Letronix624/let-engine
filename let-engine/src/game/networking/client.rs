@@ -206,6 +206,7 @@ where
 
         *self.client.lock_arc().await = Some(tcp_socket);
         self.recv_messages();
+
         Ok(())
     }
 

@@ -1,12 +1,12 @@
 use std::{
     marker::PhantomData,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, LazyLock},
     time::{Duration, SystemTime},
 };
 
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
-use smol::lock::Mutex;
+use smol::{lock::Mutex, Timer};
 
 use crate::{Game, SETTINGS, TIME};
 
@@ -35,6 +35,11 @@ macro_rules! impl_ticksys {
         impl<G: Game<Msg> + Send + 'static, Msg> TickSystem<G, Msg> $implementations
     };
 }
+
+static SLEEP_ACCURACY: LazyLock<Duration> = LazyLock::new(|| {
+    let ns = spin_sleep::SpinSleeper::default().native_accuracy_ns();
+    Duration::from_nanos(ns as u64)
+});
 
 impl_ticksys! {
     impl TickSystem {
@@ -99,7 +104,7 @@ impl_ticksys! {
                 };
 
                 // Spin sleep so windows users with their lower quality sleep functions get the same sleep duration
-                spin_sleep::sleep(waiting_time);
+                sleep(waiting_time).await;
 
                 // report tick in case a reporter is active
                 if let Some(ref reporter) = settings.reporter {
@@ -115,6 +120,20 @@ impl_ticksys! {
                 }
             }
         }
+    }
+}
+
+async fn sleep(duration: Duration) {
+    let start = SystemTime::now();
+    if duration > *SLEEP_ACCURACY {
+        Timer::after(duration - *SLEEP_ACCURACY).await;
+    }
+    // Spin the rest
+    while start.elapsed().unwrap_or_default() < duration {
+        #[cfg(windows)]
+        std::hint::spin_loop();
+        #[cfg(not(windows))]
+        std::thread::yield_now();
     }
 }
 
