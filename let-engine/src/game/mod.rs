@@ -259,11 +259,11 @@ impl_engine_features! {
                 let tick_system = std::mem::take(&mut self.tick_system);
                 if let Some(tick_system) = tick_system {
                     let game_clone = Arc::clone(&game);
-                    smol::spawn(async {
-                        let mut tick_system = tick_system;
-                        let game = game_clone;
-                        tick_system.run(game).await;
-                    }).detach();
+                        smol::spawn(async {
+                            let mut tick_system = tick_system;
+                            let game = game_clone;
+                            tick_system.run(game).await;
+                        }).detach();
                 }
 
                 // loop: check exit and break, if networking is active future both at the same time and a timer future.
@@ -323,7 +323,7 @@ impl_engine_features! {
                                 }
                             }
                             (None, None) => {
-                                spin_sleep::native_sleep(Duration::from_millis(50));
+                                Timer::after(Duration::from_millis(50)).await;
                                 continue
                             }
                         };
