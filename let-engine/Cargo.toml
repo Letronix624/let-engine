@@ -26,6 +26,7 @@ futures = { workspace = true }
 atomic_float = "1.0"
 spin_sleep = "1.2"
 local-ip-addr = "0.1.1"
+rand = "0.8"
 serde = { workspace = true }
 
   [dependencies.vulkano]

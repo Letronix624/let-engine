@@ -44,7 +44,7 @@ use crate::INPUT;
 use crate::SETTINGS;
 
 #[cfg_attr(
-    feature = "networking",
+    all(feature = "networking", feature = "client"),
     doc = "
 Represents the game application with essential methods for a game's lifetime.
 # Usage
@@ -67,7 +67,7 @@ impl let_engine::Game<()> for Game {
         "
 )]
 #[cfg_attr(
-    not(feature = "networking"),
+    all(not(feature = "networking"), feature = "client"),
     doc = "
 Represents the game application with essential methods for a game's lifetime.
 # Usage
