@@ -116,58 +116,36 @@ impl From<io::Error> for Disconnected {
 ///
 /// \[u32data_len\](u8data)
 fn serialize_tcp(message: &impl Serialize) -> bincode::Result<Vec<u8>> {
-    let mut serialized_data = bincode::serialize(message)?;
+    let serialized_data = bincode::serialize(message)?;
 
-    let data_length = serialized_data.len() as u32;
+    let data_len = serialized_data.len();
 
-    let mut data: Vec<u8> = data_length.to_le_bytes().to_vec();
+    let mut data: Vec<u8> = Vec::with_capacity(data_len + 4);
 
-    data.append(&mut serialized_data);
+    data.extend((data_len as u32).to_le_bytes());
+
+    data.extend(serialized_data);
 
     Ok(data)
 }
 
-/// Serialize the data to a loss conscious streamable format with a chunk size of 1024.
-///
 /// ## Message format
 ///
-/// - Indexed, chunk amount prefixed
+/// - Indexed and data length prefixed prefixed
 ///
-/// \[u32chunk_quantity\](\[u32index\]\[1024\*u8chunk\])(padding)
-fn serialize_udp(message: &impl Serialize) -> bincode::Result<Vec<Vec<u8>>> {
-    let mut data: Vec<u8> = bincode::serialize(message)?;
+/// \[u32order_number\]\[u32data_len\])(u8data)
+fn serialize_udp(order_number: u32, message: &impl Serialize) -> bincode::Result<Vec<u8>> {
+    let serialized_data = bincode::serialize(message)?;
 
-    let length = data.len();
+    let data_len = serialized_data.len();
+    let mut data: Vec<u8> = Vec::with_capacity(data_len + 8);
 
-    const CHUNK_SIZE: usize = 1024 - 32;
+    let order_number = order_number.to_le_bytes();
+    data.extend(order_number);
 
-    // Make sure each chunk is the same size. Adds the padding.
-    let padding = vec![0u8; (CHUNK_SIZE - length % CHUNK_SIZE) % CHUNK_SIZE];
-    data.extend(padding);
+    data.extend((data_len as u32).to_le_bytes());
 
-    // Split to chunks with a u32 index as the first 4 bytes
-    // Each Vec in the Vec is 1024 bytes big. 1024 - 32 + 32 byte index prefix
-    let mut chunks: Vec<Vec<u8>> = data
-        .chunks(CHUNK_SIZE)
-        .enumerate()
-        .map(|(i, x)| {
-            let mut vec = vec![];
-
-            vec.append(&mut (i as u32).to_le_bytes().to_vec());
-            vec.append(&mut x.to_vec());
-
-            vec
-        })
-        .collect();
-
-    // Get numbers of chunks as 4 bytes
-    let chunk_quantity = (chunks.len() as u32).to_le_bytes().to_vec();
-
-    // Add those to the end data
-    let mut data: Vec<Vec<u8>> = vec![chunk_quantity];
-
-    // Append all the chunks to the data.
-    data.append(&mut chunks);
+    data.extend(serialized_data);
 
     Ok(data)
 }

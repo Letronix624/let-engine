@@ -180,17 +180,13 @@ impl BasicShapes {
 
 //struct object with position, size, rotation.
 
-#[allow(dead_code)]
 const TRIANGLE: [Vertex; 3] = [vert(0.0, -1.0), vert(-1.0, 1.0), vert(1.0, 1.0)];
-#[allow(dead_code)]
 const TRIANGLE_ID: [u32; 3] = [0, 1, 2];
 
-#[allow(dead_code)]
 const SQUARE: [Vertex; 4] = [
     vert(-1.0, -1.0),
     vert(1.0, -1.0),
     vert(-1.0, 1.0),
     vert(1.0, 1.0),
 ];
-#[allow(dead_code)]
 const SQUARE_ID: [u32; 6] = [0, 1, 2, 1, 2, 3];

@@ -12,6 +12,8 @@ use smol::{
 
 use super::{serialize_tcp, Connection, Disconnected, Messages, RemoteMessage};
 
+type Pending = Arc<Mutex<HashMap<[u8; 128], (TcpStream, SocketAddr)>>>;
+
 /// A server instance that allows you to send messages to your client.
 #[derive(Clone)]
 pub struct GameServer<Msg>
@@ -21,6 +23,8 @@ where
     udp_socket: Arc<UdpSocket>,
     stream_map: Arc<Mutex<HashMap<Connection, TcpStream>>>,
     connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
+    connecting: Pending,
+
     pub(crate) messages: Messages<Msg>,
     running: Arc<AtomicBool>,
 }
@@ -40,6 +44,7 @@ where
                 udp_socket,
                 stream_map: Mutex::new(HashMap::default()).into(),
                 connections: Mutex::new(HashMap::default()).into(),
+                connecting: Mutex::new(HashMap::default()).into(),
                 messages: unbounded(),
                 running: Arc::new(false.into()),
             };
@@ -52,18 +57,12 @@ where
     }
 
     fn accept_connetions(&self, listener: TcpListener) {
-        let messages = self.messages.0.clone();
-        let connections = self.connections.clone();
-        let tcp_map = self.stream_map.clone();
-        let running = self.running.clone();
+        let connecting = self.connecting.clone();
         smol::spawn(async {
-            let messages = messages;
-            let tcp_map = tcp_map;
-            let connections = connections;
+            let connecting = connecting;
             let listener = listener;
-            let running = running;
             while let Ok((mut stream, addr)) = listener.accept().await {
-                let mut buf = [0; 2];
+                let mut buf = [0; 128];
 
                 let op = stream.read_exact(&mut buf);
 
@@ -84,61 +83,66 @@ where
                     Either::Right(_) => return,
                 };
 
-                if buf == [0; 2] {
-                    return;
-                }
-
-                let port = u16::from_le_bytes(buf);
-
-                let connection = Connection::new(addr, port);
-
-                if running.load(std::sync::atomic::Ordering::Acquire)
-                    && messages
-                        .clone()
-                        .send((connection, RemoteMessage::Connected))
-                        .await
-                        .is_ok()
-                {
-                    let stream2 = stream.clone();
-                    let tcp_map2 = tcp_map.clone();
-                    let connections2 = connections.clone();
-                    let messages2 = messages.clone();
-                    smol::spawn(async move {
-                        let stream = stream2;
-                        let tcp_map = tcp_map2;
-                        let connections = connections2;
-                        let messages = messages2;
-                        Self::recv_messages(
-                            stream,
-                            connection,
-                            messages.clone(),
-                            tcp_map,
-                            connections,
-                        )
-                        .await;
-                    })
-                    .detach();
-                    tcp_map.lock_arc().await.insert(connection, stream);
-
-                    let mut connections = connections.lock_arc().await;
-
-                    connections.insert(connection.tcp_addr(), connection);
-                    connections.insert(connection.udp_addr(), connection);
-                }
+                connecting.lock_arc().await.insert(buf, (stream, addr));
             }
         })
         .detach();
     }
 
+    async fn connect_client(
+        messages: Sender<(Connection, RemoteMessage<Msg>)>,
+        connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
+        tcp_map: Arc<Mutex<HashMap<Connection, TcpStream>>>,
+        running: Arc<AtomicBool>,
+        stream: TcpStream,
+        tcp_addr: SocketAddr,
+        udp_addr: SocketAddr,
+    ) {
+        let connection = Connection::new(tcp_addr, udp_addr.port());
+
+        if running.load(std::sync::atomic::Ordering::Acquire)
+            && messages
+                .clone()
+                .send((connection, RemoteMessage::Connected))
+                .await
+                .is_ok()
+        {
+            tcp_map.lock_arc().await.insert(connection, stream.clone());
+
+            {
+                let mut connections_lock = connections.lock_arc().await;
+                connections_lock.insert(connection.tcp_addr(), connection);
+                connections_lock.insert(connection.udp_addr(), connection);
+            }
+
+            let tcp_map2 = tcp_map.clone();
+            let connections2 = connections.clone();
+            let messages2 = messages.clone();
+            smol::spawn(async move {
+                let stream = stream;
+                let tcp_map = tcp_map2;
+                let connections = connections2;
+                let messages = messages2;
+                Self::recv_messages(stream, connection, messages.clone(), tcp_map, connections)
+                    .await;
+            })
+            .detach();
+        }
+    }
+
     fn recv_udp_messages(&self) {
         let messages = self.messages.0.clone();
         let connections = self.connections.clone();
+        let connecting = self.connecting.clone();
         let udp_socket = self.udp_socket.clone();
+        let tcp_map = self.stream_map.clone();
         let running = self.running.clone();
         smol::spawn(async {
             let messages = messages;
             let connections = connections;
+            let connecting = connecting;
             let udp_socket = udp_socket;
+            let tcp_map = tcp_map;
             let running = running;
             loop {
                 let mut buf = [0; 1024];
@@ -150,7 +154,7 @@ where
                         }
                         continue;
                     }
-                    if let Some(connection) = connections.lock().await.get(&addr) {
+                    if let Some(connection) = connections.lock_arc().await.get(&addr) {
                         if let Ok(message) = bincode::deserialize::<Msg>(&buf[..size]) {
                             if messages
                                 .send((*connection, RemoteMessage::Udp(message)))
@@ -159,6 +163,21 @@ where
                             {
                                 break;
                             };
+                            continue;
+                        }
+                    }
+                    if size == 128 {
+                        if let Some(connecting) = connecting.lock_arc().await.remove(&buf[..128]) {
+                            Self::connect_client(
+                                messages.clone(),
+                                connections.clone(),
+                                tcp_map.clone(),
+                                running.clone(),
+                                connecting.0.clone(),
+                                connecting.1,
+                                addr,
+                            )
+                            .await;
                         }
                     }
                 }

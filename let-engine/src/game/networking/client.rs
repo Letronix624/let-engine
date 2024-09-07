@@ -2,6 +2,7 @@ use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
+use rand::Rng;
 use smol::{
     channel::{unbounded, Sender},
     io::{AsyncReadExt, AsyncWriteExt},
@@ -191,18 +192,16 @@ where
 
         let mut tcp_socket = TcpStream::connect(addr).await.map_err(ClientError::Io)?;
 
-        // Send UDP port for identification
-        tcp_socket
-            .write_all(
-                &self
-                    .udp_socket
-                    .local_addr()
-                    .map_err(ClientError::Io)?
-                    .port()
-                    .to_le_bytes(),
-            )
-            .await
-            .map_err(ClientError::Io)?;
+        let mut buf = [0; 128];
+
+        rand::thread_rng().fill(&mut buf);
+
+        // Send random ID for UDP identification
+        tcp_socket.write_all(&buf).await.map_err(ClientError::Io)?;
+
+        for _ in 0..10 {
+            self.udp_socket.send(&buf).await.map_err(ClientError::Io)?;
+        }
 
         *self.client.lock_arc().await = Some(tcp_socket);
         self.recv_messages();

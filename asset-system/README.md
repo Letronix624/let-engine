@@ -9,6 +9,9 @@ those resources.
 Using a config located at the asset path the user can change settings like compression and
 splitting thresholds.
 
+The config location must be defined in the ASSETS_DIR environment variable during the build process.
+A make file that defines that is recommended.
+
 There is a feature called "groups" that allow splitting data into subcategories with their
 own settings.
 
