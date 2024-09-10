@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{atomic::AtomicU32, Arc},
+};
 
 use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
@@ -17,13 +20,17 @@ use super::{serialize_tcp, Connection, Disconnected, Messages, RemoteMessage};
 
 /// A client instance that allows you to connect to a server using the same game engine
 /// and send/receive messages.
+/// Msg must have Serialize and Deserialize from serde implemented.
 #[derive(Clone)]
 pub struct GameClient<Msg>
 where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + 'static,
 {
     client: Arc<Mutex<Option<TcpStream>>>,
+
     udp_socket: Arc<UdpSocket>,
+    udp_order: Arc<AtomicU32>,
+
     pub(crate) messages: Messages<Msg>,
     remote_connection: Arc<AtomicCell<Connection>>,
 }
@@ -42,11 +49,13 @@ where
             let client = Self {
                 client: Arc::new(Mutex::new(None)),
                 udp_socket,
+                udp_order: AtomicU32::new(1).into(),
                 messages: unbounded(),
-                remote_connection: Arc::new(AtomicCell::new(Connection::new(
+                remote_connection: AtomicCell::new(Connection::new(
                     remote_addr,
                     remote_addr.port(),
-                ))),
+                ))
+                .into(),
             };
 
             client.recv_udp_messages();
@@ -70,9 +79,13 @@ where
             let disconnect_reason;
 
             let mut size_buf = [0u8; 4];
+            let mut buf = Vec::with_capacity(1038);
+
             loop {
                 let mut client = client.lock_arc().await.clone();
                 if let Some(stream) = client.as_mut() {
+                    buf.clear();
+
                     // Get u32 size prefix
                     if let Err(e) = stream.read_exact(&mut size_buf).await {
                         disconnect_reason = e.into();
@@ -80,7 +93,8 @@ where
                     };
 
                     // Read as many bytes as in the size prefix
-                    let mut buf = vec![0u8; u32::from_le_bytes(size_buf) as usize];
+                    buf.resize(u32::from_le_bytes(size_buf) as usize, 0);
+
                     if let Err(e) = stream.read_exact(&mut buf).await {
                         disconnect_reason = e.into();
                         break;
@@ -115,25 +129,89 @@ where
             let messages = messages;
             let remote_addr = remote_addr;
 
-            let mut buf = [0; 1024];
+            let mut buf: [u8; 1024] = [0; 1024];
 
-            'h: loop {
-                while let Ok(size) = udp_socket.recv(&mut buf).await {
-                    let Ok(message) = bincode::deserialize(&buf[..size]) else {
+            let mut buffered_message: Option<super::BufferingMessage> = None;
+
+            let mut last_ord = 0;
+
+            loop {
+                let Ok(size) = udp_socket.recv(&mut buf).await else {
+                    continue;
+                };
+
+                if let Some(message) = buffered_message.as_mut() {
+                    if !message.outdated() {
+                        if let Some(data) = message.completed(&buf[..size]) {
+                            Self::submit_udp_message(&messages, &remote_addr, data).await;
+                            buffered_message = None;
+                        }
                         continue;
-                    };
+                    }
+                    buffered_message = None;
+                }
 
-                    if messages
-                        .send((remote_addr.load(), RemoteMessage::Udp(message)))
-                        .await
-                        .is_err()
-                    {
-                        break 'h;
-                    };
+                // Ignore messages smaller than the header.
+                if size < 8 {
+                    continue;
+                }
+
+                // Get order number
+                let ord = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+
+                // Verify order
+                match ord {
+                    ord if ord == last_ord + 1 => (), // in order -> allow
+                    _ => {
+                        // out of order -> discard
+                        last_ord = ord;
+                        continue;
+                    }
+                }
+                last_ord = ord;
+
+                match size {
+                    8 => {
+                        todo!("ping"); //continue;
+                    }
+                    size if size < 8 => {
+                        continue;
+                    }
+                    _ => (),
+                }
+
+                // Get length
+                let len = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize;
+
+                // Try again if len is over 128MB
+                // TODO: Let user choose size limit.
+                if len > 128000000 {
+                    continue;
+                }
+
+                let mut buffering = super::BufferingMessage::new(len);
+
+                if let Some(data) = buffering.completed(&buf[8..]) {
+                    Self::submit_udp_message(&messages, &remote_addr, data).await;
+                } else {
+                    buffered_message = Some(buffering);
                 }
             }
         })
         .detach();
+    }
+
+    async fn submit_udp_message(
+        messages: &Sender<(Connection, RemoteMessage<Msg>)>,
+        remote_addr: &Arc<AtomicCell<Connection>>,
+        buf: &[u8],
+    ) {
+        if let Ok(message) = bincode::deserialize::<Msg>(buf) {
+            let _ = messages
+                .send((remote_addr.load(), RemoteMessage::Udp(message)))
+                .await
+                .is_err();
+        }
     }
 
     async fn disconnect_with(
@@ -194,7 +272,7 @@ where
 
         let mut buf = [0; 128];
 
-        rand::thread_rng().fill(&mut buf);
+        rand::thread_rng().fill(&mut buf[4..]);
 
         // Send random ID for UDP identification
         tcp_socket.write_all(&buf).await.map_err(ClientError::Io)?;
@@ -288,7 +366,14 @@ where
     ///   Losing a packet or two might cause a noticable glitch, but it should run smoothly overall.
     pub async fn udp_send(&self, message: &Msg) -> Result<(), ClientError> {
         self.udp_socket
-            .send(&bincode::serialize(message).map_err(ClientError::Bincode)?)
+            .send(
+                &super::serialize_udp(
+                    self.udp_order
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                    message,
+                )
+                .map_err(ClientError::Bincode)?,
+            )
             .await
             .map_err(ClientError::Io)?;
 

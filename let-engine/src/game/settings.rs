@@ -65,10 +65,11 @@ impl Settings {
     /// hurt to be called between levels from time to time.
     #[cfg(feature = "client")]
     pub fn clean_caches(&self) {
+        #[cfg(feature = "networking")]
+        super::networking::LAST_ORDS.lock().clear();
 
         #[cfg(feature = "asset_system")]
         asset_system::clear_cache();
-
     }
 }
 }
