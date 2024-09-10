@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicBool, Arc};
+use std::sync::{atomic::AtomicBool, Arc, LazyLock};
 
 use ahash::HashMap;
 use anyhow::{anyhow, Result};
@@ -14,6 +14,29 @@ use super::{serialize_tcp, Connection, Disconnected, Messages, RemoteMessage};
 
 type Pending = Arc<Mutex<HashMap<[u8; 128], (TcpStream, SocketAddr)>>>;
 
+#[derive(Clone)]
+struct Peer {
+    tcp_stream: TcpStream,
+    order_number: u32,
+}
+
+impl Peer {
+    pub fn new(tcp_stream: TcpStream) -> Self {
+        Self {
+            tcp_stream,
+            order_number: 1,
+        }
+    }
+
+    pub fn order_number(&mut self) -> u32 {
+        self.order_number += 1;
+        self.order_number
+    }
+}
+
+pub(crate) static LAST_ORDS: LazyLock<parking_lot::Mutex<HashMap<SocketAddr, u32>>> =
+    LazyLock::new(|| parking_lot::Mutex::new(HashMap::default()));
+
 /// A server instance that allows you to send messages to your client.
 #[derive(Clone)]
 pub struct GameServer<Msg>
@@ -21,7 +44,8 @@ where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a>,
 {
     udp_socket: Arc<UdpSocket>,
-    stream_map: Arc<Mutex<HashMap<Connection, TcpStream>>>,
+
+    connections_map: Arc<Mutex<HashMap<Connection, Peer>>>,
     connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
     connecting: Pending,
 
@@ -42,7 +66,7 @@ where
 
             let server = Self {
                 udp_socket,
-                stream_map: Mutex::new(HashMap::default()).into(),
+                connections_map: Mutex::new(HashMap::default()).into(),
                 connections: Mutex::new(HashMap::default()).into(),
                 connecting: Mutex::new(HashMap::default()).into(),
                 messages: unbounded(),
@@ -50,7 +74,6 @@ where
             };
 
             server.accept_connetions(tcp_listener);
-            server.recv_udp_messages();
 
             Ok(server)
         })
@@ -92,7 +115,7 @@ where
     async fn connect_client(
         messages: Sender<(Connection, RemoteMessage<Msg>)>,
         connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
-        tcp_map: Arc<Mutex<HashMap<Connection, TcpStream>>>,
+        tcp_map: Arc<Mutex<HashMap<Connection, Peer>>>,
         running: Arc<AtomicBool>,
         stream: TcpStream,
         tcp_addr: SocketAddr,
@@ -107,7 +130,10 @@ where
                 .await
                 .is_ok()
         {
-            tcp_map.lock_arc().await.insert(connection, stream.clone());
+            tcp_map
+                .lock_arc()
+                .await
+                .insert(connection, Peer::new(stream.clone()));
 
             {
                 let mut connections_lock = connections.lock_arc().await;
@@ -131,54 +157,122 @@ where
     }
 
     fn recv_udp_messages(&self) {
-        let messages = self.messages.0.clone();
-        let connections = self.connections.clone();
-        let connecting = self.connecting.clone();
-        let udp_socket = self.udp_socket.clone();
-        let tcp_map = self.stream_map.clone();
-        let running = self.running.clone();
+        let server = self.clone();
         smol::spawn(async {
-            let messages = messages;
-            let connections = connections;
-            let connecting = connecting;
-            let udp_socket = udp_socket;
-            let tcp_map = tcp_map;
-            let running = running;
-            loop {
-                let mut buf = [0; 1024];
+            let server = server;
 
-                if let Ok((size, addr)) = udp_socket.recv_from(&mut buf).await {
-                    if !running.load(std::sync::atomic::Ordering::Acquire) {
-                        if messages.is_closed() {
-                            break;
-                        }
-                        continue;
+            let mut buffered_messages: HashMap<SocketAddr, super::BufferingMessage> =
+                HashMap::default();
+
+            let mut buf: [u8; 1024] = [0; 1024];
+
+            loop {
+                if let Ok((size, addr)) = server.udp_socket.recv_from(&mut buf).await {
+                    // Break loop if stop function was used.
+                    if !server.running.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
                     }
-                    if let Some(connection) = connections.lock_arc().await.get(&addr) {
-                        if let Ok(message) = bincode::deserialize::<Msg>(&buf[..size]) {
-                            if messages
-                                .send((*connection, RemoteMessage::Udp(message)))
+
+                    // If the remote connection has an incompleted message
+                    if let Some(buffering_message) = buffered_messages.get_mut(&addr) {
+                        // Add buffer to the message
+                        let Some(message) = buffering_message.completed(&buf[..size]) else {
+                            continue;
+                        };
+
+                        let Some(connection) =
+                            server.connections.lock_arc().await.get(&addr).cloned()
+                        else {
+                            continue;
+                        };
+
+                        // Send completed message
+                        if let Ok(message) = bincode::deserialize::<Msg>(message) {
+                            if server
+                                .messages
+                                .0
+                                .send((connection, RemoteMessage::Udp(message)))
                                 .await
                                 .is_err()
                             {
                                 break;
                             };
-                            continue;
                         }
+                        buffered_messages.remove(&addr);
+                        continue;
                     }
-                    if size == 128 {
-                        if let Some(connecting) = connecting.lock_arc().await.remove(&buf[..128]) {
+
+                    // Ignore messages smaller than the header.
+                    if size < 8 {
+                        continue;
+                    }
+
+                    // Get order number
+                    let ord = u32::from_le_bytes(buf[0..4].try_into().unwrap());
+
+                    // Verify order
+                    if let Some(last_ord) = LAST_ORDS.lock().insert(addr, ord) {
+                        match ord {
+                            ord if ord == last_ord + 1 => (), // in order -> allow
+                            _ => {
+                                // out of order -> discard
+                                continue;
+                            }
+                        }
+                    };
+
+                    // If order number is 0, see message as session auth request.
+                    if ord == 0 {
+                        if let Some(connecting) =
+                            server.connecting.lock_arc().await.remove(&buf[..128])
+                        {
                             Self::connect_client(
-                                messages.clone(),
-                                connections.clone(),
-                                tcp_map.clone(),
-                                running.clone(),
+                                server.messages.0.clone(),
+                                server.connections.clone(),
+                                server.connections_map.clone(),
+                                server.running.clone(),
                                 connecting.0.clone(),
                                 connecting.1,
                                 addr,
                             )
                             .await;
                         }
+                        continue;
+                    }
+
+                    let Some(connection) = server.connections.lock_arc().await.get(&addr).cloned()
+                    else {
+                        continue;
+                    };
+                    // following code only runs if the user is authenticated
+
+                    let len = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize;
+
+                    if len == 0 {
+                        // message length of 0 means try ping
+                        let _ = server.udp_socket.send(&buf).await;
+                    }
+
+                    // Clear memory of failed buffers.
+                    buffered_messages.retain(|_, x| !x.outdated());
+
+                    let mut buffering_message = super::BufferingMessage::new(len);
+
+                    // If the packet holds the whole message don't bother buffering it.
+                    if let Some(data) = buffering_message.completed(&buf[8..]) {
+                        if let Ok(message) = bincode::deserialize::<Msg>(data) {
+                            if server
+                                .messages
+                                .0
+                                .send((connection, RemoteMessage::Udp(message)))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            };
+                        }
+                    } else {
+                        buffered_messages.insert(addr, buffering_message);
                     }
                 }
             }
@@ -191,12 +285,16 @@ where
         mut stream: TcpStream,
         addr: Connection,
         messages: Sender<(Connection, RemoteMessage<Msg>)>,
-        stream_map: Arc<Mutex<HashMap<Connection, TcpStream>>>,
+        stream_map: Arc<Mutex<HashMap<Connection, Peer>>>,
         connections: Arc<Mutex<HashMap<SocketAddr, Connection>>>,
     ) {
         let disconnect_reason;
         let mut size_buf = [0u8; 4];
+
+        let mut buf = Vec::with_capacity(1032);
         loop {
+            buf.clear();
+
             // Get u32 size prefix
             if let Err(e) = stream.read_exact(&mut size_buf).await {
                 disconnect_reason = e.into();
@@ -208,9 +306,9 @@ where
                 disconnect_reason = Disconnected::MisbehavingPeer;
                 break;
             }
+            buf.resize(size, 0);
 
             // Read as many bytes as in the size prefix
-            let mut buf = vec![0u8; size];
             if let Err(e) = stream.read_exact(&mut buf).await {
                 disconnect_reason = e.into();
                 break;
@@ -255,9 +353,9 @@ where
     pub async fn stop(&self) -> Result<()> {
         self.running
             .store(false, std::sync::atomic::Ordering::Release);
-        let connections = std::mem::take(&mut *self.stream_map.lock_arc().await);
+        let connections = std::mem::take(&mut *self.connections_map.lock_arc().await);
         for connection in connections.into_values() {
-            connection.shutdown(std::net::Shutdown::Both)?;
+            connection.tcp_stream.shutdown(std::net::Shutdown::Both)?;
         }
         *self.connections.lock_arc().await = HashMap::default();
 
@@ -268,15 +366,19 @@ where
     pub fn start(&self) {
         self.running
             .store(true, std::sync::atomic::Ordering::Release);
+        self.recv_udp_messages();
     }
 
     /// Broadcasts a message to every client through TCP.
     ///
     /// This function should be used to broadcast important messages.
     pub async fn broadcast(&self, message: &Msg) -> Result<()> {
-        let mut stream_map = self.stream_map.lock_arc().await;
+        let mut stream_map = self.connections_map.lock_arc().await;
         for (user, connection) in stream_map.clone().iter_mut() {
-            let result = connection.write_all(&serialize_tcp(&message)?).await;
+            let result = connection
+                .tcp_stream
+                .write_all(&serialize_tcp(&message)?)
+                .await;
             if let Err(e) = result {
                 Self::disconnect_user_with(
                     *user,
@@ -296,11 +398,12 @@ where
     /// This function should be used to send important messages.
     pub async fn send(&self, receiver: Connection, message: &Msg) -> Result<()> {
         let result = self
-            .stream_map
+            .connections_map
             .lock_arc()
             .await
             .get_mut(&receiver)
             .ok_or(anyhow!("Receiver does not exist"))?
+            .tcp_stream
             .write_all(&super::serialize_tcp(message)?)
             .await;
         if let Err(e) = result {
@@ -313,22 +416,31 @@ where
     ///
     /// This function should be used to broadcast messages with the lowest latency possible.
     pub async fn udp_broadcast(&self, message: &Msg) -> Result<()> {
-        let mut stream_map = self.stream_map.lock_arc().await;
-        for connection in stream_map.clone().keys() {
+        let mut peers = self.connections_map.lock_arc().await;
+        let mut disconnect = Vec::new();
+        for (connection, peer) in peers.iter_mut() {
             let result = self
                 .udp_socket
-                .send_to(&bincode::serialize(message)?, connection.udp_addr)
+                .send_to(
+                    &super::serialize_udp(peer.order_number(), message)?,
+                    connection.udp_addr,
+                )
                 .await;
             if let Err(e) = result {
-                Self::disconnect_user_with(
-                    *connection,
-                    e.into(),
-                    &self.messages.0,
-                    &mut stream_map,
-                    &mut *self.connections.lock_arc().await,
-                )
-                .await?;
+                disconnect.push((*connection, e));
             }
+        }
+
+        // retain does not work in async
+        for (connection, e) in disconnect {
+            Self::disconnect_user_with(
+                connection,
+                e.into(),
+                &self.messages.0,
+                &mut peers,
+                &mut *self.connections.lock_arc().await,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -337,16 +449,21 @@ where
     ///
     /// This function should be used to send messages with the lowest latency possible.
     pub async fn udp_send(&self, receiver: Connection, message: &Msg) -> Result<()> {
+        let mut peers = self.connections_map.lock_arc().await;
+        let peer = peers.get_mut(&receiver).ok_or(anyhow!("User not found"))?;
         let result = self
             .udp_socket
-            .send_to(&bincode::serialize(message)?, receiver.udp_addr)
+            .send_to(
+                &super::serialize_udp(peer.order_number(), message)?,
+                receiver.udp_addr,
+            )
             .await;
         if let Err(e) = result {
             Self::disconnect_user_with(
                 receiver,
                 e.into(),
                 &self.messages.0,
-                &mut *self.stream_map.lock_arc().await,
+                &mut *self.connections_map.lock_arc().await,
                 &mut *self.connections.lock_arc().await,
             )
             .await?;
@@ -358,7 +475,7 @@ where
         user: Connection,
         reason: Disconnected,
         messages: &Sender<(Connection, RemoteMessage<Msg>)>,
-        stream_map: &mut HashMap<Connection, TcpStream>,
+        stream_map: &mut HashMap<Connection, Peer>,
         connections: &mut HashMap<SocketAddr, Connection>,
     ) -> Result<()> {
         messages
@@ -368,7 +485,7 @@ where
         connections.remove(&user.tcp_addr);
         connections.remove(&user.udp_addr);
 
-        connection.shutdown(std::net::Shutdown::Both)?;
+        connection.tcp_stream.shutdown(std::net::Shutdown::Both)?;
 
         Ok(())
     }
@@ -380,7 +497,7 @@ where
             .send((user, RemoteMessage::Disconnected(reason)))
             .await?;
         let connection = self
-            .stream_map
+            .connections_map
             .lock()
             .await
             .remove(&user)
@@ -388,13 +505,13 @@ where
         self.connections.lock_arc().await.remove(&user.tcp_addr);
         self.connections.lock_arc().await.remove(&user.udp_addr);
 
-        connection.shutdown(std::net::Shutdown::Both)?;
+        connection.tcp_stream.shutdown(std::net::Shutdown::Both)?;
 
         Ok(())
     }
 
     /// Returns a list of all connections currently initiated with the server.
     pub async fn connections(&self) -> Vec<Connection> {
-        self.stream_map.lock().await.keys().cloned().collect()
+        self.connections_map.lock().await.keys().cloned().collect()
     }
 }
