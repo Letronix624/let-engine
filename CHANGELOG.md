@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated winit, therefore updated `keycode` to `key`and added most of the key parts to the `KeyboardEvent` struct.
 - `Game` functions are now all async, except for `exit`.
 - `Engine` now requires a generic `Game`, being the game struct.
+- MSRV is Rust 1.80.1
 
 ### Fixed
 

@@ -40,13 +40,109 @@ mod server;
 use std::{
     io::{self, ErrorKind},
     net::SocketAddr,
-    time::SystemTime,
+    sync::atomic::{AtomicU32, AtomicU64},
+    time::{Duration, SystemTime},
 };
 
 pub use client::*;
+use crossbeam::atomic::AtomicCell;
 use serde::Serialize;
 pub use server::*;
 use smol::channel::{Receiver, Sender};
+
+/// Settings for the networking system of let-engine.
+pub struct Networking {
+    /// The time between ping requests.
+    ///
+    /// ## Default configuration
+    ///
+    /// 5 seconds
+    ping_wait: AtomicCell<Duration>,
+    /// The minimum duration between multiple packets allowed before warning
+    ///
+    /// ## Default configuration
+    ///
+    /// Duration::default()
+    rate_limit: AtomicCell<Duration>,
+    /// Maximum amount of concurrent connections allowed before warning
+    max_connections: AtomicU32,
+    /// Max package size limit for the built in TCP protocol in bytes
+    ///
+    /// ## Default configuration
+    ///
+    /// 100000000 bytes
+    tcp_size_limit: AtomicU64,
+    /// Max package size limit for the built in UDP protocol in bytes
+    ///
+    /// ## Default configuration
+    ///
+    /// u16::MAX bytes
+    udp_size_limit: AtomicU64,
+}
+
+impl Networking {
+    pub fn new() -> Self {
+        Self {
+            ping_wait: AtomicCell::new(Duration::from_secs(5)),
+            rate_limit: AtomicCell::new(Duration::default()),
+            max_connections: 20.into(),
+            tcp_size_limit: 100_000_000.into(),
+            udp_size_limit: (u16::MAX as u64).into(),
+        }
+    }
+
+    pub fn ping_wait(&self) -> Duration {
+        self.ping_wait.load()
+    }
+
+    pub fn set_ping_wait(&self, duration: Duration) {
+        self.ping_wait.store(duration)
+    }
+
+    pub fn max_connections(&self) -> u32 {
+        self.max_connections
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_max_connections(&self, max: u32) {
+        self.max_connections
+            .store(max, std::sync::atomic::Ordering::Release)
+    }
+
+    pub fn rate_limit(&self) -> Duration {
+        self.rate_limit.load()
+    }
+
+    pub fn set_rate_limit(&self, duration: Duration) {
+        self.rate_limit.store(duration)
+    }
+
+    pub fn tcp_size_limit(&self) -> u64 {
+        self.tcp_size_limit
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_tcp_size_limit(&self, limit: u64) {
+        self.tcp_size_limit
+            .store(limit, std::sync::atomic::Ordering::Release)
+    }
+
+    pub fn udp_size_limit(&self) -> u64 {
+        self.udp_size_limit
+            .load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_udp_size_limit(&self, limit: u64) {
+        self.udp_size_limit
+            .store(limit, std::sync::atomic::Ordering::Release)
+    }
+}
+
+impl Default for Networking {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Messages received by a remote connection.
 #[derive(Debug)]
@@ -57,10 +153,21 @@ pub enum RemoteMessage<Msg> {
     Tcp(Msg),
     /// The remote has sent a message using UDP.
     Udp(Msg),
+    /// The remote has sent non conformant packets.
+    Warning(Misbehaviour),
     /// The client has been disconnected from the server.
     Disconnected(Disconnected),
+}
+
+/// Misbehaviour recorded by the remote peer.
+#[derive(Debug)]
+pub enum Misbehaviour {
+    /// The rate at which the packets are sent is faster than the configured limit.
+    RateLimitHit,
+    /// The header of the message shows a size bigger than the configured limit.
+    MessageTooBig,
     /// There was a problem reading and deserializing the received data.
-    DeserialisationError(bincode::Error),
+    UnintelligableContent(bincode::Error),
 }
 
 type Messages<Msg> = (
