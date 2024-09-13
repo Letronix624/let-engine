@@ -1,5 +1,7 @@
 //! Engine wide settings that are applicable using the [Settings](crate::settings::Settings) struct.
 
+use std::sync::Arc;
+
 use derive_builder::Builder;
 
 #[cfg(feature = "client")]
@@ -8,6 +10,8 @@ use let_engine_core::draw::{Graphics, PresentMode};
 #[cfg(feature = "audio")]
 #[cfg(feature = "client")]
 use let_engine_audio::Audio;
+
+use crate::networking::Networking;
 
 #[cfg(feature = "client")]
 use super::WindowBuilder;
@@ -35,6 +39,8 @@ pub struct Settings<#[cfg(feature = "client")] G, #[cfg(feature = "audio")] A> {
     pub graphics: G,
     #[cfg(feature = "audio")]
     pub audio: A,
+    #[cfg(feature = "networking")]
+    pub networking: Networking,
 }
 
 #[cfg(feature = "client")]
@@ -55,9 +61,11 @@ impl Settings {
         Self {
             tick_system: TickSystem::new(),
             #[cfg(feature = "client")]
-            graphics: std::sync::Arc::new(Graphics::new(PresentMode::Fifo)),
+            graphics: Arc::new(Graphics::new(PresentMode::Fifo)),
             #[cfg(feature = "audio")]
             audio: Audio::default(),
+            #[cfg(feature = "networking")]
+            networking: Networking::new(),
         }
     }
 
@@ -79,6 +87,8 @@ impl Settings {
     pub(crate) fn new() -> Self {
         Self {
             tick_system: TickSystem::new(),
+            #[cfg(feature = "networking")]
+            networking: Arc::new(Networking::new()),
         }
     }
 }

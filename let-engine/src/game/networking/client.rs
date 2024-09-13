@@ -1,6 +1,10 @@
 use std::{
     net::SocketAddr,
-    sync::{atomic::AtomicU32, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicU32},
+        Arc,
+    },
+    time::{Duration, SystemTime},
 };
 
 use anyhow::Result;
@@ -11,12 +15,49 @@ use smol::{
     io::{AsyncReadExt, AsyncWriteExt},
     lock::Mutex,
     net::{TcpStream, UdpSocket},
+    Timer,
 };
 use thiserror::Error;
 
 use serde::{Deserialize, Serialize};
 
+use crate::SETTINGS;
+
 use super::{serialize_tcp, Connection, Disconnected, Messages, RemoteMessage};
+
+struct Socket {
+    client: Mutex<Option<TcpStream>>,
+
+    connected: AtomicBool,
+    udp_socket: UdpSocket,
+    udp_order: AtomicU32,
+
+    remote_connection: AtomicCell<Connection>,
+
+    ping_timestamp: AtomicCell<Option<SystemTime>>,
+    ping: AtomicCell<Duration>,
+}
+
+impl Socket {
+    /// Sends the first ping message
+    async fn start_ping(&self) {
+        // send 8 byte message to be echoed
+        let _ = self.udp_socket.send(&[0; 8]).await;
+        self.ping_timestamp.store(Some(SystemTime::now()));
+    }
+
+    /// Sends the second ping message and records time.
+    async fn stop_ping(&self) {
+        // send 8 byte echo back for the server to calculate the ping.
+        let _ = self.udp_socket.send(&[0; 8]).await;
+
+        let time = self.ping_timestamp.take();
+
+        if let Some(time) = time {
+            self.ping.store(time.elapsed().unwrap());
+        }
+    }
+}
 
 /// A client instance that allows you to connect to a server using the same game engine
 /// and send/receive messages.
@@ -26,13 +67,8 @@ pub struct GameClient<Msg>
 where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + 'static,
 {
-    client: Arc<Mutex<Option<TcpStream>>>,
-
-    udp_socket: Arc<UdpSocket>,
-    udp_order: Arc<AtomicU32>,
-
+    socket: Arc<Socket>,
     pub(crate) messages: Messages<Msg>,
-    remote_connection: Arc<AtomicCell<Connection>>,
 }
 
 impl<Msg> GameClient<Msg>
@@ -43,38 +79,62 @@ where
         smol::block_on(async {
             let udp_socket = UdpSocket::bind("0.0.0.0:0")
                 .await
-                .map_err(ClientError::Io)?
-                .into();
+                .map_err(ClientError::Io)?;
 
             let client = Self {
-                client: Arc::new(Mutex::new(None)),
-                udp_socket,
-                udp_order: AtomicU32::new(1).into(),
+                socket: Arc::new(Socket {
+                    client: Mutex::new(None),
+                    udp_socket,
+                    connected: AtomicBool::new(false),
+                    udp_order: AtomicU32::new(1),
+                    remote_connection: AtomicCell::new(Connection::new(
+                        remote_addr,
+                        remote_addr.port(),
+                    )),
+                    ping_timestamp: AtomicCell::new(None),
+                    ping: AtomicCell::new(Duration::default()),
+                }),
                 messages: unbounded(),
-                remote_connection: AtomicCell::new(Connection::new(
-                    remote_addr,
-                    remote_addr.port(),
-                ))
-                .into(),
             };
 
             client.recv_udp_messages();
+            client.start_pinging();
 
             Ok(client)
         })
     }
 
-    fn recv_messages(&self) {
-        let client = self.client.clone();
-        let messages = self.messages.0.clone();
+    fn start_pinging(&self) {
+        let socket = self.socket.clone();
 
-        let remote_connection = self.remote_connection.clone();
         smol::spawn(async {
-            let connection = remote_connection;
-            let connection = connection.load();
+            let socket = socket;
 
+            loop {
+                Timer::after(SETTINGS.networking.ping_wait()).await;
+
+                if !socket.connected.load(std::sync::atomic::Ordering::Acquire) {
+                    continue;
+                }
+                if let Some(timestamp) = socket.ping_timestamp.load() {
+                    if timestamp.elapsed().unwrap() > Duration::from_secs(10) {
+                        socket.start_ping().await;
+                    }
+                } else {
+                    socket.start_ping().await;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn recv_messages(&self) {
+        let socket = self.socket.clone();
+        let messages = self.messages.0.clone();
+        smol::spawn(async {
+            let socket = socket;
             let messages = messages;
-            let client = client;
+            let connection = socket.remote_connection.load();
 
             let disconnect_reason;
 
@@ -82,7 +142,7 @@ where
             let mut buf = Vec::with_capacity(1038);
 
             loop {
-                let mut client = client.lock_arc().await.clone();
+                let mut client = socket.client.lock().await.clone();
                 if let Some(stream) = client.as_mut() {
                     buf.clear();
 
@@ -109,25 +169,31 @@ where
                         }
                         Err(e) => {
                             messages
-                                .send((connection, RemoteMessage::DeserialisationError(e)))
+                                .send((
+                                    connection,
+                                    RemoteMessage::Warning(
+                                        super::Misbehaviour::UnintelligableContent(e),
+                                    ),
+                                ))
                                 .await
                         }
                     };
                 }
             }
-            Self::disconnect_with(messages, connection, disconnect_reason, client).await;
+            Self::disconnect_with(messages, connection, disconnect_reason, &socket.client).await;
+            socket
+                .connected
+                .store(false, std::sync::atomic::Ordering::Release);
         })
         .detach();
     }
 
     fn recv_udp_messages(&self) {
-        let udp_socket = self.udp_socket.clone();
         let messages = self.messages.0.clone();
-        let remote_addr = self.remote_connection.clone();
+        let socket = self.socket.clone();
         smol::spawn(async {
-            let udp_socket = udp_socket;
+            let socket = socket;
             let messages = messages;
-            let remote_addr = remote_addr;
 
             let mut buf: [u8; 1024] = [0; 1024];
 
@@ -136,14 +202,15 @@ where
             let mut last_ord = 0;
 
             loop {
-                let Ok(size) = udp_socket.recv(&mut buf).await else {
+                let Ok(size) = socket.udp_socket.recv(&mut buf).await else {
                     continue;
                 };
 
                 if let Some(message) = buffered_message.as_mut() {
                     if !message.outdated() {
                         if let Some(data) = message.completed(&buf[..size]) {
-                            Self::submit_udp_message(&messages, &remote_addr, data).await;
+                            Self::submit_udp_message(&messages, &socket.remote_connection, data)
+                                .await;
                             buffered_message = None;
                         }
                         continue;
@@ -151,9 +218,16 @@ where
                     buffered_message = None;
                 }
 
-                // Ignore messages smaller than the header.
-                if size < 8 {
-                    continue;
+                match size {
+                    // 8 bytes = ping
+                    8 => {
+                        socket.stop_ping().await;
+                    }
+                    // Ignore messages smaller than the header.
+                    size if size < 8 => {
+                        continue;
+                    }
+                    _ => (),
                 }
 
                 // Get order number
@@ -170,16 +244,6 @@ where
                 }
                 last_ord = ord;
 
-                match size {
-                    8 => {
-                        todo!("ping"); //continue;
-                    }
-                    size if size < 8 => {
-                        continue;
-                    }
-                    _ => (),
-                }
-
                 // Get length
                 let len = u32::from_le_bytes(buf[4..8].try_into().unwrap()) as usize;
 
@@ -192,7 +256,7 @@ where
                 let mut buffering = super::BufferingMessage::new(len);
 
                 if let Some(data) = buffering.completed(&buf[8..]) {
-                    Self::submit_udp_message(&messages, &remote_addr, data).await;
+                    Self::submit_udp_message(&messages, &socket.remote_connection, data).await;
                 } else {
                     buffered_message = Some(buffering);
                 }
@@ -203,7 +267,7 @@ where
 
     async fn submit_udp_message(
         messages: &Sender<(Connection, RemoteMessage<Msg>)>,
-        remote_addr: &Arc<AtomicCell<Connection>>,
+        remote_addr: &AtomicCell<Connection>,
         buf: &[u8],
     ) {
         if let Ok(message) = bincode::deserialize::<Msg>(buf) {
@@ -218,9 +282,13 @@ where
         messages: Sender<(Connection, RemoteMessage<Msg>)>,
         connection: Connection,
         reason: Disconnected,
-        client: Arc<Mutex<Option<TcpStream>>>,
+        client: &Mutex<Option<TcpStream>>,
     ) {
-        *client.lock_arc().await = None;
+        let client = std::mem::take(&mut *client.lock().await);
+
+        if let Some(client) = client.as_ref() {
+            let _ = client.shutdown(std::net::Shutdown::Both);
+        };
 
         let _ = messages
             .send((connection, RemoteMessage::Disconnected(reason)))
@@ -243,27 +311,29 @@ where
 {
     /// Returns the remote address of the server to connect to.
     pub fn remote_addr(&self) -> SocketAddr {
-        self.remote_connection.load().tcp_addr
+        self.socket.remote_connection.load().tcp_addr
     }
 
     /// Changes the remote address of the server to connect to, but does not immediately connect to it
     /// when the server is still running.
     pub fn set_remote_addr(&self, addr: SocketAddr) {
-        self.remote_connection
+        self.socket
+            .remote_connection
             .store(Connection::new(addr, addr.port()));
     }
 
     /// Connects to the servers remote address.
     pub async fn connect(&self) -> Result<(), ClientError> {
         // Error if there is a connection.
-        if self.client.lock_arc().await.is_some() {
+        if self.socket.client.lock().await.is_some() {
             return Err(ClientError::StillConnected);
         }
 
         let addr = self.remote_addr();
 
         // Use the UdpSocket connect function to allow receiving data without port forwarding or handling the NAT stuff.
-        self.udp_socket
+        self.socket
+            .udp_socket
             .connect(&addr)
             .await
             .map_err(ClientError::Io)?;
@@ -278,10 +348,17 @@ where
         tcp_socket.write_all(&buf).await.map_err(ClientError::Io)?;
 
         for _ in 0..10 {
-            self.udp_socket.send(&buf).await.map_err(ClientError::Io)?;
+            self.socket
+                .udp_socket
+                .send(&buf)
+                .await
+                .map_err(ClientError::Io)?;
         }
 
-        *self.client.lock_arc().await = Some(tcp_socket);
+        self.socket
+            .connected
+            .store(true, std::sync::atomic::Ordering::Release);
+        *self.socket.client.lock().await = Some(tcp_socket);
         self.recv_messages();
 
         Ok(())
@@ -289,7 +366,14 @@ where
 
     /// Stops the connection to the server.
     pub async fn disconnect(&self) -> Result<(), ClientError> {
-        let mut client = self.client.lock_arc().await;
+        let status = self
+            .socket
+            .connected
+            .swap(false, std::sync::atomic::Ordering::AcqRel);
+        if !status {
+            return Err(ClientError::NotConnected);
+        };
+        let mut client = self.socket.client.lock().await;
         if let Some(client) = client.as_ref() {
             client
                 .shutdown(std::net::Shutdown::Both)
@@ -327,7 +411,7 @@ where
     ///
     ///   sending actions like pressing a button, opening a door, triggering a skill.
     pub async fn send(&self, message: &Msg) -> Result<(), ClientError> {
-        if let Some(client) = self.client.lock_arc().await.as_mut() {
+        if let Some(client) = self.socket.client.lock().await.as_mut() {
             client
                 .write_all(&serialize_tcp(message).map_err(ClientError::Bincode)?)
                 .await
@@ -365,10 +449,19 @@ where
     ///   transmitting live video or voice chat audio streams require low latency.
     ///   Losing a packet or two might cause a noticable glitch, but it should run smoothly overall.
     pub async fn udp_send(&self, message: &Msg) -> Result<(), ClientError> {
-        self.udp_socket
+        if !self
+            .socket
+            .connected
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Err(ClientError::NotConnected);
+        }
+        self.socket
+            .udp_socket
             .send(
                 &super::serialize_udp(
-                    self.udp_order
+                    self.socket
+                        .udp_order
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
                     message,
                 )
@@ -378,6 +471,13 @@ where
             .map_err(ClientError::Io)?;
 
         Ok(())
+    }
+
+    /// Returns the last calculated ping of the last running connection.
+    ///
+    /// May return a duration of 0 in case no calculation has been done before this function.
+    pub fn ping(&self) -> Duration {
+        self.socket.ping.load()
     }
 }
 
