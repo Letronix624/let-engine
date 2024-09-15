@@ -35,7 +35,7 @@ struct Peer {
 impl Peer {
     pub fn new(tcp_stream: TcpStream) -> Self {
         let mut last_package_durations = VecDeque::with_capacity(10);
-        last_package_durations.extend([Duration::MAX; 10]);
+        last_package_durations.extend([Duration::from_secs(600); 10]);
         Self {
             tcp_stream,
             order_number: 1,
@@ -86,20 +86,24 @@ struct Socket {
 
 impl Socket {
     /// Records the time and stops the echoing.
-    async fn ping(&self, connection: &Connection) {
+    ///
+    /// Returns true if ping is over ping limit
+    async fn ping(&self, connection: &Connection) -> bool {
         let mut peers = self.connections_map.lock().await;
         let Some(peer) = peers.get_mut(connection) else {
-            return;
+            return false;
         };
 
         let time = std::mem::take(&mut peer.ping_timestamp);
 
         if let Some(time) = time {
             peer.ping = time.elapsed().unwrap();
+            peer.ping > SETTINGS.networking.max_ping()
         } else {
             // send 8 byte message to be echoed
             let _ = self.udp_socket.send_to(&[0; 8], connection.udp_addr).await;
             peer.ping_timestamp = Some(SystemTime::now());
+            false
         }
     }
 }
@@ -148,6 +152,12 @@ where
             let socket = socket;
             let listener = listener;
             while let Ok((mut stream, addr)) = listener.accept().await {
+                if SETTINGS.networking.max_connections()
+                    <= socket.connections_map.lock().await.len()
+                {
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
+                    continue;
+                }
                 let mut buf = [0; 128];
 
                 let op = stream.read_exact(&mut buf);
@@ -268,11 +278,44 @@ where
                             else {
                                 continue;
                             };
-                            socket.ping(&connection).await;
+                            if socket.ping(&connection).await
+                                && server
+                                    .messages
+                                    .0
+                                    .send((
+                                        connection,
+                                        RemoteMessage::Warning(super::Misbehaviour::PingTooHigh),
+                                    ))
+                                    .await
+                                    .is_err()
+                            {
+                                break;
+                            };
+
                             continue;
                         }
                         // Ignore messages smaller than the header.
                         size if size < 8 => {
+                            continue;
+                        }
+                        size if size > SETTINGS.networking.udp_size_limit() => {
+                            let Some(connection) =
+                                socket.connections.lock().await.get(&addr).cloned()
+                            else {
+                                continue;
+                            };
+                            if server
+                                .messages
+                                .0
+                                .send((
+                                    connection,
+                                    RemoteMessage::Warning(super::Misbehaviour::MessageTooBig),
+                                ))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            };
                             continue;
                         }
                         _ => (),
@@ -285,6 +328,8 @@ where
                     if ord == 0 {
                         if let Some(connecting) = socket.connecting.lock().await.remove(&buf[..128])
                         {
+                            // send 8 bytes to indicate approval
+                            let _ = socket.udp_socket.send_to(&[0; 8], addr).await;
                             Self::connect_client(
                                 server.messages.0.clone(),
                                 socket.clone(),
@@ -399,9 +444,21 @@ where
             };
 
             let size = u32::from_le_bytes(size_buf) as usize;
-            if size == 0 {
-                disconnect_reason = Disconnected::MisbehavingPeer;
-                break;
+            match size {
+                0 => {
+                    disconnect_reason = Disconnected::MisbehavingPeer;
+                    break;
+                }
+                size if size > SETTINGS.networking.tcp_size_limit() => {
+                    let _ = messages
+                        .send((
+                            connection,
+                            RemoteMessage::Warning(super::Misbehaviour::MessageTooBig),
+                        ))
+                        .await;
+                    continue;
+                }
+                _ => (),
             }
             buf.resize(size, 0);
 
@@ -556,7 +613,7 @@ where
     /// Sends a message to a specific target through UDP.
     ///
     /// This function should be used to send messages with the lowest latency possible.
-    pub async fn udp_send(&self, receiver: Connection, message: &Msg) -> Result<()> {
+    pub async fn fast_send(&self, receiver: Connection, message: &Msg) -> Result<()> {
         let mut peers = self.socket.connections_map.lock().await;
         let peer = peers.get_mut(&receiver).ok_or(anyhow!("User not found"))?;
         let result = self

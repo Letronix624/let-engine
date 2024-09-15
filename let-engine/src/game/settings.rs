@@ -1,5 +1,6 @@
 //! Engine wide settings that are applicable using the [Settings](crate::settings::Settings) struct.
 
+#[allow(unused_imports)]
 use std::sync::Arc;
 
 use derive_builder::Builder;
@@ -11,6 +12,7 @@ use let_engine_core::draw::{Graphics, PresentMode};
 #[cfg(feature = "client")]
 use let_engine_audio::Audio;
 
+#[cfg(feature = "networking")]
 use crate::networking::Networking;
 
 #[cfg(feature = "client")]
@@ -88,7 +90,7 @@ impl Settings {
         Self {
             tick_system: TickSystem::new(),
             #[cfg(feature = "networking")]
-            networking: Arc::new(Networking::new()),
+            networking: Networking::new(),
         }
     }
 }

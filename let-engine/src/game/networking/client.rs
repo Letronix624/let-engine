@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::Result;
 use crossbeam::atomic::AtomicCell;
+use futures::future::Either;
 use rand::Rng;
 use smol::{
     channel::{unbounded, Sender},
@@ -153,7 +154,24 @@ where
                     };
 
                     // Read as many bytes as in the size prefix
-                    buf.resize(u32::from_le_bytes(size_buf) as usize, 0);
+                    let size = u32::from_le_bytes(size_buf) as usize;
+
+                    match size {
+                        size if size < 4 => {
+                            continue;
+                        }
+                        size if size > SETTINGS.networking.tcp_size_limit() => {
+                            let _ = messages
+                                .send((
+                                    socket.remote_connection.load(),
+                                    RemoteMessage::Warning(super::Misbehaviour::MessageTooBig),
+                                ))
+                                .await;
+                            continue;
+                        }
+                        _ => (),
+                    }
+                    buf.resize(size, 0);
 
                     if let Err(e) = stream.read_exact(&mut buf).await {
                         disconnect_reason = e.into();
@@ -225,6 +243,19 @@ where
                     }
                     // Ignore messages smaller than the header.
                     size if size < 8 => {
+                        continue;
+                    }
+                    size if size > SETTINGS.networking.udp_size_limit() => {
+                        if messages
+                            .send((
+                                socket.remote_connection.load(),
+                                RemoteMessage::Warning(super::Misbehaviour::MessageTooBig),
+                            ))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        };
                         continue;
                     }
                     _ => (),
@@ -345,14 +376,35 @@ where
         rand::thread_rng().fill(&mut buf[4..]);
 
         // Send random ID for UDP identification
-        tcp_socket.write_all(&buf).await.map_err(ClientError::Io)?;
+        tcp_socket
+            .write_all(&buf)
+            .await
+            .map_err(|_| ClientError::ServerFull)?;
 
-        for _ in 0..10 {
+        let retries = SETTINGS.networking.auth_retries();
+        let wait_time = SETTINGS.networking.auth_retry_wait();
+
+        for _ in 0..retries {
             self.socket
                 .udp_socket
                 .send(&buf)
                 .await
                 .map_err(ClientError::Io)?;
+
+            let mut _buf = [0; 8];
+            let recv = self.socket.udp_socket.recv(&mut buf);
+            let select = futures::future::select(Box::pin(recv), Timer::after(wait_time));
+
+            match select.await {
+                Either::Left((result, _)) => {
+                    let size = result.map_err(ClientError::Io)?;
+                    if size != 8 {
+                        return Err(ClientError::InvalidResponse);
+                    }
+                    break;
+                }
+                Either::Right(_) => (),
+            }
         }
 
         self.socket
@@ -448,7 +500,7 @@ where
     ///
     ///   transmitting live video or voice chat audio streams require low latency.
     ///   Losing a packet or two might cause a noticable glitch, but it should run smoothly overall.
-    pub async fn udp_send(&self, message: &Msg) -> Result<(), ClientError> {
+    pub async fn fast_send(&self, message: &Msg) -> Result<(), ClientError> {
         if !self
             .socket
             .connected
@@ -489,6 +541,11 @@ pub enum ClientError {
     StillConnected,
     #[error("The client is not connected to any server.")]
     NotConnected,
+    #[error("The server you attepted to connect to is full.")]
+    ServerFull,
+    /// The server sends a message invalid to the let-engine interface.
+    #[error("The server is sending invalid data.")]
+    InvalidResponse,
     #[error("An Io error has occured: {0}")]
     Io(smol::io::Error),
     #[error("An unexplainable error has occured.")]
