@@ -1,4 +1,6 @@
 //! Networking, server and client ablilities built in the game engine.
+//!
+//! Networking through the public internet requires port forwarding the same TCP and UDP port.
 
 // Formats
 //
@@ -40,7 +42,7 @@ mod server;
 use std::{
     io::{self, ErrorKind},
     net::SocketAddr,
-    sync::atomic::{AtomicU32, AtomicU64},
+    sync::atomic::AtomicUsize,
     time::{Duration, SystemTime},
 };
 
@@ -52,45 +54,104 @@ use smol::channel::{Receiver, Sender};
 
 /// Settings for the networking system of let-engine.
 pub struct Networking {
+    /// The number of auth request retries before giving up the connection
+    /// and failing to connect as client.
+    ///
+    /// ## Default configuration
+    ///
+    /// 10
+    auth_retries: AtomicUsize,
+    /// The time between retries.
+    ///
+    /// ## Default configuration
+    ///
+    /// 2 seconds
+    auth_retry_wait: AtomicCell<Duration>,
     /// The time between ping requests.
     ///
     /// ## Default configuration
     ///
     /// 5 seconds
     ping_wait: AtomicCell<Duration>,
+    /// The maximum allowed ping before sending warnings.
+    ///
+    /// ## Default configuration
+    ///
+    /// 10 seconds
+    max_ping: AtomicCell<Duration>,
+    /// Maximum amount of concurrent connections allowed before warning
+    ///
+    /// # Default configuration
+    ///
+    /// 20
+    max_connections: AtomicUsize,
     /// The minimum duration between multiple packets allowed before warning
     ///
     /// ## Default configuration
     ///
     /// Duration::default()
     rate_limit: AtomicCell<Duration>,
-    /// Maximum amount of concurrent connections allowed before warning
-    max_connections: AtomicU32,
     /// Max package size limit for the built in TCP protocol in bytes
     ///
     /// ## Default configuration
     ///
     /// 100000000 bytes
-    tcp_size_limit: AtomicU64,
+    tcp_size_limit: AtomicUsize,
     /// Max package size limit for the built in UDP protocol in bytes
     ///
     /// ## Default configuration
     ///
     /// u16::MAX bytes
-    udp_size_limit: AtomicU64,
+    udp_size_limit: AtomicUsize,
 }
 
 impl Networking {
     pub fn new() -> Self {
         Self {
+            auth_retries: 10.into(),
+            auth_retry_wait: AtomicCell::new(Duration::from_secs(2)),
             ping_wait: AtomicCell::new(Duration::from_secs(5)),
+            max_ping: AtomicCell::new(Duration::from_secs(10)),
             rate_limit: AtomicCell::new(Duration::default()),
             max_connections: 20.into(),
             tcp_size_limit: 100_000_000.into(),
-            udp_size_limit: (u16::MAX as u64).into(),
+            udp_size_limit: (u16::MAX as usize).into(),
         }
     }
 
+    /// The number of auth request retries before giving up the connection
+    /// and failing to connect as client.
+    ///
+    /// ## Default configuration
+    ///
+    /// 10
+    pub fn auth_retries(&self) -> usize {
+        self.auth_retries.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    pub fn set_auth_retries(&self, duration: usize) {
+        self.auth_retries
+            .store(duration, std::sync::atomic::Ordering::Release)
+    }
+
+    /// The time between retries.
+    ///
+    /// ## Default configuration
+    ///
+    /// 2 seconds
+    pub fn auth_retry_wait(&self) -> Duration {
+        self.auth_retry_wait.load()
+    }
+
+    pub fn set_auth_retry_wait(&self, duration: Duration) {
+        self.auth_retry_wait.store(duration)
+    }
+
+    /// The time between ping requests.
+    ///
+    /// ## Default configuration
+    ///
+    /// 5 seconds
     pub fn ping_wait(&self) -> Duration {
         self.ping_wait.load()
     }
@@ -99,16 +160,39 @@ impl Networking {
         self.ping_wait.store(duration)
     }
 
-    pub fn max_connections(&self) -> u32 {
+    /// The maximum allowed ping before sending warnings.
+    ///
+    /// ## Default configuration
+    ///
+    /// Duration::MAX
+    pub fn max_ping(&self) -> Duration {
+        self.max_ping.load()
+    }
+
+    pub fn set_max_ping(&self, duration: Duration) {
+        self.max_ping.store(duration)
+    }
+
+    /// Maximum amount of concurrent connections allowed before warning
+    ///
+    /// # Default configuration
+    ///
+    /// 20
+    pub fn max_connections(&self) -> usize {
         self.max_connections
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    pub fn set_max_connections(&self, max: u32) {
+    pub fn set_max_connections(&self, max: usize) {
         self.max_connections
             .store(max, std::sync::atomic::Ordering::Release)
     }
 
+    /// The minimum duration between multiple packets allowed before warning
+    ///
+    /// ## Default configuration
+    ///
+    /// Duration::default()
     pub fn rate_limit(&self) -> Duration {
         self.rate_limit.load()
     }
@@ -117,22 +201,32 @@ impl Networking {
         self.rate_limit.store(duration)
     }
 
-    pub fn tcp_size_limit(&self) -> u64 {
+    /// Max package size limit for the built in TCP protocol in bytes
+    ///
+    /// ## Default configuration
+    ///
+    /// 100000000 bytes
+    pub fn tcp_size_limit(&self) -> usize {
         self.tcp_size_limit
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    pub fn set_tcp_size_limit(&self, limit: u64) {
+    pub fn set_tcp_size_limit(&self, limit: usize) {
         self.tcp_size_limit
             .store(limit, std::sync::atomic::Ordering::Release)
     }
 
-    pub fn udp_size_limit(&self) -> u64 {
+    /// Max package size limit for the built in UDP protocol in bytes
+    ///
+    /// ## Default configuration
+    ///
+    /// u16::MAX bytes
+    pub fn udp_size_limit(&self) -> usize {
         self.udp_size_limit
             .load(std::sync::atomic::Ordering::Acquire)
     }
 
-    pub fn set_udp_size_limit(&self, limit: u64) {
+    pub fn set_udp_size_limit(&self, limit: usize) {
         self.udp_size_limit
             .store(limit, std::sync::atomic::Ordering::Release)
     }
@@ -168,6 +262,8 @@ pub enum Misbehaviour {
     MessageTooBig,
     /// There was a problem reading and deserializing the received data.
     UnintelligableContent(bincode::Error),
+    /// The ping limit as set in the networking settings was hit.
+    PingTooHigh,
 }
 
 type Messages<Msg> = (
