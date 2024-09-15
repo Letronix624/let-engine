@@ -579,20 +579,24 @@ where
     /// Broadcasts a message to every client through UDP.
     ///
     /// This function should be used to broadcast messages with the lowest latency possible.
-    pub async fn udp_broadcast(&self, message: &Msg) -> Result<()> {
+    pub async fn fast_broadcast(&self, message: &Msg) -> Result<()> {
         let mut peers = self.socket.connections_map.lock().await;
         let mut disconnect = Vec::new();
         for (connection, peer) in peers.iter_mut() {
-            let result = self
-                .socket
-                .udp_socket
-                .send_to(
-                    &super::serialize_udp(peer.order_number(), message)?,
-                    connection.udp_addr,
-                )
-                .await;
-            if let Err(e) = result {
-                disconnect.push((*connection, e));
+            // TODO: Optimize by not serializing for each client but only serialize once and
+            //       only update the order number for each.
+            let data = super::serialize_udp(peer.order_number(), message)?;
+            let chunks = data.chunks(1024);
+
+            for chunk in chunks {
+                let result = self
+                    .socket
+                    .udp_socket
+                    .send_to(chunk, connection.udp_addr)
+                    .await;
+                if let Err(e) = result {
+                    disconnect.push((*connection, e));
+                }
             }
         }
 
@@ -616,24 +620,31 @@ where
     pub async fn fast_send(&self, receiver: Connection, message: &Msg) -> Result<()> {
         let mut peers = self.socket.connections_map.lock().await;
         let peer = peers.get_mut(&receiver).ok_or(anyhow!("User not found"))?;
-        let result = self
-            .socket
-            .udp_socket
-            .send_to(
-                &super::serialize_udp(peer.order_number(), message)?,
-                receiver.udp_addr,
-            )
-            .await;
-        if let Err(e) = result {
-            Self::disconnect_user_with(
-                receiver,
-                e.into(),
-                &self.messages.0,
-                &mut *self.socket.connections_map.lock().await,
-                &mut *self.socket.connections.lock().await,
-            )
-            .await?;
+
+        let data = super::serialize_udp(peer.order_number(), message)?;
+        let chunks = data.chunks(1024);
+
+        for chunk in chunks {
+            let result = self
+                .socket
+                .udp_socket
+                .send_to(chunk, receiver.udp_addr)
+                .await;
+            if let Err(e) = result {
+                Self::disconnect_user_with(
+                    receiver,
+                    e.into(),
+                    &self.messages.0,
+                    &mut *self.socket.connections_map.lock().await,
+                    &mut *self.socket.connections.lock().await,
+                )
+                .await?;
+
+                // TODO: Descriptive error.
+                return Err(anyhow!("Peer kicked."));
+            }
         }
+
         Ok(())
     }
 

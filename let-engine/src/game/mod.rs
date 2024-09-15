@@ -333,6 +333,17 @@ impl_engine_features! {
                         }
                     }
                 }
+
+                #[cfg(feature = "networking")]
+                {
+                    // Gracefully shutdown both server and client if open.
+                    if let Some(server) = self.server {
+                        let _ = server.stop().await;
+                    }
+                    if let Some(client) = self.client {
+                        let _ = client.disconnect().await;
+                    }
+                }
             })
         }
 
@@ -509,6 +520,16 @@ impl_engine_features! {
                                 self.get_window().request_redraw();
                             }
                             Event::LoopExiting => {
+                                #[cfg(feature = "networking")]
+                                {
+                                    // Gracefully shutdown both server and client if open.
+                                    if let Some(server) = &mut self.server {
+                                        let _ = server.stop().await;
+                                    }
+                                    if let Some(client) = &mut self.client {
+                                        let _ = client.disconnect().await;
+                                    }
+                                }
                                 game.lock().await.event(events::Event::Destroyed).await;
                             }
                             Event::MemoryWarning => {
