@@ -508,19 +508,23 @@ where
         {
             return Err(ClientError::NotConnected);
         }
-        self.socket
-            .udp_socket
-            .send(
-                &super::serialize_udp(
-                    self.socket
-                        .udp_order
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-                    message,
-                )
-                .map_err(ClientError::Bincode)?,
-            )
-            .await
-            .map_err(ClientError::Io)?;
+
+        let data = super::serialize_udp(
+            self.socket
+                .udp_order
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+            message,
+        )
+        .map_err(ClientError::Bincode)?;
+        let chunks = data.chunks(1024);
+
+        for chunk in chunks {
+            self.socket
+                .udp_socket
+                .send(chunk)
+                .await
+                .map_err(ClientError::Io)?;
+        }
 
         Ok(())
     }
