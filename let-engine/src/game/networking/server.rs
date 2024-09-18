@@ -5,7 +5,7 @@ use std::{
 };
 
 use ahash::HashMap;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use smol::{
     channel::{unbounded, Sender},
@@ -13,6 +13,7 @@ use smol::{
     lock::Mutex,
     net::{SocketAddr, TcpListener, TcpStream, UdpSocket},
 };
+use thiserror::Error;
 
 use crate::SETTINGS;
 
@@ -511,7 +512,9 @@ where
     for<'a> Msg: Send + Sync + Serialize + Deserialize<'a> + Clone + 'static,
 {
     /// Stops the server
-    pub async fn stop(&self) -> Result<()> {
+    ///
+    /// May return an OS IO error
+    pub async fn stop(&self) -> Result<(), smol::io::Error> {
         self.socket
             .running
             .store(false, std::sync::atomic::Ordering::Release);
@@ -535,12 +538,12 @@ where
     /// Broadcasts a message to every client through TCP.
     ///
     /// This function should be used to broadcast important messages.
-    pub async fn broadcast(&self, message: &Msg) -> Result<()> {
+    pub async fn broadcast(&self, message: &Msg) -> Result<(), ServerError> {
         let mut stream_map = self.socket.connections_map.lock().await;
         for (user, connection) in stream_map.clone().iter_mut() {
             let result = connection
                 .tcp_stream
-                .write_all(&serialize_tcp(&message)?)
+                .write_all(&serialize_tcp(&message).map_err(ServerError::SerialisationError)?)
                 .await;
             if let Err(e) = result {
                 Self::disconnect_user_with(
@@ -559,16 +562,16 @@ where
     /// Sends a message to a specific target through TCP.
     ///
     /// This function should be used to send important messages.
-    pub async fn send(&self, receiver: Connection, message: &Msg) -> Result<()> {
+    pub async fn send(&self, receiver: Connection, message: &Msg) -> Result<(), ServerError> {
         let result = self
             .socket
             .connections_map
             .lock()
             .await
             .get_mut(&receiver)
-            .ok_or(anyhow!("Receiver does not exist"))?
+            .ok_or(ServerError::UserNotFound)?
             .tcp_stream
-            .write_all(&super::serialize_tcp(message)?)
+            .write_all(&super::serialize_tcp(message).map_err(ServerError::SerialisationError)?)
             .await;
         if let Err(e) = result {
             self.disconnect_user(receiver, e.into()).await?;
@@ -579,13 +582,14 @@ where
     /// Broadcasts a message to every client through UDP.
     ///
     /// This function should be used to broadcast messages with the lowest latency possible.
-    pub async fn fast_broadcast(&self, message: &Msg) -> Result<()> {
+    pub async fn fast_broadcast(&self, message: &Msg) -> Result<(), ServerError> {
         let mut peers = self.socket.connections_map.lock().await;
         let mut disconnect = Vec::new();
         for (connection, peer) in peers.iter_mut() {
             // TODO: Optimize by not serializing for each client but only serialize once and
             //       only update the order number for each.
-            let data = super::serialize_udp(peer.order_number(), message)?;
+            let data = super::serialize_udp(peer.order_number(), message)
+                .map_err(ServerError::SerialisationError)?;
             let chunks = data.chunks(1024);
 
             for chunk in chunks {
@@ -617,32 +621,20 @@ where
     /// Sends a message to a specific target through UDP.
     ///
     /// This function should be used to send messages with the lowest latency possible.
-    pub async fn fast_send(&self, receiver: Connection, message: &Msg) -> Result<()> {
+    pub async fn fast_send(&self, receiver: Connection, message: &Msg) -> Result<(), ServerError> {
         let mut peers = self.socket.connections_map.lock().await;
-        let peer = peers.get_mut(&receiver).ok_or(anyhow!("User not found"))?;
+        let peer = peers.get_mut(&receiver).ok_or(ServerError::UserNotFound)?;
 
-        let data = super::serialize_udp(peer.order_number(), message)?;
+        let data = super::serialize_udp(peer.order_number(), message)
+            .map_err(ServerError::SerialisationError)?;
         let chunks = data.chunks(1024);
 
         for chunk in chunks {
-            let result = self
-                .socket
+            self.socket
                 .udp_socket
                 .send_to(chunk, receiver.udp_addr)
-                .await;
-            if let Err(e) = result {
-                Self::disconnect_user_with(
-                    receiver,
-                    e.into(),
-                    &self.messages.0,
-                    &mut *self.socket.connections_map.lock().await,
-                    &mut *self.socket.connections.lock().await,
-                )
-                .await?;
-
-                // TODO: Descriptive error.
-                return Err(anyhow!("Peer kicked."));
-            }
+                .await
+                .map_err(ServerError::Io)?;
         }
 
         Ok(())
@@ -654,36 +646,48 @@ where
         messages: &Sender<(Connection, RemoteMessage<Msg>)>,
         stream_map: &mut HashMap<Connection, Peer>,
         connections: &mut HashMap<SocketAddr, Connection>,
-    ) -> Result<()> {
+    ) -> Result<(), ServerError> {
         messages
             .send((user, RemoteMessage::Disconnected(reason)))
-            .await?;
-        let connection = stream_map.remove(&user).ok_or(anyhow!("User not found"))?;
+            .await
+            .map_err(|_| ServerError::MessageChannelClosed)?;
+        let connection = stream_map.remove(&user).ok_or(ServerError::UserNotFound)?;
         connections.remove(&user.tcp_addr);
         connections.remove(&user.udp_addr);
 
-        connection.tcp_stream.shutdown(std::net::Shutdown::Both)?;
+        connection
+            .tcp_stream
+            .shutdown(std::net::Shutdown::Both)
+            .map_err(ServerError::Io)?;
 
         Ok(())
     }
 
     /// Disconnects the specified user.
-    pub async fn disconnect_user(&self, user: Connection, reason: Disconnected) -> Result<()> {
+    pub async fn disconnect_user(
+        &self,
+        user: Connection,
+        reason: Disconnected,
+    ) -> Result<(), ServerError> {
         self.messages
             .0
             .send((user, RemoteMessage::Disconnected(reason)))
-            .await?;
+            .await
+            .map_err(|_| ServerError::MessageChannelClosed)?;
         let connection = self
             .socket
             .connections_map
             .lock()
             .await
             .remove(&user)
-            .ok_or(anyhow!("User not found"))?;
+            .ok_or(ServerError::UserNotFound)?;
         self.socket.connections.lock().await.remove(&user.tcp_addr);
         self.socket.connections.lock().await.remove(&user.udp_addr);
 
-        connection.tcp_stream.shutdown(std::net::Shutdown::Both)?;
+        connection
+            .tcp_stream
+            .shutdown(std::net::Shutdown::Both)
+            .map_err(ServerError::Io)?;
 
         Ok(())
     }
@@ -705,12 +709,28 @@ where
     }
 
     /// Returns the ping of the given user.
-    pub async fn ping(&self, connection: &Connection) -> Result<Duration> {
+    pub async fn ping(&self, connection: &Connection) -> Result<Duration, ServerError> {
         let peer = self.socket.connections_map.lock().await;
         if let Some(user) = peer.get(connection) {
             Ok(user.ping)
         } else {
-            Err(anyhow!("No user found."))
+            Err(ServerError::UserNotFound)
         }
     }
+}
+
+/// All kinds of errors that can be returned by the server.
+#[derive(Debug, Error)]
+pub enum ServerError {
+    /// Returns when the user is not connected to the server.
+    #[error("This user is not connected to the server.")]
+    UserNotFound,
+    /// Returns if an IO or OS error has occured.
+    #[error("{0}")]
+    Io(smol::io::Error),
+    /// Returns if the message channel somehow unexpectedly closes and returns errors.
+    #[error("This server can not be used anymore: The message channel is closed.")]
+    MessageChannelClosed,
+    #[error("{0}")]
+    SerialisationError(bincode::Error),
 }
