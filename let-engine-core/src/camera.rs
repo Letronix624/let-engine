@@ -4,16 +4,17 @@ use std::f32::consts::FRAC_1_SQRT_2;
 
 use glam::{vec2, Vec2};
 
-/// The 4 Camera scaling modes determine how far you can see when the window changes scale.
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+use crate::objects::Transform;
+
+/// The Camera scaling modes determine how far you can see when the window changes scale.
 /// For 2D games those are a problem because there will always be someone with a monitor or window with a weird aspect ratio that can see much more than others when it is not on stretch mode.
 ///
 /// The view size can be bigger or smaller depending on the zoom value. When -1 or 1 is mentioned we are talking about the default zoom of 1.
 ///
 /// Those are the options in this game engine:
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CameraScaling {
@@ -66,34 +67,41 @@ impl CameraScaling {
     }
 }
 
-/// Settings that determine your camera vision.
+/// The camera instance that when used in a LayerView determines your view.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy)]
-pub struct CameraSettings {
-    /// The camera zoom level. Default is `1.0`.
-    pub zoom: f32,
+pub struct Camera {
+    /// The position, rotation and zoom of the camera. Size in the transform works as zoom. Default zoom is 'vec2(1.0, 1.0)'.
+    pub transform: Transform,
     /// The scaling mode. Default is `Stretch`.
-    pub mode: CameraScaling,
+    pub scaling: CameraScaling,
 }
-impl Default for CameraSettings {
+
+impl Default for Camera {
     fn default() -> Self {
         Self {
-            zoom: 1.0,
-            mode: CameraScaling::Stretch,
+            transform: Transform {
+                position: Vec2::ZERO,
+                size: Vec2::ONE,
+                rotation: 0.0,
+            },
+            scaling: CameraScaling::Stretch,
         }
     }
 }
-impl CameraSettings {
-    /// Returns the zoom.
+
+impl Camera {
+    /// Sets the transform and returns self.
     #[inline]
-    pub fn zoom(mut self, zoom: f32) -> Self {
-        self.zoom = zoom;
+    pub fn transform(mut self, transform: Transform) -> Self {
+        self.transform = transform;
         self
     }
-    /// Returns the camera scaling mode.
+
+    /// Sets the camera scaling mode and returns self.
     #[inline]
-    pub fn mode(mut self, mode: CameraScaling) -> Self {
-        self.mode = mode;
+    pub fn scaling(mut self, scaling: CameraScaling) -> Self {
+        self.scaling = scaling;
         self
     }
 }

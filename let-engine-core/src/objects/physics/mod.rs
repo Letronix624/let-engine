@@ -74,7 +74,7 @@ impl Physics {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            None, // Doesn't update that well with the query pipeline in here.
+            Some(&mut self.query_pipeline),
             &(),
             &(),
         );

@@ -6,9 +6,9 @@ use std::{
 };
 use vulkano::{
     command_buffer::{
-        CommandBuffer, CommandBufferBeginInfo, CommandBufferInheritanceInfo, CommandBufferLevel,
-        CommandBufferUsage, RecordingCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo,
-        SubpassContents,
+        AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
+        PrimaryAutoCommandBuffer, RenderPassBeginInfo, SecondaryAutoCommandBuffer,
+        SubpassBeginInfo, SubpassContents,
     },
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
     pipeline::{graphics::viewport::Viewport, Pipeline},
@@ -23,8 +23,11 @@ use vulkano::{
 use winit::event_loop::EventLoop;
 
 use crate::{
-    camera::CameraSettings,
-    objects::{scenes::SCENE, Instance, Node, Object, VisualObject},
+    camera::Camera,
+    objects::{
+        scenes::{LayerView, SCENE},
+        Instance, Node, VisualObject,
+    },
     resources::{
         data::{InstanceData, ModelViewProj, ObjectFrag},
         resources,
@@ -85,17 +88,13 @@ impl Draw {
 
         *VIEWPORT.write() = viewport;
 
-        let uploads = RecordingCommandBuffer::new(
+        let uploads = AutoCommandBufferBuilder::primary(
             loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferLevel::Primary,
-            CommandBufferBeginInfo {
-                usage: CommandBufferUsage::OneTimeSubmit,
-                ..Default::default()
-            },
+            CommandBufferUsage::OneTimeSubmit,
         )?;
 
-        let previous_frame_end = Some(uploads.end()?.execute(vulkan.queue.clone())?.boxed());
+        let previous_frame_end = Some(uploads.build()?.execute(vulkan.queue.clone())?.boxed());
 
         let dimensions = [0; 2];
 
@@ -153,19 +152,21 @@ impl Draw {
         image_num: usize,
         clear_color: [f32; 4],
         loader: &Loader,
-    ) -> Result<(RecordingCommandBuffer, RecordingCommandBuffer), VulkanError> {
+    ) -> Result<
+        (
+            AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+            AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
+        ),
+        VulkanError,
+    > {
         let vulkan = resources()
             .map_err(|e| VulkanError::Other(e.into()))?
             .vulkan()
             .clone();
-        let mut builder = RecordingCommandBuffer::new(
+        let mut builder = AutoCommandBufferBuilder::primary(
             loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferLevel::Primary,
-            CommandBufferBeginInfo {
-                usage: CommandBufferUsage::OneTimeSubmit,
-                ..Default::default()
-            },
+            CommandBufferUsage::OneTimeSubmit,
         )
         .map_err(Validated::unwrap)
         .map_err(VulkanError::Validated)?;
@@ -184,16 +185,12 @@ impl Draw {
             )
             .map_err(|e| VulkanError::Other(e.into()))?;
 
-        let mut secondary_builder = RecordingCommandBuffer::new(
+        let mut secondary_builder = AutoCommandBufferBuilder::secondary(
             loader.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            CommandBufferLevel::Secondary,
-            CommandBufferBeginInfo {
-                usage: CommandBufferUsage::OneTimeSubmit,
-                inheritance_info: Some(CommandBufferInheritanceInfo {
-                    render_pass: Some(vulkan.subpass.clone().into()),
-                    ..Default::default()
-                }),
+            CommandBufferUsage::OneTimeSubmit,
+            CommandBufferInheritanceInfo {
+                render_pass: Some(vulkan.subpass.clone().into()),
                 ..Default::default()
             },
         )
@@ -209,8 +206,7 @@ impl Draw {
     fn make_mvp_matrix(
         object: &VisualObject,
         dimensions: [u32; 2],
-        camera: &Object,
-        camera_settings: CameraSettings,
+        camera: Camera,
     ) -> (Mat4, Mat4, Mat4) {
         let transform = object.appearance.get_transform().combine(object.transform);
         let scaling = Vec3::new(transform.size[0], transform.size[1], 0.0);
@@ -223,11 +219,11 @@ impl Draw {
         // View matrix
         let rotation = Mat4::from_rotation_z(camera.transform.rotation);
 
-        let zoom = 1.0 / camera_settings.zoom;
+        let zoom = 1.0 / camera.transform.size;
 
         // Projection matrix
         let proj = ortho_maker(
-            camera_settings.mode,
+            camera.scaling,
             camera.transform.position,
             zoom,
             vec2(dimensions[0] as f32, dimensions[1] as f32),
@@ -252,10 +248,26 @@ impl Draw {
     /// Draws the Game Scene on the given command buffer.
     fn write_secondary_command_buffer(
         &self,
-        command_buffer: &mut RecordingCommandBuffer,
+        command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
         loader: &mut Loader,
     ) -> Result<()> {
-        for layer in SCENE.layers().iter() {
+        let views: Vec<Arc<LayerView>> = {
+            let view = SCENE.views().lock();
+            view.iter().cloned().collect()
+        };
+
+        for layer_view in views {
+            let layer = layer_view.layer();
+
+            // Clear
+            if Arc::strong_count(&layer_view) <= 2 {
+                SCENE.update();
+                continue;
+            }
+            if !layer_view.draw() {
+                continue;
+            }
+
             let mut order: Vec<VisualObject> = Vec::with_capacity(layer.objects_map.lock().len());
             let mut instances: Vec<Instance> = vec![];
 
@@ -282,12 +294,8 @@ impl Draw {
                     // appearance.instance.drawing.
                     appearance.instance.draw(&mut instances);
                     let mut data = appearance.instance.instance_data.lock();
-                    let (model, view, proj) = Self::make_mvp_matrix(
-                        &object,
-                        self.dimensions,
-                        &layer.camera.lock().lock().object,
-                        layer.camera_settings(),
-                    );
+                    let (model, view, proj) =
+                        Self::make_mvp_matrix(&object, self.dimensions, layer_view.camera());
                     let instance_data = InstanceData {
                         model,
                         view,
@@ -330,12 +338,8 @@ impl Draw {
                     .allocate_sized()
                     .map_err(|error| VulkanError::Other(error.into()))?;
 
-                let (model, view, proj) = Self::make_mvp_matrix(
-                    &object,
-                    self.dimensions,
-                    &layer.camera.lock().lock().object,
-                    layer.camera_settings(),
-                );
+                let (model, view, proj) =
+                    Self::make_mvp_matrix(&object, self.dimensions, layer_view.camera());
 
                 *objectvert_sub_buffer
                     .write()
@@ -464,7 +468,7 @@ impl Draw {
     /// Creates and executes a future in which the command buffer gets executed.
     fn execute_command_buffer(
         &mut self,
-        command_buffer: Arc<CommandBuffer>,
+        command_buffer: Arc<PrimaryAutoCommandBuffer>,
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
     ) -> Result<()> {
@@ -559,7 +563,7 @@ impl Draw {
             .map_err(VulkanError::Other)?;
 
         builder
-            .execute_commands(secondary_builder.end()?)
+            .execute_commands(secondary_builder.build()?)
             .map_err(|e| VulkanError::Other(e.into()))?;
 
         #[cfg(feature = "egui")]
@@ -573,7 +577,7 @@ impl Draw {
         builder
             .end_render_pass(Default::default())
             .map_err(|e| VulkanError::Other(e.into()))?;
-        let command_buffer = builder.end()?;
+        let command_buffer = builder.build()?;
 
         Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)
             .map_err(VulkanError::Other)?;

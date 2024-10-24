@@ -1,5 +1,3 @@
-extern crate image;
-extern crate vulkano;
 use crate::window::{Window, WindowBuilder};
 use anyhow::Result;
 use std::sync::Arc;
@@ -15,8 +13,8 @@ pub fn create_window(
 ) -> Result<(Arc<Surface>, Arc<Window>)> {
     let clear_color = builder.clear_color;
     let visible = builder.visible;
-    let builder: winit::window::WindowBuilder = builder.into();
-    let window: Arc<winit::window::Window> = builder.with_visible(false).build(event_loop)?.into();
+    let attributes: winit::window::WindowAttributes = builder.into();
+    let window: Arc<winit::window::Window> = event_loop.create_window(attributes)?.into();
 
     let surface = Surface::from_window(instance.clone(), window.clone())?;
 

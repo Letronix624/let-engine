@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleaning functions that clean the built up memory usage of the engine.
 - `is_initialized` function for object.
 - New networking system feature to communicate between clients.
+- LayerView to have multiview of the same layer as textures
+- Root layer
 
 ### Changed
 
@@ -35,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Game` functions are now all async, except for `exit`.
 - `Engine` now requires a generic `Game`, being the game struct.
 - MSRV is Rust 1.80.1
+- Move layer management functions to layers locally themselves.
+- Rename `CameraSettings` to `Camera` and add transform.
 
 ### Fixed
 
@@ -49,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `InputEvent::ReceivedCharacter` in favour of Key::Chararcter
 - Labels from the game engine. To access them import the let-engine-widgets library.
 - update function for server mode
+- Camera settings from layers themselves.
+- Low Memory warning
 
 ## [0.10.0] - 2024-2-10
 

@@ -243,8 +243,8 @@ impl Window {
 
     /// Sets the cursor icon to be the given variant.
     #[inline]
-    pub fn set_cursor_icon(&self, cursor: CursorIcon) {
-        self.window.set_cursor_icon(cursor);
+    pub fn set_cursor(&self, cursor: CursorIcon) {
+        self.window.set_cursor(cursor);
     }
 
     /// Makes the window grab the cursor.
@@ -305,7 +305,7 @@ impl Window {
 #[derive(Clone, Debug)]
 #[must_use]
 pub struct WindowBuilder {
-    attributes: winit::window::WindowBuilder,
+    attributes: winit::window::WindowAttributes,
     pub(crate) clear_color: Color,
     pub(crate) visible: bool,
 }
@@ -313,7 +313,7 @@ pub struct WindowBuilder {
 impl WindowBuilder {
     /// Creates a new window builder.
     pub fn new() -> Self {
-        let attributes = winit::window::WindowBuilder::new().with_title("Game");
+        let attributes = winit::window::WindowAttributes::default().with_title("Game");
         Self {
             attributes,
             clear_color: Color::BLACK,
@@ -323,7 +323,7 @@ impl WindowBuilder {
 
     /// Makes a new window builder using the one from the Winit crate.
     #[inline]
-    pub fn from_winit_builder(builder: winit::window::WindowBuilder) -> Self {
+    pub fn from_winit_attributes(builder: winit::window::WindowAttributes) -> Self {
         Self {
             attributes: builder,
             clear_color: Color::BLACK,
@@ -468,7 +468,7 @@ impl WindowBuilder {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Fullscreen {
-    Exclusive(VideoMode),
+    Exclusive(VideoModeHandle),
     Borderless(Option<Monitor>),
 }
 
@@ -487,7 +487,7 @@ impl From<winit::window::Fullscreen> for Fullscreen {
     fn from(value: winit::window::Fullscreen) -> Self {
         match value {
             winit::window::Fullscreen::Exclusive(video_mode) => {
-                Fullscreen::Exclusive(VideoMode { video_mode })
+                Fullscreen::Exclusive(VideoModeHandle { video_mode })
             }
             winit::window::Fullscreen::Borderless(handle) => {
                 Fullscreen::Borderless(handle.map(|handle| Monitor { handle }))
@@ -531,21 +531,21 @@ impl Monitor {
     }
 
     /// Returns all the video modes of this monitor.
-    pub fn video_modes(&self) -> Vec<VideoMode> {
+    pub fn video_modes(&self) -> Vec<VideoModeHandle> {
         self.handle
             .video_modes()
-            .map(|video_mode| VideoMode { video_mode })
+            .map(|video_mode| VideoModeHandle { video_mode })
             .collect()
     }
 }
 
 /// Exclusive fullscreen video modes for specific monitors.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct VideoMode {
-    video_mode: winit::monitor::VideoMode,
+pub struct VideoModeHandle {
+    video_mode: winit::monitor::VideoModeHandle,
 }
 
-impl VideoMode {
+impl VideoModeHandle {
     /// Returns the resolution of this video mode.
     pub fn size(&self) -> Vec2 {
         let size = self.video_mode.size();
@@ -558,7 +558,7 @@ impl VideoMode {
     }
 }
 
-impl From<WindowBuilder> for winit::window::WindowBuilder {
+impl From<WindowBuilder> for winit::window::WindowAttributes {
     fn from(val: WindowBuilder) -> Self {
         val.attributes
     }

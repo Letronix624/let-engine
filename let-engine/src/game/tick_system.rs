@@ -72,7 +72,7 @@ impl_ticksys! {
                 // update the physics in case they are active in the tick settings.
                 #[cfg(feature = "physics")]
                 if let_engine_core::objects::scenes::SCENE
-                    .update(settings.update_physics)
+                    .physics_iteration(settings.update_physics)
                     .is_err()
                 {
                     // Disable physics updating if it fails. Return running this tick system.

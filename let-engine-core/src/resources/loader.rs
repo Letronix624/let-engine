@@ -5,7 +5,7 @@ use vulkano::{
     buffer::{allocator::*, Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo},
-        CommandBufferBeginInfo, CommandBufferUsage, CopyBufferToImageInfo, RecordingCommandBuffer,
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
     },
     descriptor_set::{
         allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo},
@@ -132,14 +132,10 @@ impl Loader {
             ));
         }
 
-        let mut uploads = RecordingCommandBuffer::new(
+        let mut uploads = AutoCommandBufferBuilder::primary(
             self.command_buffer_allocator.clone(),
             vulkan.queue.queue_family_index(),
-            vulkano::command_buffer::CommandBufferLevel::Primary,
-            CommandBufferBeginInfo {
-                usage: CommandBufferUsage::OneTimeSubmit,
-                ..Default::default()
-            },
+            CommandBufferUsage::OneTimeSubmit,
         )?;
 
         let format = if settings.srgb {
@@ -244,7 +240,7 @@ impl Loader {
         )?;
 
         // Upload to gpu.
-        let _ = uploads.end()?.execute(vulkan.queue.clone())?;
+        let _ = uploads.build()?.execute(vulkan.queue.clone())?;
         Ok(set)
     }
     /// Makes a descriptor write.

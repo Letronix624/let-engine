@@ -1,5 +1,3 @@
-extern crate image;
-extern crate vulkano;
 use anyhow::{Context, Error};
 use std::sync::Arc;
 use vulkano::device::Device;

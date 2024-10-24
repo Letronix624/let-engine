@@ -14,6 +14,8 @@ _simple game engine_
 
 * Labels and text
 
+* Built in networking protocol
+
 * Custom shader support (limited)
 
 * Egui support as a feature

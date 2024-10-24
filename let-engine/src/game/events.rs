@@ -22,8 +22,6 @@ pub enum Event {
     /// The last event to be called in this loop.
     /// This is the "do on quit" event.
     Destroyed,
-    /// The application has received a low memory warning.
-    LowMemory,
 }
 
 /// An event coming with window context.

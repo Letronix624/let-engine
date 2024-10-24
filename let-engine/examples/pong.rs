@@ -58,6 +58,8 @@ fn main() {
 struct Game {
     /// Exits the program on true.
     exit: bool,
+    // We only keep the ui_view to keep it from dropping so it keeps existing.
+    _ui_view: Arc<LayerView>,
 
     left_paddle: Paddle,
     right_paddle: Paddle,
@@ -69,31 +71,41 @@ struct Game {
 #[cfg(all(feature = "client", not(feature = "networking")))]
 impl Game {
     pub fn new() -> Self {
-        let game_layer = SCENE.new_layer();
-        let ui_layer = SCENE.new_layer();
-        // limits the view to -1 to 1 max
-        game_layer.set_camera_settings(CameraSettings::default().mode(CameraScaling::Limited));
-        ui_layer.set_camera_settings(
-            CameraSettings::default()
-                .mode(CameraScaling::Expand)
-                .zoom(0.8),
-        );
+        // First we get the root layer where the scene will be simulated on.
+        let root_layer = SCENE.root_layer();
+        // We also create a ui layer, the place where the text and middle line will be.
+        let ui_layer = root_layer.new_layer();
+
+        // next we set the view of the game scene to -1 to 1 max
+        let root_view = SCENE.root_view();
+        root_view.set_camera(Camera::default().scaling(CameraScaling::Limited));
+
+        // When making UI, a recommended scaling mode is `Expand`, because it makes sure the UI is
+        // the same size no matter how the window is scaled. Size of the transform is zoom here.
+        let _ui_view = ui_layer
+            .new_view(
+                Camera::default()
+                    .scaling(CameraScaling::Expand)
+                    .transform(Transform::default().size(Vec2::splat(0.8))),
+            )
+            .unwrap();
+        // The view will exist as long as this variable is kept. Dropping this eliminates the view.
 
         // Make left paddle controlled with W for up and S for down.
         let left_paddle = Paddle::new(
-            &game_layer,
+            root_layer,
             (Key::Character("w".into()), Key::Character("s".into())),
             -0.95,
         );
         // The right paddle controlled with J and K. Weird controls, but 60% keyboard friendly
         let right_paddle = Paddle::new(
-            &game_layer,
+            root_layer,
             (Key::Character("k".into()), Key::Character("j".into())),
             0.95,
         );
 
         // Spawns a ball in the middle.
-        let ball = Ball::new(&game_layer);
+        let ball = Ball::new(root_layer, &root_view);
 
         // Loading the font for the score.
         let font = Font::from_slice(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
@@ -155,6 +167,7 @@ impl Game {
 
         Self {
             exit: false,
+            _ui_view,
             left_paddle,
             right_paddle,
             ball,
@@ -285,6 +298,7 @@ impl Paddle {
 struct Ball {
     object: Object,
     layer: Arc<Layer>,
+    view: Arc<LayerView>,
     direction: Vec2,
     speed: f32,
     new_round: SystemTime,
@@ -296,7 +310,7 @@ struct Ball {
 /// Ball logic.
 #[cfg(all(feature = "client", not(feature = "networking")))]
 impl Ball {
-    pub fn new(layer: &Arc<Layer>) -> Self {
+    pub fn new(layer: &Arc<Layer>, view: &Arc<LayerView>) -> Self {
         let lifetime = SystemTime::now();
         let mut object = NewObject::new();
         object.transform.size = vec2(0.015, 0.015);
@@ -311,6 +325,7 @@ impl Ball {
         Self {
             object,
             layer: layer.clone(),
+            view: view.clone(),
             direction: Self::random_direction(),
             speed: 1.1,
             new_round: lifetime,
@@ -330,8 +345,8 @@ impl Ball {
                 .is_some();
 
             // Check if the top side or bottom side are touched by checking if the ball position is below or above the screen edges +- the ball size.
-            let touching_floor = position.y < self.layer.side_to_world(vec2(0.0, 1.0)).y + 0.015;
-            let touching_roof = position.y > self.layer.side_to_world(vec2(0.0, -1.0)).y - 0.015;
+            let touching_floor = position.y < self.view.side_to_world(vec2(0.0, 1.0)).y + 0.015;
+            let touching_roof = position.y > self.view.side_to_world(vec2(0.0, -1.0)).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle
@@ -340,11 +355,9 @@ impl Ball {
             {
                 self.rebound(position.x as f64);
                 // It's getting faster with time.
-                self.speed += 0.02;
-            } else if touching_floor {
-                self.direction.y = self.direction.y.abs();
-            } else if touching_roof {
-                self.direction.y = -self.direction.y.abs();
+                self.speed += 0.03;
+            } else if touching_floor || touching_roof {
+                self.direction.y *= -1.0;
             } else if touching_wall {
                 // Right wins increase by 1 in case the X is negative.
                 if position.x.is_sign_negative() {

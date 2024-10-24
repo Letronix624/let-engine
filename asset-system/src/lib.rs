@@ -114,11 +114,7 @@ use serde::{Deserialize, Serialize};
 /// Every resource path to the disk path where the asset is located with the compression algorithm.
 static MAP: LazyLock<HashMap<String, (std::path::PathBuf, Compression)>> = LazyLock::new(|| {
     let data = include_bytes!(concat!(env!("OUT_DIR"), "/map_data"));
-    if let Ok(data) = bincode::deserialize(data) {
-        data
-    } else {
-        HashMap::default()
-    }
+    bincode::deserialize(data).unwrap_or_default()
 });
 
 /// The compression algorithm used for the resources.

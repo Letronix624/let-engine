@@ -1,12 +1,12 @@
 //! The default input system by the engine.
 
-use let_engine_core::objects::scenes::Layer;
+use let_engine_core::camera::Camera;
 use std::{
     collections::HashSet,
     sync::atomic::{AtomicBool, Ordering},
 };
 pub use winit::event::MouseButton;
-use winit::event::{ElementState, Event, WindowEvent};
+use winit::event::{ElementState, WindowEvent};
 pub use winit::keyboard::*;
 
 use crossbeam::atomic::AtomicCell;
@@ -42,41 +42,35 @@ impl Input {
         }
     }
     /// Updates the input with the event.
-    pub(crate) fn update<T: 'static>(&self, event: &Event<T>, dimensions: Vec2) {
+    pub(crate) fn update(&self, event: &WindowEvent, dimensions: Vec2) {
         self.dimensions.store(dimensions);
-        if let Event::WindowEvent { event, .. } = event {
-            match event {
-                WindowEvent::KeyboardInput { event, .. } => {
-                    if event.state == ElementState::Pressed {
-                        self.keys_down.lock().insert(event.logical_key.clone());
-                    } else {
-                        self.keys_down.lock().remove(&event.logical_key);
-                    }
+        match event {
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed {
+                    self.keys_down.lock().insert(event.logical_key.clone());
+                } else {
+                    self.keys_down.lock().remove(&event.logical_key);
                 }
-                WindowEvent::ModifiersChanged(modifiers) => {
-                    *self.keyboard_modifiers.lock() = modifiers.state();
-                }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    if state == &ElementState::Pressed {
-                        self.mouse_down.lock().insert(*button);
-                    } else {
-                        self.mouse_down.lock().remove(button);
-                    }
-                }
-                WindowEvent::CursorMoved { position, .. } => {
-                    self.cursor_position.store(vec2(
-                        (position.x as f32 / dimensions.x) * 2.0 - 1.0,
-                        (position.y as f32 / dimensions.y) * 2.0 - 1.0,
-                    ));
-                }
-                WindowEvent::CursorEntered { .. } => {
-                    self.cursor_inside.store(true, Ordering::Release)
-                }
-                WindowEvent::CursorLeft { .. } => {
-                    self.cursor_inside.store(false, Ordering::Release)
-                }
-                _ => (),
             }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                *self.keyboard_modifiers.lock() = modifiers.state();
+            }
+            WindowEvent::MouseInput { state, button, .. } => {
+                if state == &ElementState::Pressed {
+                    self.mouse_down.lock().insert(*button);
+                } else {
+                    self.mouse_down.lock().remove(button);
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_position.store(vec2(
+                    (position.x as f32 / dimensions.x) * 2.0 - 1.0,
+                    (position.y as f32 / dimensions.y) * 2.0 - 1.0,
+                ));
+            }
+            WindowEvent::CursorEntered { .. } => self.cursor_inside.store(true, Ordering::Release),
+            WindowEvent::CursorLeft { .. } => self.cursor_inside.store(false, Ordering::Release),
+            _ => (),
         }
     }
 
@@ -102,22 +96,23 @@ impl Input {
     }
 
     /// Returns the cursor position going from -1.0 to 1.0 x and y scaled with the inserted layers scaling properties.
-    pub fn scaled_cursor(&self, layer: &Layer) -> Vec2 {
-        let dimensions = layer.camera_scaling().scale(self.dimensions.load());
+    pub fn scaled_cursor(&self, camera: &Camera) -> Vec2 {
+        let dimensions = camera.scaling.scale(self.dimensions.load());
         let cp = self.cursor_position.load();
         vec2(cp[0], cp[1]) * dimensions
     }
 
     /// Returns the cursor position in layer world space.
-    pub fn cursor_to_world(&self, layer: &Layer) -> Vec2 {
+    pub fn cursor_to_world(&self, camera: &Camera) -> Vec2 {
         let dims = self.dimensions.load();
-        let dimensions = layer.camera_scaling().scale(dims);
+        let dimensions = camera.scaling.scale(dims);
         let cp = self.cursor_position.load();
-        let cam = layer.camera_transform().position;
-        let zoom = 1.0 / layer.zoom();
+
+        let cam = camera.transform.position;
+        let zoom = 1.0 / camera.transform.size;
         vec2(
-            cp[0] * (dimensions.x * zoom) + cam[0] * 2.0,
-            cp[1] * (dimensions.y * zoom) + cam[1] * 2.0,
+            cp[0] * (dimensions.x * zoom.x) + cam[0] * 2.0,
+            cp[1] * (dimensions.y * zoom.y) + cam[1] * 2.0,
         )
     }
 
