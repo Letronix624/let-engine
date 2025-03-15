@@ -1,5 +1,5 @@
-use ahash::HashMap;
 use anyhow::{Error, Result};
+use foldhash::HashMap;
 use std::{
     fs,
     io::Write,

@@ -1,0 +1,53 @@
+[package]
+name = "let-engine-core"
+authors = ["let"]
+description = "core functionality and types of the let-engine"
+readme = "./README.md"
+
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+derive_builder = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam = { workspace = true }
+serde = { workspace = true }
+foldhash = { workspace = true }
+indexmap = "2.7"
+paste = "1.0"
+mint = "0.5.9"
+raw-window-handle = "0.6.2"
+half = "2.4"
+bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
+engine-macros = { path = "../macros" }
+
+[dependencies.glam]
+workspace = true
+features = ["bytemuck", "mint"]
+
+[dependencies.nalgebra]
+workspace = true
+features = ["convert-mint"]
+
+[dependencies.image]
+workspace = true
+
+[dependencies.rapier2d]
+workspace = true
+features = ["simd-stable"]
+optional = true
+
+[features]
+physics = ["dep:rapier2d"]
+serde = ["glam/serde", "rapier2d/serde-serialize"]
+
+rand = ["glam/rand"]
+fast-math = ["glam/fast-math"]

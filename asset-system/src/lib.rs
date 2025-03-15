@@ -105,7 +105,7 @@ use std::{
 
 use smol::fs;
 
-use ahash::HashMap;
+use foldhash::HashMap;
 
 use anyhow::{anyhow, Result};
 use parking_lot::RwLock;

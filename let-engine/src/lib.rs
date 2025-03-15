@@ -4,26 +4,24 @@
 //! [![Website](https://img.shields.io/website?up_message=Up&up_color=f6ffa6&down_message=Down&down_color=lightgrey&url=https%3A%2F%2Flet-server.net%2F&style=for-the-badge&logo=apache&color=f6ffa6&link=https%3A%2F%2Flet-server.net%2F)](https://let-server.net/)
 //!
 //! A Game engine made in Rust.
-mod game;
+pub mod backend;
+mod engine;
+#[cfg(feature = "client")]
+pub mod events;
+#[cfg(feature = "client")]
+pub mod input;
+pub mod settings;
+pub mod tick_system;
+
+#[cfg(all(feature = "egui", feature = "client"))]
+mod egui_feature;
 
 #[cfg(feature = "asset_system")]
 pub use asset_system;
-pub use game::*;
+pub use engine::*;
 pub mod prelude;
-#[cfg(feature = "audio")]
-pub use let_engine_audio;
-pub use settings;
-use std::sync::LazyLock;
 
 pub use glam::{vec2, Vec2};
-
-#[cfg(not(feature = "client"))]
-mod check_feature_dependency {
-    #[cfg(feature = "egui")]
-    compile_error!("`egui` requires the `client` feature to be enabled.");
-    #[cfg(feature = "audio")]
-    compile_error!("`audio` requires the `client` feature to be enabled.");
-}
 
 /// Egui feature on
 #[cfg(feature = "egui")]
@@ -33,121 +31,15 @@ pub use egui_winit_vulkano::egui;
 pub use let_engine_core::resources;
 pub use let_engine_core::{camera, objects, Direction};
 
-/// Structs about drawing related things.
 #[cfg(feature = "client")]
-pub mod draw {
-    pub use let_engine_core::draw::{Graphics, PresentMode, ShaderError, VulkanError};
-}
+pub mod window;
 
-/// General time methods of the game engine.
-pub static TIME: LazyLock<Time> = LazyLock::new(Time::default);
-/// The input system holding the state of every key and the mouse position.
-#[cfg(feature = "client")]
-pub static INPUT: LazyLock<input::Input> = LazyLock::new(input::Input::new);
+/// Cleans all caches for unused data. This decreases memory usage and may not
+/// hurt to be called between levels from time to time.
+pub fn clean_caches() {
+    #[cfg(feature = "default_networking_backend")]
+    crate::backend::networking::LAST_ORDS.lock().clear();
 
-/// General settings for the game engine.
-#[cfg(all(feature = "client", feature = "audio"))]
-pub static SETTINGS: LazyLock<
-    game::settings::Settings<std::sync::Arc<draw::Graphics>, let_engine_audio::Audio>,
-> = LazyLock::new(game::settings::Settings::new);
-/// General settings for the game engine.
-#[cfg(all(feature = "client", not(feature = "audio")))]
-pub static SETTINGS: LazyLock<game::settings::Settings<std::sync::Arc<draw::Graphics>>> =
-    LazyLock::new(game::settings::Settings::new);
-/// General settings for the game engine.
-#[cfg(not(feature = "client"))]
-pub static SETTINGS: LazyLock<game::settings::Settings> =
-    LazyLock::new(game::settings::Settings::new);
-
-/// A macro that makes it easy to create circles.
-///
-/// Returns [Data](let_engine_core::resources::data::Data) with vertices and indices.
-///
-/// ### $corners
-/// Using this with a `u32` makes a circle fan with as many corners as given.
-///
-/// ### $percent
-/// Using this with a `f64` makes a circle fan that looks like a pie with the given percentage missing.
-///
-/// ## usage:
-/// ```rust
-/// use let_engine::prelude::*;
-///
-/// let hexagon: Data = make_circle!(6); // Makes a hexagon.
-///
-/// // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
-/// let pie: Data = make_circle!(20, 0.75);
-/// ```
-#[macro_export]
-#[cfg(feature = "client")]
-macro_rules! make_circle {
-    // Full circle fan
-    ($corners:expr) => {{
-        use let_engine::prelude::{vec2, Data, Vertex};
-
-        let corners = $corners;
-        if corners == 0 {
-            panic!("Number of corners must be greater than zero")
-        }
-
-        let mut vertices: Vec<Vertex> = vec![];
-        let mut indices: Vec<u32> = vec![];
-        use core::f64::consts::TAU;
-
-        // first point in the middle
-        vertices.push(Vertex {
-            position: vec2(0.0, 0.0),
-            tex_position: vec2(0.0, 0.0),
-        });
-
-        // Generate vertices
-        for i in 0..corners {
-            vertices.push(vert(
-                (TAU * ((i as f64) / corners as f64)).cos() as f32,
-                (TAU * ((i as f64) / corners as f64)).sin() as f32,
-            ));
-        }
-
-        // Generate indices
-        for i in 0..corners - 1 {
-            // -1 so the last index doesn't go above the total amounts of indices.
-            indices.extend([0, i + 1, i + 2]);
-        }
-        indices.extend([0, corners, 1]);
-
-        Data::Dynamic { vertices, indices }
-    }};
-    // Pie circle
-    ($corners:expr, $percent:expr) => {{
-        use let_engine::prelude::{vec2, Data, Vertex};
-
-        let corners = $corners;
-        if corners == 0 {
-            panic!("Number of corners must be greater than zero")
-        }
-
-        let percent: f64 = ($percent as f64).clamp(0.0, 1.0);
-        let mut vertices: Vec<Vertex> = vec![];
-        let mut indices: Vec<u32> = vec![];
-        use core::f64::consts::TAU;
-
-        let count = TAU * percent;
-
-        vertices.push(vert(0.0, 0.0));
-
-        // Generate vertices
-        for i in 0..corners + 1 {
-            vertices.push(vert(
-                (count * ((i as f64) / corners as f64)).cos() as f32,
-                (count * ((i as f64) / corners as f64)).sin() as f32,
-            ));
-        }
-
-        // Generate indices
-        for i in 0..corners {
-            indices.extend([0, i + 1, i + 2]);
-        }
-
-        Data::Dynamic { vertices, indices }
-    }};
+    #[cfg(feature = "asset_system")]
+    asset_system::clear_cache();
 }

@@ -12,12 +12,12 @@ thread_local! {
     static DEMO_APP: RefCell<DemoWindows> = RefCell::new(DemoWindows::default());
 }
 
-#[cfg(any(not(feature = "egui"), not(feature = "client"), feature = "networking"))]
+#[cfg(not(feature = "egui"))]
 fn main() {
-    eprintln!("This example requires you to have the `egui` and `client` feature enabled as well as the networking feature disabled.");
+    eprintln!("This example requires you to have the `egui` feature enabled.");
 }
 
-#[cfg(all(feature = "egui", feature = "client", not(feature = "networking")))]
+#[cfg(feature = "egui")]
 fn main() {
     // First you make a builder containing the description of the window.
     let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
@@ -36,13 +36,13 @@ fn main() {
     engine.start(game);
 }
 
-#[cfg(all(feature = "egui", not(feature = "networking")))]
+#[cfg(feature = "egui")]
 struct Game {
     layer: Arc<Layer>,
     exit: bool,
 }
 
-#[cfg(all(feature = "egui", not(feature = "networking")))]
+#[cfg(feature = "egui")]
 impl Game {
     pub fn new() -> Self {
         Self {
@@ -53,7 +53,7 @@ impl Game {
     }
 }
 
-#[cfg(all(feature = "egui", not(feature = "networking")))]
+#[cfg(feature = "egui")]
 impl let_engine::Game for Game {
     async fn start(&mut self) {
         // Makes the view zoomed out and not stretchy.

@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New networking system feature to communicate between clients.
 - LayerView to have multiview of the same layer as textures
 - Root layer
+- EngineContext in events, to interface backends, retrieve debug info, set settings and delta time.
+- New `Vertex` macro from `engine-macros`
 
 ### Changed
 
@@ -39,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MSRV is Rust 1.80.1
 - Move layer management functions to layers locally themselves.
 - Rename `CameraSettings` to `Camera` and add transform.
+- let-engine-core resources to be CPU only.
+- Move all default backend functionality completely to let-engine as features.
+- Rename plural modules to singular for textures, models and materials.
+- Most event loop events.
+- Window size formats from `f32` `Vec2`'s to `u32` `UVec2`'s.
+- Rename `Vertex` to `Vert`
 
 ### Fixed
 
@@ -55,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - update function for server mode
 - Camera settings from layers themselves.
 - Low Memory warning
+- User accessable global variables
 
 ## [0.10.0] - 2024-2-10
 

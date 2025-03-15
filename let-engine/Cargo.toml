@@ -1,21 +1,23 @@
 [package]
 name = "let-engine"
-version = "0.11.0-alpha"
-authors = [ "let" ]
-edition = "2021"
-description = "game engine"
+authors = ["let"]
 readme = "../README.md"
-repository = "https://github.com/Letronix624/let-engine"
-keywords = [ "gamedev", "graphics", "engine" ]
-license = "Apache-2.0"
+description = "game engine"
+
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
 
 [package.metadata.docs.rs]
-features = [ "egui" ]
+features = ["egui"]
 default-target = "x86_64-unknown-linux-gnu"
 
 [dependencies]
 parking_lot = { workspace = true }
-ahash = { workspace = true }
 anyhow = { workspace = true }
 bincode = { workspace = true }
 thiserror = { workspace = true }
@@ -23,77 +25,92 @@ derive_builder = { workspace = true }
 crossbeam = { workspace = true }
 smol = { workspace = true }
 futures = { workspace = true }
-atomic_float = "1.0"
+atomic_float = "1.1"
 spin_sleep = "1.2"
-local-ip-addr = "0.1.1"
-rand = "0.8"
+rand = "0.9"
 serde = { workspace = true }
+foldhash = { workspace = true }
+smallvec = "1.13.2"
+log = "0.4"
+bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 
-  [dependencies.vulkano]
-  workspace = true
-  optional = true
+[dependencies.local-ip-address]
+version = "0.6"
+optional = true
 
-  [dependencies.winit]
-  workspace = true
-  optional = true
+[dependencies.vulkano]
+workspace = true
+optional = true
 
-  [dependencies.image]
-  workspace = true
-  optional = true
+[dependencies.winit]
+workspace = true
+optional = true
 
-  [dependencies.egui_winit_vulkano]
-  workspace = true
-  optional = true
+[dependencies.image]
+workspace = true
+optional = true
 
-  [dependencies.glam]
-  workspace = true
-  features = [ "bytemuck", "mint" ]
+[dependencies.egui_winit_vulkano]
+workspace = true
+optional = true
 
-  [dependencies.nalgebra]
-  workspace = true
-  features = [ "convert-mint" ]
+[dependencies.glam]
+workspace = true
+features = ["bytemuck", "mint"]
 
-  [dependencies.rapier2d]
-  workspace = true
-  features = [ "simd-stable" ]
-  optional = true
+[dependencies.nalgebra]
+workspace = true
+features = ["convert-mint"]
 
-  [dependencies.asset-system]
-  version = "0.1"
-  path = "../asset-system"
-  optional = true
+[dependencies.rapier2d]
+workspace = true
+features = ["simd-stable"]
+optional = true
 
-  [dependencies.let-engine-core]
-  version = "0.11.0-alpha"
-  path = "../let-engine-core"
+[dependencies.asset-system]
+version = "0.1"
+path = "../asset-system"
+optional = true
 
-  [dependencies.let-engine-audio]
-  version = "0.1"
-  path = "../let-engine-audio"
-  optional = true
+[dependencies.let-engine-core]
+version = "0.11.0-alpha"
+path = "../core"
+
+[dependencies.kira]
+version = "0.10"
+optional = true
+
+[build-dependencies]
+shaderc = "0.8"
 
 [dev-dependencies]
-egui_demo_lib = "0.28"
-let-engine-widgets = { path = "../let-engine-widgets" }
+egui_demo_lib = "0.31"
+simple_logger = "5.0"
+let-engine-widgets = { path = "../widgets" }
 
 [features]
-default = [ "client", "physics", "audio" ]
-egui = [ "let-engine-core/egui", "dep:egui_winit_vulkano", "client" ]
-vulkan_debug_utils = [ "let-engine-core/vulkan_debug_utils" ]
-client = [ "dep:vulkano", "dep:winit", "dep:image", "let-engine-core/client" ]
-audio = [ "dep:let-engine-audio", "client" ]
-physics = [ "dep:rapier2d", "let-engine-core/physics" ]
-asset_system = [ "dep:asset-system" ]
-serde = [ "glam/serde", "let-engine-core/serde", "rapier2d/serde-serialize" ]
-networking = [ ]
+default = [
+  "client",
+  "physics",
+  "default_graphics_backend",
+  "default_networking_backend",
+]
+egui = ["dep:egui_winit_vulkano", "client"]
+client = ["dep:vulkano", "dep:winit", "dep:image"]
+default_audio_backend = ["dep:kira"]
+default_graphics_backend = ["dep:vulkano"]
+default_networking_backend = ["dep:local-ip-address"]
+vulkan_debug = ["default_graphics_backend"]
+physics = ["dep:rapier2d", "let-engine-core/physics"]
+asset_system = ["dep:asset-system"]
+serde = ["glam/serde", "let-engine-core/serde", "rapier2d/serde-serialize"]
 
-rand = [ "glam/rand", "let-engine-core/rand" ]
-fast-math = [ "glam/fast-math", "let-engine-core/fast-math" ]
+rand = ["glam/rand", "let-engine-core/rand"]
+fast-math = ["glam/fast-math", "let-engine-core/fast-math"]
 
 # asset system compression algorithms
-deflate = [ "asset-system/deflate" ]
-bzip2 = [ "asset-system/bzip2" ]
-zstd = [ "asset-system/zstd" ]
-lzma = [ "asset-system/lzma" ]
-lz4 = [ "asset-system/lz4" ]
-
+deflate = ["asset-system/deflate"]
+bzip2 = ["asset-system/bzip2"]
+zstd = ["asset-system/zstd"]
+lzma = ["asset-system/lzma"]
+lz4 = ["asset-system/lz4"]

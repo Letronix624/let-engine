@@ -1,0 +1,20 @@
+[package]
+name = "engine-macros"
+authors = ["let"]
+description = "Macros used by the let-engine"
+
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+keywords = { workspace = true }
+license = { workspace = true }
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+proc-macro-crate = "3.2"

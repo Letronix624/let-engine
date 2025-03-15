@@ -8,24 +8,26 @@
 
 // Resources only exists if client is enabled.
 
-#[cfg(feature = "client")]
+pub use buffer::*;
+pub use data::*;
 pub use let_engine_core::resources::*;
+pub use material::*;
+pub use model::*;
+pub use texture::*;
+pub use tick_system::*;
 
 pub use let_engine_core::{camera::*, objects::*};
 
 pub use crate::*;
-#[cfg(feature = "client")]
-pub use data::*;
+pub use let_engine_core::{make_circle, model};
 
 // Client structs
 #[cfg(feature = "client")]
 mod client {
-    pub use super::materials::*;
-    pub use super::textures::*;
     pub use super::window::*;
     pub use crate::events::*;
-    pub use let_engine_core::draw::PresentMode;
 }
+
 #[cfg(feature = "client")]
 pub use client::*;
 
@@ -35,20 +37,26 @@ pub use joints::*;
 #[cfg(feature = "physics")]
 pub use physics::*;
 
-// Audio structs
-#[cfg(feature = "audio")]
-pub use let_engine_audio::*;
+pub use backend::DefaultBackends;
 
 // Asset system
 #[cfg(feature = "asset_system")]
 pub use asset_system::*;
 
-// Networking
-#[cfg(feature = "networking")]
-pub use networking::*;
+// // Networking
+// #[cfg(feature = "default_networking_backend")]
+// pub use backend::networking::*;
+
+// Audio
+#[cfg(feature = "default_audio_backend")]
+pub use backend::audio::*;
+
+// // Graphics
+#[cfg(feature = "default_graphics_backend")]
+pub use backend::graphics;
 
 // Other structs
-pub use crate::settings::{EngineSettings, EngineSettingsBuilder, EngineSettingsBuilderError};
+pub use crate::settings::*;
 pub use glam;
-pub use glam::{vec2, Vec2};
+pub use glam::{uvec2, vec2, UVec2, Vec2};
 pub use scenes::*;

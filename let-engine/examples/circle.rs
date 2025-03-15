@@ -1,98 +1,129 @@
 //! Simple circle scene.
-#[cfg(all(feature = "client", not(feature = "networking")))]
+#[cfg(feature = "client")]
 use std::sync::Arc;
 
-#[cfg(all(feature = "client", not(feature = "networking")))]
+#[cfg(feature = "client")]
+use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
+#[cfg(feature = "client")]
 use let_engine::prelude::*;
+use let_engine_core::make_circle;
 
-#[cfg(any(not(feature = "client"), feature = "networking"))]
+#[cfg(not(feature = "client"))]
 fn main() {
-    eprintln!(
-        "This example requires you to have the `client` feature enabled and `networking` disabled."
-    );
+    eprintln!("This example requires you to have the `client` feature enabled.");
 }
 
-#[cfg(all(feature = "client", not(feature = "networking")))]
+#[cfg(feature = "client")]
 fn main() {
+    // Log messages
+
+    use graphics::Graphics;
+    simple_logger::SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug)
+        .init()
+        .unwrap();
+
     // First you make a builder containing the description of the window.
-    let window_builder = WindowBuilder::new().inner_size(vec2(1280.0, 720.0));
+
+    let window_builder = WindowBuilder::new().inner_size(uvec2(1280, 720));
     // Then you start the engine allowing you to load resources and layers.
-    let mut engine = Engine::new(
-        EngineSettingsBuilder::default()
-            .window_settings(window_builder)
-            .build()
-            .unwrap(),
+    let mut engine = Engine::<Game>::new(
+        EngineSettings::default()
+            .window(window_builder)
+            .graphics(Graphics {
+                present_mode: graphics::PresentMode::Fifo,
+                ..Default::default()
+            }),
     )
     .unwrap();
 
-    // Here it initializes the game struct to be used with the engine run method.
-    let game = Game::new();
-
-    // Runs the game engine and makes a window.
-    engine.start(game);
+    // Here it initializes the game struct to be used with the engine run method,
+    // runs the game engine and makes a window.
+    engine.start(Game::new);
 }
 
 /// Makes a game struct containing
-#[cfg(all(feature = "client", not(feature = "networking")))]
+#[cfg(feature = "client")]
 struct Game {
-    /// the main layer, where the scene gets put inside,
-    main_layer: Arc<Layer>,
-    /// a variable that decides whether the program should close.
-    exit: bool,
+    /// the view perspective to draw
+    _root_view: Arc<LayerView<VulkanTypes>>,
 }
 
-#[cfg(all(feature = "client", not(feature = "networking")))]
+#[cfg(feature = "client")]
 impl Game {
     /// Constructor for this scene.
-    pub fn new() -> Self {
+    pub fn new(context: &EngineContext) -> Self {
+        // First we get the root layer where the scene will be simulated on.
+        let root_layer = context.scene.root_layer().clone();
+
+        // The view will exist as long as this variable is kept. Dropping this eliminates the view.
+        let root_view = context.scene.root_view();
+        // next we set the view of the game scene zoomed out and not stretchy.
+        root_view.set_camera(Camera {
+            transform: Transform::default().size(Vec2::splat(0.5)),
+            scaling: CameraScaling::Expand,
+        });
+
+        // Loads a circle model into the engine.
+        let circle_model = GpuModel::new(make_circle!(20), &context.graphics).unwrap();
+
+        let default_material = GpuMaterial::new_default(&context.graphics).unwrap();
+
+        let color_buffer = GpuBuffer::new(
+            Buffer::from_data(
+                buffer::BufferUsage::Uniform,
+                BufferAccess::Fixed,
+                Color::from_rgb(1.0, 0.3, 0.5),
+            ),
+            &context.graphics,
+        )
+        .unwrap();
+
+        let circle_appearance = AppearanceBuilder::<VulkanTypes>::default()
+            .model(circle_model)
+            .material(default_material)
+            .descriptors(&[
+                (Location::new(0, 0), Descriptor::Mvp),
+                (
+                    Location::new(1, 0),
+                    Descriptor::buffer(color_buffer.clone()),
+                ),
+            ])
+            .build(&context.graphics)
+            .unwrap();
+
+        // Makes the circle in the middle.
+        let circle = NewObject::new(circle_appearance);
+
+        // Initializes the object to the layer
+        circle.init(&root_layer).unwrap();
+
         Self {
+            // color_buffer,
             // Makes a base layer where you place your scene into.
-            main_layer: SCENE.new_layer(),
-            exit: false,
+            _root_view: root_view,
         }
     }
 }
 
 /// Implement the Game trait into the Game struct.
-#[cfg(all(feature = "client", not(feature = "networking")))]
+#[cfg(feature = "client")]
 impl let_engine::Game for Game {
-    async fn start(&mut self) {
-        // Makes the view zoomed out and not stretchy.
-        self.main_layer.set_camera_settings(CameraSettings {
-            zoom: 0.5,
-            mode: CameraScaling::Expand,
-        });
-        // Makes the circle in the middle.
-        let mut circle = NewObject::new();
-        // Loads a circle model into the engine and sets the appearance of this object to it.
-        circle
-            .appearance
-            .set_model(Some(Model::Custom(
-                ModelData::new(make_circle!(30)).unwrap(),
-            )))
-            .unwrap();
-        // Initializes the object to the layer
-        circle.init(&self.main_layer).unwrap();
+    // Exit when the X button on the window is pressed.
+    fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {
+        if let WindowEvent::CloseRequested = event {
+            context.exit();
+        }
     }
-    async fn event(&mut self, event: Event) {
-        match event {
-            // Exit when the X button is pressed.
-            Event::Window(WindowEvent::CloseRequested) => {
-                self.exit = true;
-            }
-            Event::Input(InputEvent::KeyboardInput { input }) => {
-                if input.state == ElementState::Pressed {
-                    if let Key::Named(NamedKey::Escape) = input.key {
-                        // Exit when the escape key is pressed.
-                        self.exit = true;
-                    }
+
+    // Exit when the escape key is pressed.
+    fn input(&mut self, context: &EngineContext, event: events::InputEvent) {
+        if let InputEvent::KeyboardInput { input } = event {
+            if let ElementState::Pressed = input.state {
+                if let Key::Named(NamedKey::Escape) = input.key {
+                    context.exit();
                 }
             }
-            _ => (),
-        };
-    }
-    /// Exits the program in case `self.exit` is true.
-    fn exit(&self) -> bool {
-        self.exit
+        }
     }
 }
