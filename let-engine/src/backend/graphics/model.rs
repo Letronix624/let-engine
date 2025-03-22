@@ -9,13 +9,11 @@ use parking_lot::Mutex;
 use thiserror::Error;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::allocator::StandardCommandBufferAllocator,
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
-    sync::GpuFuture,
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     Validated,
 };
 
-use super::GraphicsInterface;
+use super::vulkan::VK;
 
 use let_engine_core::resources::data;
 
@@ -26,11 +24,6 @@ use let_engine_core::resources::data;
 pub struct GpuModel<V: Vertex = data::Vert> {
     inner_model: Arc<Mutex<InnerModel<V>>>,
     buffer_access: BufferAccess,
-
-    // References to resources needed to upload data to the GPU.
-    future: Arc<Mutex<Option<Box<dyn GpuFuture + Send>>>>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    memory_allocator: Arc<StandardMemoryAllocator>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -44,23 +37,21 @@ pub struct InnerModel<V: Vertex> {
 impl<V: Vertex> PartialEq for GpuModel<V> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.inner_model, &other.inner_model)
-            && Arc::ptr_eq(&self.memory_allocator, &other.memory_allocator)
+            && other.buffer_access == self.buffer_access
     }
 }
 
 impl<V: Vertex> GpuModel<V> {
     /// Loads the model into the GPU and returns an instance of this Model handle.
-    pub fn new(model: Model<V>, interface: &GraphicsInterface) -> Result<Self, ModelError> {
+    pub fn new(model: &Model<V>) -> Result<Self, ModelError> {
         if model.is_empty() {
             return Err(ModelError::EmptyModel);
         }
 
         let buffer_access = *model.buffer_access();
 
-        let vulkan = &interface.vulkan;
+        let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
-        let future = vulkan.future.clone();
-        let command_buffer_allocator = vulkan.command_buffer_allocator.clone();
         let memory_allocator = vulkan.memory_allocator.clone();
 
         let vertex_sub_buffer = Buffer::new_slice::<V>(
@@ -121,10 +112,6 @@ impl<V: Vertex> GpuModel<V> {
                 index_len: model.index_len(),
             })),
             buffer_access,
-
-            future,
-            command_buffer_allocator,
-            memory_allocator,
         })
     }
 
@@ -345,6 +332,12 @@ pub use vulkano::{buffer::AllocateBufferError, sync::HostAccessError};
 /// Errors that occur in the context of models.
 #[derive(Debug, Error)]
 pub enum ModelError {
+    /// Returns when attempting to create a model,
+    /// but the engine has not been started with [`Engine::start`](crate::Engine::start),
+    /// or the backend has closed down.
+    #[error("Can not create model: Engine not initialized.")]
+    BackendNotInitialized,
+
     /// Returns if the provided model for the creation function contains no data.
     #[error("The provided model for the creation of a GPU model instance is empty.")]
     EmptyModel,

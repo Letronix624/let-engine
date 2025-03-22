@@ -1,4 +1,3 @@
-use let_engine_core::EngineError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use vulkano::device::physical::PhysicalDevice;
@@ -10,6 +9,10 @@ use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, Insta
 use vulkano::swapchain::Surface;
 use vulkano::{library::VulkanLibrary, Version};
 use winit::raw_window_handle::HasDisplayHandle;
+
+use crate::backend::graphics::{
+    DefaultGraphicsBackendError, DefaultGraphicsBackendError::Unsupported,
+};
 
 #[derive(Debug)]
 pub struct Queues {
@@ -110,10 +113,31 @@ impl Queues {
 /// Initializes a new Vulkan instance.
 pub fn create_instance(
     handle: &impl HasDisplayHandle,
-) -> Result<Arc<vulkano::instance::Instance>, EngineError> {
-    let library = VulkanLibrary::new().map_err(|e| EngineError::RequirementError(e.to_string()))?;
-    let required_extensions = Surface::required_extensions(handle)
-        .map_err(|e| EngineError::RequirementError(e.to_string()))?;
+    max_retries: usize,
+) -> Result<Arc<vulkano::instance::Instance>, DefaultGraphicsBackendError> {
+    let library = VulkanLibrary::new().map_err(DefaultGraphicsBackendError::Loading)?;
+
+    let mut required_extensions = None;
+
+    for i in 1..=max_retries {
+        match Surface::required_extensions(handle) {
+            Err(winit::raw_window_handle::HandleError::Unavailable) => {
+                log::error!("Window handle currently unavailable. Retrying... {i}/{max_retries}");
+                std::thread::sleep(std::time::Duration::from_millis(500))
+            }
+            Ok(extensions) => {
+                required_extensions = Some(extensions);
+                break;
+            }
+            _ => break,
+        }
+    }
+
+    let Some(required_extensions) = required_extensions else {
+        return Err(Unsupported(
+            "The windowing system of this device is not supported by the backend implementation.",
+        ));
+    };
 
     let extensions = InstanceExtensions {
         ext_debug_utils: true,
@@ -140,8 +164,18 @@ pub fn create_instance(
         },
         ..Default::default()
     };
-    vulkano::instance::Instance::new(library, game_info)
-        .map_err(|e| EngineError::RequirementError(e.to_string()))
+    vulkano::instance::Instance::new(library, game_info).map_err(|e| match e.unwrap() {
+        vulkano::VulkanError::InitializationFailed => Unsupported(
+            "Initialization of an object could not be completed for Vulkan implementation specific reasons."
+        ),
+        vulkano::VulkanError::IncompatibleDriver => {
+            Unsupported("Incompatible drivers.")
+        },
+        vulkano::VulkanError::ExtensionNotPresent => {
+            Unsupported("Your device does not support all Vulkan extensions required to run this application.")
+        }
+        e => DefaultGraphicsBackendError::Vulkan(e.into()),
+    })
 }
 
 // Selects the physical device by prioritizing preferred device types and evaluating their queue family capabilities.
@@ -150,12 +184,13 @@ fn choose_physical_device(
     device_extensions: &DeviceExtensions,
     features: &DeviceFeatures,
     handle: &impl HasDisplayHandle,
-) -> Result<(Arc<PhysicalDevice>, [Option<(usize, u32)>; 4]), EngineError> {
+) -> Result<(Arc<PhysicalDevice>, [Option<(usize, u32)>; 4]), DefaultGraphicsBackendError> {
     let devices = instance.enumerate_physical_devices().map_err(|e| {
-        EngineError::RequirementError(format!(
-            "There was an error enumerating the physical devices of this instance: {}",
-            e
-        ))
+        if let vulkano::VulkanError::InitializationFailed = e {
+            Unsupported("The Vulkan implementation of your device is incomplete.")
+        } else {
+            DefaultGraphicsBackendError::Vulkan(e.into())
+        }
     })?;
 
     devices
@@ -170,9 +205,7 @@ fn choose_physical_device(
             PhysicalDeviceType::Other => 4,
             _ => 5,
         })
-        .ok_or_else(|| {
-            EngineError::RequirementError("No suitable Vulkan device was found.".to_string())
-        })
+        .ok_or_else(|| Unsupported("No graphics device suitable for drawing the game found."))
 }
 
 // Extracts queue family information from a physical device.
@@ -230,7 +263,7 @@ pub fn create_device_and_queues(
     instance: &Arc<Instance>,
     features: DeviceFeatures,
     handle: &impl HasDisplayHandle,
-) -> Result<(Arc<Device>, Arc<Queues>), EngineError> {
+) -> Result<(Arc<Device>, Arc<Queues>), DefaultGraphicsBackendError> {
     let device_extensions = DeviceExtensions {
         khr_swapchain: true,
         // ext_line_rasterization: true,
@@ -267,7 +300,12 @@ pub fn create_device_and_queues(
             ..Default::default()
         },
     )
-    .map_err(|e| EngineError::RequirementError(e.to_string()))?;
+    .map_err(|e| match e.unwrap() {
+        vulkano::VulkanError::FeatureNotPresent => Unsupported(
+            "Your device does not support all features required to run this application.",
+        ),
+        e => DefaultGraphicsBackendError::Vulkan(e.into()),
+    })?;
 
     let queues: Vec<Arc<Queue>> = queues.collect();
 

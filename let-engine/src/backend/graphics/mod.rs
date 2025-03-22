@@ -1,13 +1,16 @@
+//! Default graphics backend made with `Vulkano`
+
 use std::{cell::OnceCell, collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use buffer::{DrawableBuffer, GpuBuffer};
 use bytemuck::AnyBitPattern;
+use crossbeam::channel::{bounded, Receiver, Sender};
 use draw::Draw;
 use glam::UVec2;
 use let_engine_core::{
     backend::graphics::{GraphicsBackend, Loaded},
-    objects::{Color, Descriptor},
+    objects::{scenes::Scene, Color, Descriptor},
     resources::{
         buffer::Location,
         model::{Vertex, VertexBufferDescription},
@@ -19,11 +22,16 @@ use model::{DrawableModel, GpuModel};
 use parking_lot::RwLock;
 use texture::{image_view_type_to_vulkano, GpuTexture};
 use thiserror::Error;
-use vulkan::Vulkan;
+use vulkan::{Vulkan, VK};
 use vulkano::{
-    descriptor_set::layout::DescriptorType, format::NumericType, image::view::ImageViewType,
-    pipeline::graphics::vertex_input::VertexDefinition, shader::spirv::SpirvBytesNotMultipleOf4,
-    Validated, VulkanError as VulkanoError,
+    buffer::AllocateBufferError,
+    descriptor_set::layout::DescriptorType,
+    format::NumericType,
+    image::{view::ImageViewType, AllocateImageError},
+    memory::allocator::MemoryAllocatorError,
+    pipeline::graphics::vertex_input::VertexDefinition,
+    shader::spirv::SpirvBytesNotMultipleOf4,
+    LoadingError, VulkanError as VulkanoError,
 };
 
 use winit::raw_window_handle::HasDisplayHandle;
@@ -41,19 +49,51 @@ pub struct DefaultGraphicsBackend {
     interface: GraphicsInterface,
 }
 
+#[derive(Debug, Error)]
+pub enum DefaultGraphicsBackendError {
+    /// Gets returned when the engine fails to find or load the vulkan library.
+    #[error("Failed to load vulkan library: {0}")]
+    Loading(LoadingError),
+
+    /// Gets returned when the device running the backend does not meet the backends requirements.
+    #[error(
+        "
+    This device does not support the requirements of this graphics backend:\n
+    {0}\n
+    Make sure you have a Vulkan 1.2 capable device and the newest graphics drivers.
+    "
+    )]
+    Unsupported(&'static str),
+
+    /// Gets returned when Vulkan fails to execute an operation.
+    #[error("An error with Vulkan occured: {0}")]
+    Vulkan(VulkanError),
+}
+
 impl GraphicsBackend for DefaultGraphicsBackend {
+    type CreateError = DefaultGraphicsBackendError;
+
     type Settings = Graphics;
     type Interface = GraphicsInterface;
 
     type LoadedTypes = VulkanTypes;
 
-    fn new(settings: Self::Settings, handle: impl HasDisplayHandle) -> Self {
-        let interface = GraphicsInterface::new(settings, &handle);
+    fn new(
+        settings: Self::Settings,
+        handle: impl HasDisplayHandle,
+    ) -> Result<Self, Self::CreateError> {
+        // Initialize backend in case it is not already initialized.
+        if VK.get().is_none() {
+            let vulkan = Vulkan::init(&handle, settings.window_handle_retries)?;
+            let _ = VK.set(vulkan);
+        }
 
-        Self {
+        let interface = GraphicsInterface::new(settings);
+
+        Ok(Self {
             draw: OnceCell::new(),
             interface,
-        }
+        })
     }
 
     fn init_window(
@@ -76,17 +116,9 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         &self.interface
     }
 
-    fn update(&mut self, scene: &let_engine_core::objects::scenes::Scene<Self::LoadedTypes>) {
+    fn update(&mut self, scene: &Scene<Self::LoadedTypes>) {
         if let Some(draw) = self.draw.get_mut() {
-            match draw.redraw_event(
-                scene,
-                #[cfg(feature = "egui")]
-                gui,
-            ) {
-                Err(VulkanError::SwapchainOutOfDate) => {}
-                Err(e) => panic!("{e:?}"), // TODO
-                _ => (),
-            };
+            draw.redraw_event(scene).unwrap(); // TODO
         }
     }
 
@@ -110,107 +142,7 @@ impl Loaded for VulkanTypes {
 
     type AppearanceCreationError = AppearanceCreationError;
 
-    fn draw_buffer<B: AnyBitPattern + Send + Sync>(
-        buffer: Self::Buffer<B>,
-    ) -> Self::DrawableBuffer {
-        DrawableBuffer::from_buffer(buffer)
-    }
-
-    fn draw_model<V: Vertex>(model: Self::Model<V>) -> Self::DrawableModel {
-        DrawableModel::from_model(model)
-    }
-}
-
-/// Errors that can occur when attempting to create an `Apperance` instance due to mismatches
-/// between shader requirements and provided descriptor or model layouts.
-#[derive(Debug, Clone, Error)]
-pub enum AppearanceCreationError {
-    /// Occurs when descriptors are missing at specific locations.
-    ///
-    /// Contains the list of locations where descriptors are missing.
-    #[error("Shaders require a buffer at the locations: {0:?}.")]
-    MissingDescriptors(Vec<Location>),
-
-    /// Occurs when more descriptors are provided than the material can accept.
-    ///
-    /// Contains a list of locations where excess descriptors are provided.
-    #[error("Too many descriptors at the locations: {0:?}.")]
-    ExcessDescriptors(Vec<Location>),
-
-    /// Occurs when the model's vertex type does not match the material's expected vertex type.
-    #[error("Mismatched types of model vertices and expected vertices in the material.")]
-    WrongVertexType,
-
-    /// Occurs when the type of a descriptor at a specific location does not match the the shader's.
-    ///
-    /// - `location`: The descriptor's location.
-    /// - `allowed_types`: The types allowed by the shader.
-    /// - `provided_type`: The type provided by the user.
-    #[error("Shader requires {location:?} to be {allowed_types:?}, but got {provided_type:?}.")]
-    WrongDescriptorType {
-        location: Location,
-        allowed_types: Vec<DescriptorType>,
-        provided_type: DescriptorType,
-    },
-
-    /// Occurs when the format of a texture at a specific location does not match the shader's.
-    ///
-    /// - `location`: The texture's location.
-    /// - `expected_format`: The expected format.
-    /// - `provided_format`: The provided format.
-    #[error("Shader requires format {expected_format:?} at texture location {location:?}, but got {provided_format:?}.")]
-    WrongTextureFormat {
-        location: Location,
-        expected_format: vulkano::format::Format,
-        provided_format: vulkano::format::Format,
-    },
-
-    /// Occurs when the shader requires a multisampled texture, but the current backend does not support multisampling.
-    #[error(
-        "Shader requires a multisampled texture, which is currently not supported in this backend."
-    )]
-    NoMultisampleSupport,
-
-    /// Occurs when the numeric type of a texture format at a specific location does not match the numeric type expected by the shader.
-    ///
-    /// - `location`: The texture's location.
-    /// - `expected_type`: The expected numeric type.
-    /// - `provided_type`: The provided numeric type.
-    #[error(
-        "Shader requires numeric type {expected_type:?} at {location:?}, but instead got {provided_type:?}."
-    )]
-    WrongNumericType {
-        location: Location,
-        expected_type: NumericType,
-        provided_type: NumericType,
-    },
-
-    /// Occurs when the view type of a texture at a specific location does not match the shader's.
-    ///
-    /// - `location`: The texture's location.
-    /// - `expected_type`: The expected view type.
-    /// - `provided_type`: The provided view type.
-    #[error(
-        "Shader requires view type {expected_type:?} at {location:?}, but got {provided_type:?}."
-    )]
-    WrongViewType {
-        location: Location,
-        expected_type: ImageViewType,
-        provided_type: ImageViewType,
-    },
-}
-
-#[derive(Clone)]
-pub struct GraphicsInterface {
-    vulkan: Vulkan,
-    settings: Arc<RwLock<Graphics>>,
-
-    available_present_modes: Arc<RwLock<Vec<PresentMode>>>,
-}
-
-impl let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes> for GraphicsInterface {
     fn initialize_appearance(
-        &self,
         material: &GpuMaterial,
         model: &DrawableModel,
         descriptors: &BTreeMap<Location, Descriptor<VulkanTypes>>,
@@ -344,13 +276,111 @@ impl let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes> for Grap
 
         Ok(())
     }
+    fn draw_buffer<B: AnyBitPattern + Send + Sync>(
+        buffer: Self::Buffer<B>,
+    ) -> Self::DrawableBuffer {
+        DrawableBuffer::from_buffer(buffer)
+    }
 
+    fn draw_model<V: Vertex>(model: Self::Model<V>) -> Self::DrawableModel {
+        DrawableModel::from_model(model)
+    }
+}
+
+/// Errors that can occur when attempting to create an `Apperance` instance due to mismatches
+/// between shader requirements and provided descriptor or model layouts.
+#[derive(Debug, Clone, Error)]
+pub enum AppearanceCreationError {
+    /// Occurs when descriptors are missing at specific locations.
+    ///
+    /// Contains the list of locations where descriptors are missing.
+    #[error("Shaders require a buffer at the locations: {0:?}.")]
+    MissingDescriptors(Vec<Location>),
+
+    /// Occurs when more descriptors are provided than the material can accept.
+    ///
+    /// Contains a list of locations where excess descriptors are provided.
+    #[error("Too many descriptors at the locations: {0:?}.")]
+    ExcessDescriptors(Vec<Location>),
+
+    /// Occurs when the model's vertex type does not match the material's expected vertex type.
+    #[error("Mismatched types of model vertices and expected vertices in the material.")]
+    WrongVertexType,
+
+    /// Occurs when the type of a descriptor at a specific location does not match the the shader's.
+    ///
+    /// - `location`: The descriptor's location.
+    /// - `allowed_types`: The types allowed by the shader.
+    /// - `provided_type`: The type provided by the user.
+    #[error("Shader requires {location:?} to be {allowed_types:?}, but got {provided_type:?}.")]
+    WrongDescriptorType {
+        location: Location,
+        allowed_types: Vec<DescriptorType>,
+        provided_type: DescriptorType,
+    },
+
+    /// Occurs when the format of a texture at a specific location does not match the shader's.
+    ///
+    /// - `location`: The texture's location.
+    /// - `expected_format`: The expected format.
+    /// - `provided_format`: The provided format.
+    #[error("Shader requires format {expected_format:?} at texture location {location:?}, but got {provided_format:?}.")]
+    WrongTextureFormat {
+        location: Location,
+        expected_format: vulkano::format::Format,
+        provided_format: vulkano::format::Format,
+    },
+
+    /// Occurs when the shader requires a multisampled texture, but the current backend does not support multisampling.
+    #[error(
+        "Shader requires a multisampled texture, which is currently not supported in this backend."
+    )]
+    NoMultisampleSupport,
+
+    /// Occurs when the numeric type of a texture format at a specific location does not match the numeric type expected by the shader.
+    ///
+    /// - `location`: The texture's location.
+    /// - `expected_type`: The expected numeric type.
+    /// - `provided_type`: The provided numeric type.
+    #[error(
+        "Shader requires numeric type {expected_type:?} at {location:?}, but instead got {provided_type:?}."
+    )]
+    WrongNumericType {
+        location: Location,
+        expected_type: NumericType,
+        provided_type: NumericType,
+    },
+
+    /// Occurs when the view type of a texture at a specific location does not match the shader's.
+    ///
+    /// - `location`: The texture's location.
+    /// - `expected_type`: The expected view type.
+    /// - `provided_type`: The provided view type.
+    #[error(
+        "Shader requires view type {expected_type:?} at {location:?}, but got {provided_type:?}."
+    )]
+    WrongViewType {
+        location: Location,
+        expected_type: ImageViewType,
+        provided_type: ImageViewType,
+    },
+}
+
+#[derive(Clone)]
+pub struct GraphicsInterface {
+    settings: Arc<RwLock<Graphics>>,
+    settings_channels: (Sender<Graphics>, Receiver<Graphics>),
+
+    // Gets written to in swapchain.rs
+    available_present_modes: Arc<RwLock<Vec<PresentMode>>>,
+}
+
+impl let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes> for GraphicsInterface {
     fn load_material<V: let_engine_core::resources::model::Vertex>(
         &self,
         material: let_engine_core::resources::material::Material,
     ) -> Result<GpuMaterial> {
-        let shaders =
-            unsafe { VulkanGraphicsShaders::from_bytes(material.graphics_shaders, self)? };
+        let shaders = unsafe { VulkanGraphicsShaders::from_bytes(material.graphics_shaders)? };
 
         GpuMaterial::new::<V>(material.settings, shaders).context("hello")
     }
@@ -359,31 +389,29 @@ impl let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes> for Grap
         &self,
         buffer: let_engine_core::resources::buffer::Buffer<B>,
     ) -> Result<GpuBuffer<B>> {
-        GpuBuffer::new(buffer, self)
+        GpuBuffer::new(buffer).context("failed to load buffer")
     }
 
     fn load_model<V: let_engine_core::resources::model::Vertex>(
         &self,
         model: let_engine_core::resources::model::Model<V>,
     ) -> Result<GpuModel<V>> {
-        GpuModel::new(model, self).context("failed to load model")
+        GpuModel::new(&model).context("failed to load model")
     }
 
     fn load_texture(
         &self,
         texture: let_engine_core::resources::texture::Texture,
     ) -> Result<GpuTexture> {
-        GpuTexture::new(&texture, self).context("failed to load texture")
+        GpuTexture::new(&texture).context("failed to load texture")
     }
 }
 
 impl GraphicsInterface {
-    fn new(settings: Graphics, handle: &impl HasDisplayHandle) -> Self {
-        let vulkan = Vulkan::init(handle).unwrap(); // TODO
-
+    fn new(settings: Graphics) -> Self {
         Self {
-            vulkan,
             settings: Arc::new(RwLock::new(settings)),
+            settings_channels: bounded(3),
             available_present_modes: Arc::new(RwLock::new(vec![])),
         }
     }
@@ -393,9 +421,14 @@ impl GraphicsInterface {
         *self.settings.read()
     }
 
+    fn send_settings(&self, settings: Graphics) {
+        let _ = self.settings_channels.0.try_send(settings);
+    }
+
     /// Sets the settings of this graphics backend
     pub fn set_settings(&self, settings: Graphics) {
         *self.settings.write() = settings;
+        self.send_settings(settings);
     }
 
     /// Returns the current present mode of the game.
@@ -411,7 +444,9 @@ impl GraphicsInterface {
     /// Sets the present mode of the graphics backend. Returns an error in case the present mode is not supported.
     pub fn set_present_mode(&self, present_mode: PresentMode) -> Result<()> {
         if self.available_present_modes.read().contains(&present_mode) {
-            self.settings.write().present_mode = present_mode;
+            let mut settings = self.settings.write();
+            settings.present_mode = present_mode;
+            self.send_settings(*settings);
         } else {
             return Err(anyhow!("Present mode not supported."));
         };
@@ -426,7 +461,9 @@ impl GraphicsInterface {
 
     /// Sets the clear color of the window.
     pub fn set_clear_color(&self, clear_color: Color) {
-        self.settings.write().clear_color = clear_color;
+        let mut settings = self.settings.write();
+        settings.clear_color = clear_color;
+        self.send_settings(*settings);
     }
 
     // /// Sets the framerate limit as waiting time between frames.
@@ -452,28 +489,79 @@ impl GraphicsInterface {
     // }
 }
 
-/// Errors that originate from Vulkan.
+/// Errors that originate from Vulkan and the backend is not responsible for.
 #[derive(Error, Debug)]
 pub enum VulkanError {
-    #[error("The swapchain is out of date and needs to be updated.")]
-    SwapchainOutOfDate,
-    #[error("A Validated error: {0}")]
-    Validated(VulkanoError),
-    #[error("An unexpected error with the shaders occured.")]
-    ShaderError,
+    /// Returns when an operation is not possible because there is not enough memory left.
+    #[error("Not enough memory for this operation.")]
+    OutOfHostMemory,
+
+    /// Returns when there is not enough VRAM for a graphics operation.
+    #[error("Not enough VRAM for this operation.")]
+    OutOfDeviceMemory,
+
+    /// The GPU device was lost, likely to a crash, driver reset or system instability.
+    ///
+    /// This might occur sometimes
+    #[error("Lost access to the graphics device.")]
+    DeviceLost,
+
+    /// Your application has breached the boundaries of the amount of graphical objects
+    /// it can render.
+    #[error("Too many graphical objects to draw.")]
+    TooManyObjects,
+
+    /// Returns when the window and with it the surface unexpectedly gets closed.
+    #[error("The window to present to has been lost.")]
+    SurfaceLost,
+
+    /// An unexpected error that might occur.
     #[error("An unexpected error occured: {0}")]
-    Other(anyhow::Error),
+    Other(VulkanoError),
 }
 
-impl From<Validated<VulkanoError>> for VulkanError {
-    fn from(value: Validated<VulkanoError>) -> Self {
-        Self::Validated(value.unwrap())
+impl From<AllocateBufferError> for VulkanError {
+    fn from(value: AllocateBufferError) -> Self {
+        match value {
+            AllocateBufferError::CreateBuffer(e) => e.into(),
+            AllocateBufferError::BindMemory(e) => e.into(),
+            AllocateBufferError::AllocateMemory(e) => {
+                if let MemoryAllocatorError::AllocateDeviceMemory(e) = e {
+                    e.unwrap().into()
+                } else {
+                    VulkanError::Other(vulkano::VulkanError::Unknown)
+                }
+            }
+        }
     }
 }
 
-impl From<Validated<VulkanoError>> for ShaderError {
-    fn from(value: Validated<VulkanoError>) -> Self {
-        Self::Other(value.into())
+impl From<AllocateImageError> for VulkanError {
+    fn from(value: AllocateImageError) -> Self {
+        match value {
+            AllocateImageError::CreateImage(e) => e.into(),
+            AllocateImageError::BindMemory(e) => e.into(),
+            AllocateImageError::AllocateMemory(e) => {
+                if let MemoryAllocatorError::AllocateDeviceMemory(e) = e {
+                    e.unwrap().into()
+                } else {
+                    VulkanError::Other(vulkano::VulkanError::Unknown)
+                }
+            }
+        }
+    }
+}
+
+impl From<VulkanoError> for VulkanError {
+    fn from(value: VulkanoError) -> Self {
+        match value {
+            VulkanoError::OutOfHostMemory => Self::OutOfHostMemory,
+            VulkanoError::OutOfDeviceMemory => Self::OutOfDeviceMemory,
+            VulkanoError::DeviceLost => Self::DeviceLost,
+            VulkanoError::TooManyObjects => Self::TooManyObjects,
+            VulkanoError::SurfaceLost => Self::SurfaceLost,
+            e => Self::Other(e),
+        }
     }
 }
 
@@ -483,22 +571,20 @@ impl From<SpirvBytesNotMultipleOf4> for ShaderError {
     }
 }
 
-/// Engine wide Graphics settings.
-///
-/// By default the present mode is Fifo, because it's available on every device.
-///
-/// The framerate limit is `None`, so off.
-///
-/// Only alter settings after the game engine has been initialized. The initialisation of the game engine also
-/// initializes the settings.
+/// Backend wide Graphics settings.
 #[derive(Clone, Copy)]
 pub struct Graphics {
     /// An option that determines something called "VSync".
     pub present_mode: PresentMode,
+
     /// The clear color of the window.
     ///
     /// Replaces the background with this color each frame.
-    pub clear_color: Color,
+    pub clear_color: Color, // TODO
+
+    /// The amount of retries of creating a window surface to attempt before failing
+    /// to create the backend.
+    pub window_handle_retries: usize,
     // /// Time waited before each frame.
     // pub framerate_limit: Duration,
 }
@@ -515,17 +601,8 @@ impl Graphics {
         Self {
             present_mode: PresentMode::Fifo,
             clear_color: Color::BLACK,
+            window_handle_retries: 20,
         }
-    }
-
-    /// Returns the present mode of the game.
-    pub fn present_mode(&self) -> PresentMode {
-        self.present_mode
-    }
-
-    /// Returns the clear color of this window.
-    pub fn clear_color(&self) -> Color {
-        self.clear_color
     }
 }
 

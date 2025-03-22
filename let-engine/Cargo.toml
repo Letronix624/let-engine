@@ -13,7 +13,7 @@ license = { workspace = true }
 
 
 [package.metadata.docs.rs]
-features = ["egui"]
+# features = ["egui"]
 default-target = "x86_64-unknown-linux-gnu"
 
 [dependencies]
@@ -39,7 +39,8 @@ version = "0.6"
 optional = true
 
 [dependencies.vulkano]
-workspace = true
+# version = "0.35"
+git = "https://github.com/vulkano-rs/vulkano.git"
 optional = true
 
 [dependencies.winit]
@@ -50,9 +51,9 @@ optional = true
 workspace = true
 optional = true
 
-[dependencies.egui_winit_vulkano]
-workspace = true
-optional = true
+# [dependencies.egui_winit_vulkano]
+# workspace = true
+# optional = true
 
 [dependencies.glam]
 workspace = true
@@ -81,10 +82,10 @@ version = "0.10"
 optional = true
 
 [build-dependencies]
-shaderc = "0.8"
+shaderc = "0.9"
 
 [dev-dependencies]
-egui_demo_lib = "0.31"
+# egui_demo_lib = "0.31"
 simple_logger = "5.0"
 let-engine-widgets = { path = "../widgets" }
 
@@ -95,7 +96,7 @@ default = [
   "default_graphics_backend",
   "default_networking_backend",
 ]
-egui = ["dep:egui_winit_vulkano", "client"]
+# egui = ["dep:egui_winit_vulkano", "client"]
 client = ["dep:vulkano", "dep:winit", "dep:image"]
 default_audio_backend = ["dep:kira"]
 default_graphics_backend = ["dep:vulkano"]
@@ -114,3 +115,4 @@ bzip2 = ["asset-system/bzip2"]
 zstd = ["asset-system/zstd"]
 lzma = ["asset-system/lzma"]
 lz4 = ["asset-system/lz4"]
+

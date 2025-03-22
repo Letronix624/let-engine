@@ -17,7 +17,7 @@ fn main() {
 fn main() {
     // Log messages
 
-    use graphics::Graphics;
+    #[cfg(feature = "vulkan_debug")]
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .init()
@@ -27,15 +27,14 @@ fn main() {
 
     let window_builder = WindowBuilder::new().inner_size(uvec2(1280, 720));
     // Then you start the engine allowing you to load resources and layers.
-    let mut engine = Engine::<Game>::new(
-        EngineSettings::default()
-            .window(window_builder)
-            .graphics(Graphics {
+    let mut engine =
+        Engine::<Game>::new(EngineSettings::default().window(window_builder).graphics(
+            graphics::Graphics {
                 present_mode: graphics::PresentMode::Fifo,
                 ..Default::default()
-            }),
-    )
-    .unwrap();
+            },
+        ))
+        .unwrap();
 
     // Here it initializes the game struct to be used with the engine run method,
     // runs the game engine and makes a window.
@@ -65,18 +64,15 @@ impl Game {
         });
 
         // Loads a circle model into the engine.
-        let circle_model = GpuModel::new(make_circle!(20), &context.graphics).unwrap();
+        let circle_model = GpuModel::new(&make_circle!(20)).unwrap();
 
-        let default_material = GpuMaterial::new_default(&context.graphics).unwrap();
+        let default_material = GpuMaterial::new_default().unwrap();
 
-        let color_buffer = GpuBuffer::new(
-            Buffer::from_data(
-                buffer::BufferUsage::Uniform,
-                BufferAccess::Fixed,
-                Color::from_rgb(1.0, 0.3, 0.5),
-            ),
-            &context.graphics,
-        )
+        let color_buffer = GpuBuffer::new(Buffer::from_data(
+            buffer::BufferUsage::Uniform,
+            BufferAccess::Fixed,
+            Color::from_rgb(1.0, 0.3, 0.5),
+        ))
         .unwrap();
 
         let circle_appearance = AppearanceBuilder::<VulkanTypes>::default()
@@ -89,7 +85,7 @@ impl Game {
                     Descriptor::buffer(color_buffer.clone()),
                 ),
             ])
-            .build(&context.graphics)
+            .build()
             .unwrap();
 
         // Makes the circle in the middle.

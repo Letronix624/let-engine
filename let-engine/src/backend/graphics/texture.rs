@@ -1,6 +1,5 @@
 //! Texture related options.
 
-use anyhow::anyhow;
 use let_engine_core::resources::{
     buffer::BufferAccess,
     texture::{AddressMode, Filter, LoadedTexture, Sampler, Texture, TextureSettings, ViewTypeDim},
@@ -12,9 +11,9 @@ use std::sync::Arc;
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, BufferImageCopy,
-        ClearColorImageInfo, CopyBufferToImageInfo, CopyImageInfo, CopyImageToBufferInfo,
-        PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, BufferImageCopy, ClearColorImageInfo, CopyBufferToImageInfo,
+        CopyImageInfo, CopyImageToBufferInfo, PrimaryAutoCommandBuffer,
+        PrimaryCommandBufferAbstract,
     },
     descriptor_set::layout::DescriptorType,
     image::{
@@ -24,7 +23,6 @@ use vulkano::{
     },
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
     sync::{GpuFuture, HostAccessError},
-    Validated,
 };
 
 use parking_lot::Mutex;
@@ -33,12 +31,6 @@ use parking_lot::Mutex;
 #[derive(Clone)]
 pub struct GpuTexture {
     inner_texture: Arc<Mutex<InnerTexture>>,
-
-    // References to resources needed to upload data to the GPU.
-    future: Arc<Mutex<Option<Box<dyn GpuFuture + Send>>>>,
-    queues: Arc<Queues>,
-    memory_allocator: Arc<StandardMemoryAllocator>,
-    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
 }
 
 pub(crate) struct InnerTexture {
@@ -77,8 +69,8 @@ impl InnerTexture {
 }
 
 impl GpuTexture {
-    pub fn new(texture: &Texture, interface: &GraphicsInterface) -> Result<Self, GpuTextureError> {
-        let vulkan = interface.vulkan.clone();
+    pub fn new(texture: &Texture) -> Result<Self, GpuTextureError> {
+        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
 
         let settings = texture.settings();
 
@@ -92,7 +84,7 @@ impl GpuTexture {
         let access = &settings.access_pattern;
 
         let src_buffer =
-            Self::create_src_buffer(vulkan.memory_allocator.clone(), settings, dimensions)?;
+            Self::create_src_buffer(vulkan.memory_allocator.clone(), settings, dimensions);
 
         // Write texture data into GPU buffer
         src_buffer.write().unwrap().copy_from_slice(texture.data());
@@ -109,19 +101,19 @@ impl GpuTexture {
             vulkan.queues.transfer_id(),
             vulkano::command_buffer::CommandBufferUsage::MultipleSubmit,
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))?;
+        .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?;
 
         write
-            .copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
+            .copy_buffer_to_image(CopyBufferToImageInfo::new(
                 src_buffer.clone(),
                 image.clone(),
             ))
-            .map_err(|e| GpuTextureError::Other(e.into()))?;
+            .unwrap();
 
         // Move buffer to image
         let write = write
             .build()
-            .map_err(|e| GpuTextureError::Other(e.into()))?;
+            .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?;
 
         {
             let mut vulkan_future = vulkan.future.lock();
@@ -130,9 +122,9 @@ impl GpuTexture {
             let command_buffer_future = write
                 .clone()
                 .execute(vulkan.queues.get_transfer().clone())
-                .map_err(|e| GpuTextureError::Other(e.into()))?
+                .unwrap()
                 .then_signal_semaphore_and_flush()
-                .map_err(|e| GpuTextureError::Other(e.into()))?
+                .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?
                 .boxed_send();
 
             if let Some(future) = vulkan_future.take() {
@@ -159,13 +151,7 @@ impl GpuTexture {
             },
         }));
 
-        Ok(Self {
-            inner_texture,
-            future: vulkan.future.clone(),
-            queues: vulkan.queues.clone(),
-            memory_allocator: vulkan.memory_allocator.clone(),
-            command_buffer_allocator: vulkan.command_buffer_allocator.clone(),
-        })
+        Ok(Self { inner_texture })
     }
 
     /// Creates a new image that can only be accessed on the GPU.
@@ -174,16 +160,12 @@ impl GpuTexture {
     pub fn new_gpu_only(
         dimensions: ViewTypeDim,
         mut settings: TextureSettings,
-        interface: &GraphicsInterface,
     ) -> Result<Self, GpuTextureError> {
-        let vulkan = &interface.vulkan;
+        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
 
         settings.access_pattern = BufferAccess::Fixed;
 
-        let future = vulkan.future.clone();
-        let queues = vulkan.queues.clone();
         let memory_allocator = vulkan.memory_allocator.clone();
-        let command_buffer_allocator = vulkan.command_buffer_allocator.clone();
 
         let format = format_to_vulkano(&settings.format);
 
@@ -201,7 +183,7 @@ impl GpuTexture {
             },
             AllocationCreateInfo::default(),
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))?;
+        .unwrap(); // TODO
 
         let view = Self::create_image_view(image, &dimensions)?;
 
@@ -213,10 +195,6 @@ impl GpuTexture {
                 view,
                 write: None,
             })),
-            future,
-            queues,
-            memory_allocator,
-            command_buffer_allocator,
         })
     }
 
@@ -245,11 +223,7 @@ impl GpuTexture {
         memory_allocator: Arc<StandardMemoryAllocator>,
         settings: &TextureSettings,
         dimensions: &ViewTypeDim,
-    ) -> Result<Subbuffer<[u8]>, GpuTextureError> {
-        // let access_pattern = match settings.access_pattern {
-        //     BufferAccess::Fixed TODO: Implement
-        // };
-
+    ) -> Subbuffer<[u8]> {
         Buffer::new_slice(
             memory_allocator,
             BufferCreateInfo {
@@ -263,8 +237,7 @@ impl GpuTexture {
             },
             Texture::calculate_buffer_size(dimensions, settings) as u64,
         )
-        .map_err(Validated::unwrap)
-        .map_err(|e| GpuTextureError::Other(e.into()))
+        .unwrap() // TODO
     }
 
     fn image_type(dimensions: &ViewTypeDim) -> ImageType {
@@ -302,7 +275,7 @@ impl GpuTexture {
                 ..Default::default()
             },
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))
+        .map_err(|e| GpuTextureError::Other(e.unwrap().into()))
     }
 
     fn create_staging_image(
@@ -327,7 +300,7 @@ impl GpuTexture {
                 ..AllocationCreateInfo::default()
             },
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))
+        .map_err(|e| GpuTextureError::Other(e.unwrap().into()))
     }
 
     fn create_image_view(
@@ -343,7 +316,7 @@ impl GpuTexture {
                 ..ImageViewCreateInfo::from_image(&image)
             },
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))
+        .map_err(|e| GpuTextureError::Other(e.unwrap().into()))
     }
 }
 
@@ -380,6 +353,8 @@ impl LoadedTexture for GpuTexture {
     fn resize(&self, new_dimensions: ViewTypeDim) -> anyhow::Result<(), Self::Error> {
         let mut inner = self.inner_texture.lock();
 
+        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
+
         if image_view_type_to_vulkano(&new_dimensions)
             != image_view_type_to_vulkano(&inner.dimensions)
         {
@@ -399,7 +374,7 @@ impl LoadedTexture for GpuTexture {
 
         // Create staging image
         let staging_image = Self::create_staging_image(
-            self.memory_allocator.clone(),
+            vulkan.memory_allocator.clone(),
             format,
             &new_dimensions,
             settings.mip_levels,
@@ -407,29 +382,25 @@ impl LoadedTexture for GpuTexture {
 
         // Create new buffer and image
         let new_buffer =
-            Self::create_src_buffer(self.memory_allocator.clone(), settings, &new_dimensions)?;
+            Self::create_src_buffer(vulkan.memory_allocator.clone(), settings, &new_dimensions);
         let new_image = Self::create_image(
-            self.memory_allocator.clone(),
+            vulkan.memory_allocator.clone(),
             format,
             &new_dimensions,
             settings.mip_levels,
         )?;
 
-        let mut vulkan_future = self.future.lock();
+        let mut vulkan_future = vulkan.future.lock();
 
-        let Some(future) = vulkan_future.take() else {
-            return Err(GpuTextureError::Other(anyhow!(
-                "Unexpected missing future."
-            )));
-        };
+        let future = vulkan_future.take().unwrap();
 
         // Create command buffer and execute
         let mut command_buffer = AutoCommandBufferBuilder::primary(
-            self.command_buffer_allocator.clone(),
-            self.queues.transfer_id(),
+            vulkan.command_buffer_allocator.clone(),
+            vulkan.queues.transfer_id(),
             vulkano::command_buffer::CommandBufferUsage::OneTimeSubmit,
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))?;
+        .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?;
 
         let extent = inner.dimensions.extent();
 
@@ -443,42 +414,39 @@ impl LoadedTexture for GpuTexture {
 
         // Clear image, copy old buffer to new staging image, staging image to new buffer and staging image to image.
         command_buffer
-            .clear_color_image(ClearColorImageInfo::image(staging_image.clone()))
-            .map_err(|e| GpuTextureError::Other(e.into()))?
+            .clear_color_image(ClearColorImageInfo::new(staging_image.clone()))
+            .unwrap()
             .copy_buffer_to_image(CopyBufferToImageInfo {
                 regions: smallvec![region],
-                ..CopyBufferToImageInfo::buffer_image(
+                ..CopyBufferToImageInfo::new(
                     inner.staging.as_ref().unwrap().clone(),
                     staging_image.clone(),
                 )
             })
-            .map_err(|e| GpuTextureError::Other(e.into()))?
-            .copy_image_to_buffer(CopyImageToBufferInfo::image_buffer(
+            .unwrap()
+            .copy_image_to_buffer(CopyImageToBufferInfo::new(
                 staging_image.clone(),
                 new_buffer.clone(),
             ))
-            .map_err(|e| GpuTextureError::Other(e.into()))?
-            .copy_image(CopyImageInfo::images(
-                staging_image.clone(),
-                new_image.clone(),
-            ))
-            .map_err(|e| GpuTextureError::Other(e.into()))?;
+            .unwrap()
+            .copy_image(CopyImageInfo::new(staging_image.clone(), new_image.clone()))
+            .unwrap();
 
         let command_buffer = command_buffer
             .build()
-            .map_err(|e| GpuTextureError::Other(e.into()))?;
+            .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?;
 
         let future = future
-            .then_execute(self.queues.get_transfer().clone(), command_buffer)
-            .map_err(|e| GpuTextureError::Other(e.into()))?
+            .then_execute(vulkan.queues.get_transfer().clone(), command_buffer)
+            .unwrap()
             .boxed_send();
 
         let mut write = AutoCommandBufferBuilder::primary(
-            self.command_buffer_allocator.clone(),
-            self.queues.transfer_id(),
+            vulkan.command_buffer_allocator.clone(),
+            vulkan.queues.transfer_id(),
             vulkano::command_buffer::CommandBufferUsage::MultipleSubmit,
         )
-        .map_err(|e| GpuTextureError::Other(e.into()))?;
+        .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?;
 
         *vulkan_future = Some(future);
 
@@ -486,17 +454,17 @@ impl LoadedTexture for GpuTexture {
 
         // Create new command buffer for updating the texture.
         write
-            .copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
+            .copy_buffer_to_image(CopyBufferToImageInfo::new(
                 new_buffer.clone(),
                 new_image.clone(),
             ))
-            .map_err(|e| GpuTextureError::Other(e.into()))?;
+            .unwrap();
 
         let view = Self::create_image_view(new_image, &new_dimensions)?;
 
         let write = write
             .build()
-            .map_err(|e| GpuTextureError::Other(e.into()))?;
+            .map_err(|e| GpuTextureError::Other(e.unwrap().into()))?;
 
         inner.staging = Some(new_buffer);
         inner.dimensions = new_dimensions;
@@ -528,15 +496,17 @@ impl LoadedTexture for GpuTexture {
             f(&mut guard);
         }
 
-        let mut vulkan_future = self.future.lock();
+        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
+
+        let mut vulkan_future = vulkan.future.lock();
 
         if let Some(future) = vulkan_future.take() {
             let future = future
                 .then_execute(
-                    self.queues.get_transfer().clone(),
+                    vulkan.queues.get_transfer().clone(),
                     inner.write.as_ref().unwrap().clone(),
                 )
-                .map_err(|e| GpuTextureError::Other(e.into()))?
+                .unwrap()
                 .boxed_send();
             *vulkan_future = Some(future);
         };
@@ -580,14 +550,24 @@ impl LoadedTexture for GpuTexture {
 
 use thiserror::Error;
 
-use super::{format_to_vulkano, vulkan::Queues, GraphicsInterface};
+use super::{format_to_vulkano, vulkan::VK, VulkanError};
 
 /// Errors that occur from the GPU texture.
 #[derive(Error, Debug)]
 pub enum GpuTextureError {
+    /// Returns when attempting to create a texture,
+    /// but the engine has not been started with [`Engine::start`](crate::Engine::start),
+    /// or the backend has closed down.
+    #[error("Can not create texture: Engine not initialized.")]
+    BackendNotInitialized,
+
     /// When resizing the wrong view type format was used.
     #[error("Wrong view type used. Can not resize from {0:?} to {1:?}.")]
     InvalidViewType(ImageViewType, ImageViewType),
+
+    /// Returns when the used format is not supported for use on the device.
+    #[error("This format is not supported on your device.")]
+    FormatNotSupported,
 
     /// Returns when the access operation is not supported with the currently set access setting.
     #[error("Requested access operation not possible with current access setting: {0:?}")]
@@ -597,9 +577,9 @@ pub enum GpuTextureError {
     #[error("{0}")]
     HostAccess(HostAccessError),
 
-    /// If the texture for some reason can not be made.
+    /// If the texture for some other reason can not be made.
     #[error("There was an error loading this texture: {0}")]
-    Other(anyhow::Error),
+    Other(VulkanError),
 }
 
 fn sampler_to_vulkano(sampler: &Sampler, format_type: &SampledFormatType) -> SamplerCreateInfo {

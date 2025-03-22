@@ -3,8 +3,8 @@ use let_engine_core::backend::Backends;
 #[cfg(feature = "default_graphics_backend")]
 pub mod graphics;
 
-#[cfg(feature = "default_networking_backend")]
-pub mod networking;
+// #[cfg(feature = "default_networking_backend")]
+// pub mod networking;
 
 #[cfg(feature = "default_audio_backend")]
 pub mod audio;
@@ -22,5 +22,5 @@ impl Backends for DefaultBackends {
 
     // type Audio = ();
 
-    type Networking = ();
+    // type Networking = ();
 }

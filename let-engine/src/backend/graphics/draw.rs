@@ -1,4 +1,5 @@
 use anyhow::Result;
+use crossbeam::channel::Receiver;
 use smallvec::SmallVec;
 use std::{any::Any, collections::BTreeMap, sync::Arc};
 use vulkano::{
@@ -7,9 +8,8 @@ use vulkano::{
         BufferUsage,
     },
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferInheritanceInfo, CommandBufferUsage,
-        PrimaryAutoCommandBuffer, RenderPassBeginInfo, SecondaryAutoCommandBuffer,
-        SubpassBeginInfo, SubpassContents,
+        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+        RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
     },
     descriptor_set::{DescriptorSet, WriteDescriptorSet},
     device::Queue,
@@ -41,7 +41,7 @@ use glam::{
 };
 
 use super::{
-    vulkan::{swapchain::create_swapchain_and_images, window_size_dependent_setup, Vulkan},
+    vulkan::{swapchain::create_swapchain_and_images, window_size_dependent_setup, Vulkan, VK},
     Graphics, GraphicsInterface, VulkanError, VulkanTypes,
 };
 
@@ -51,9 +51,10 @@ pub struct Draw {
     subpass: Subpass,
     framebuffers: Vec<Arc<Framebuffer>>,
     // previous_frame_end: Option<Box<dyn GpuFuture>>,
-    interface: GraphicsInterface,
     recreate_swapchain: bool,
-    graphics: Graphics,
+
+    settings_channel: Receiver<Graphics>,
+    settings: Graphics,
     dimensions: UVec2,
 
     drawing_queue: Arc<Queue>,
@@ -68,7 +69,7 @@ impl Draw {
         interface: GraphicsInterface,
         window: Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
     ) -> Result<Self> {
-        let vulkan = &interface.vulkan;
+        let vulkan = VK.get().unwrap();
 
         let surface = Surface::from_window(vulkan.instance.clone(), window)?;
 
@@ -110,7 +111,8 @@ impl Draw {
 
         let dimensions = UVec2::ZERO;
 
-        let graphics = interface.settings();
+        let settings = interface.settings();
+        let settings_channel = interface.settings_channels.1.clone();
 
         let uniform_buffer_allocator: SubbufferAllocator = SubbufferAllocator::new(
             vulkan.memory_allocator.clone(),
@@ -130,39 +132,32 @@ impl Draw {
             recreate_swapchain,
             dimensions,
             viewport,
-            graphics,
-            interface,
+            settings,
+            settings_channel,
             uniform_buffer_allocator,
         })
-    }
-
-    fn vulkan(&self) -> &Vulkan {
-        &self.interface.vulkan
     }
 
     // fn window(&self) -> Window
 
     /// Recreates the swapchain in case it is out of date if someone for example changed the scene size or window dimensions.
-    fn recreate_swapchain(&mut self) -> Result<()> {
+    fn recreate_swapchain(&mut self) -> Result<(), VulkanError> {
         if self.recreate_swapchain {
-            let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
-                image_extent: self.dimensions.into(),
-                present_mode: self.graphics.present_mode().into(),
-                ..self.swapchain.create_info()
-            }) {
-                Ok(r) => r,
-                Err(e) => {
-                    return Err(e.into());
-                }
-            };
+            let (new_swapchain, new_images) = self
+                .swapchain
+                .recreate(SwapchainCreateInfo {
+                    image_extent: self.dimensions.into(),
+                    present_mode: self.settings.present_mode.into(),
+                    ..self.swapchain.create_info()
+                })
+                .map_err(|e| VulkanError::from(e.unwrap()))?;
 
             self.swapchain = new_swapchain;
             self.framebuffers = window_size_dependent_setup(
                 &new_images,
                 self.subpass.render_pass().clone(),
                 &mut self.viewport,
-            )
-            .map_err(VulkanError::Other)?;
+            )?;
             // vulkan.pipelines.clear();
             self.recreate_swapchain = false;
         };
@@ -173,53 +168,33 @@ impl Draw {
     fn make_command_buffer(
         &self,
         image_num: usize,
-    ) -> Result<
-        (
-            AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-            AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
-        ),
-        VulkanError,
-    > {
-        let vulkan = self.vulkan();
-
+        vulkan: &Vulkan,
+    ) -> Result<AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>, VulkanError> {
         let mut builder = AutoCommandBufferBuilder::primary(
             vulkan.command_buffer_allocator.clone(),
             self.drawing_queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
-        .map_err(Validated::unwrap)
-        .map_err(VulkanError::Validated)?;
+        .map_err(|e| VulkanError::from(e.unwrap()))?;
 
         // Makes a commandbuffer that takes multiple secondary buffers.
         builder
             .begin_render_pass(
                 RenderPassBeginInfo {
-                    clear_values: vec![Some(self.graphics.clear_color.rgba().into())],
+                    clear_values: vec![Some(self.settings.clear_color.rgba().into())],
+                    render_pass: self.subpass.render_pass().clone(),
                     ..RenderPassBeginInfo::framebuffer(self.framebuffers[image_num].clone())
                 },
                 SubpassBeginInfo {
-                    contents: SubpassContents::SecondaryCommandBuffers,
+                    contents: SubpassContents::Inline,
                     ..Default::default()
                 },
             )
-            .map_err(|e| VulkanError::Other(e.into()))?;
-
-        let mut secondary_builder = AutoCommandBufferBuilder::secondary(
-            vulkan.command_buffer_allocator.clone(),
-            self.drawing_queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
-            CommandBufferInheritanceInfo {
-                render_pass: Some(self.subpass.clone().into()),
-                ..Default::default()
-            },
-        )
-        .map_err(Validated::unwrap)
-        .map_err(VulkanError::Validated)?;
-        secondary_builder
+            .unwrap()
             .set_viewport(0, [self.viewport.clone()].into_iter().collect())
-            .map_err(|e| VulkanError::Other(e.into()))?;
+            .unwrap();
 
-        Ok((builder, secondary_builder))
+        Ok(builder)
     }
 
     fn make_mvp_matrix(
@@ -280,11 +255,10 @@ impl Draw {
     /// Draws the Game Scene on the given command buffer.
     fn draw_scene(
         &self,
-        command_buffer: &mut AutoCommandBufferBuilder<SecondaryAutoCommandBuffer>,
+        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
         scene: &Scene<VulkanTypes>,
-    ) -> Result<()> {
-        let vulkan = self.vulkan();
-
+        vulkan: &Vulkan,
+    ) -> Result<(), VulkanError> {
         let views: Vec<Arc<LayerView<VulkanTypes>>> = {
             let view = scene.views().lock();
             view.iter().cloned().collect()
@@ -341,14 +315,22 @@ impl Draw {
 
                 let mvp_subbuffer = (!mvp_matrices.is_empty()).then_some({
                     // MVP matrix for the object
-                    let mvp_subbuffer = self
+                    let mvp_subbuffer = match self
                         .uniform_buffer_allocator
                         .allocate_slice(mvp_matrices.len() as DeviceSize)
-                        .map_err(|error| VulkanError::Other(error.into()))?;
+                    {
+                        Ok(subbuffer) => subbuffer,
+                        Err(
+                            vulkano::memory::allocator::MemoryAllocatorError::AllocateDeviceMemory(
+                                e,
+                            ),
+                        ) => return Err(VulkanError::from(e.unwrap())),
+                        _ => unreachable!(),
+                    };
 
                     mvp_subbuffer
                         .write()
-                        .map_err(|error| VulkanError::Other(error.into()))?
+                        .unwrap()
                         .copy_from_slice(&mvp_matrices);
 
                     mvp_subbuffer
@@ -385,7 +367,8 @@ impl Draw {
                                     let sampler = Sampler::new(
                                         vulkan.device.clone(),
                                         inner_texture.vk_sampler(),
-                                    )?;
+                                    )
+                                    .map_err(|e| VulkanError::from(e.unwrap()))?;
 
                                     writes.push(WriteDescriptorSet::image_view_sampler(
                                         binding,
@@ -410,12 +393,15 @@ impl Draw {
                             };
                         }
 
-                        descriptors.push(DescriptorSet::new(
-                            vulkan.descriptor_set_allocator.clone(),
-                            set_layouts[i].clone(),
-                            writes,
-                            [],
-                        )?);
+                        descriptors.push(
+                            DescriptorSet::new(
+                                vulkan.descriptor_set_allocator.clone(),
+                                set_layouts[i].clone(),
+                                writes,
+                                [],
+                            )
+                            .map_err(|e| VulkanError::from(e.unwrap()))?,
+                        );
                     }
                 }
 
@@ -424,33 +410,31 @@ impl Draw {
 
                 let command_buffer = command_buffer
                     .set_viewport(0, [self.viewport.clone()].into_iter().collect())
-                    .map_err(|e| VulkanError::Other(e.into()))?
+                    .unwrap()
                     .bind_pipeline_graphics(graphics_pipeline.clone())
-                    .map_err(|e| VulkanError::Other(e.into()))?
+                    .unwrap()
                     .bind_descriptor_sets(
                         vulkano::pipeline::PipelineBindPoint::Graphics,
                         graphics_pipeline.layout().clone(),
                         0,
                         descriptors,
                     )
-                    .map_err(|e| VulkanError::Other(e.into()))?
+                    .unwrap()
                     .bind_vertex_buffers(0, model.vertex_buffer().clone())
-                    .map_err(|e| VulkanError::Other(e.into()))?;
+                    .unwrap();
 
                 // Draw object
                 if let Some(index_subbuffer) = model.index_buffer().cloned() {
                     unsafe {
                         command_buffer
                             .bind_index_buffer(index_subbuffer)
-                            .map_err(|e| VulkanError::Other(e.into()))?
+                            .unwrap()
                             .draw_indexed(model.index_len(), 1, 0, 0, 0)
-                            .map_err(|e| VulkanError::Other(e.into()))?;
+                            .unwrap();
                     }
                 } else {
                     unsafe {
-                        command_buffer
-                            .draw(model.vertex_len(), 1, 0, 0)
-                            .map_err(|e| VulkanError::Other(e.into()))?;
+                        command_buffer.draw(model.vertex_len(), 1, 0, 0).unwrap();
                     }
                 };
             }
@@ -464,19 +448,18 @@ impl Draw {
         command_buffer: Arc<PrimaryAutoCommandBuffer>,
         acquire_future: SwapchainAcquireFuture,
         image_num: u32,
+        vulkan: &Vulkan,
     ) -> Result<(), VulkanError> {
-        let vulkan = &self.interface.vulkan;
-
         let future = if let Some(future) = vulkan.future.lock().take() {
             future.join(acquire_future).boxed_send()
         } else {
             acquire_future.boxed_send()
         }
         .then_execute(self.drawing_queue.clone(), command_buffer)
-        .map_err(|e| VulkanError::Other(e.into()))?
+        .unwrap()
         .then_swapchain_present(
             self.drawing_queue.clone(),
-            SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_num),
+            SwapchainPresentInfo::new(self.swapchain.clone(), image_num),
         )
         .then_signal_fence_and_flush();
 
@@ -490,7 +473,7 @@ impl Draw {
             }
             Err(e) => {
                 *vulkan.future.lock() = Some(sync::now(vulkan.device.clone()).boxed_send());
-                return Err(VulkanError::Validated(e));
+                return Err(VulkanError::Other(e));
             }
         }
         Ok(())
@@ -502,12 +485,14 @@ impl Draw {
     }
 
     /// Redraws the scene.
-    pub fn redraw_event(
-        &mut self,
-        scene: &Scene<VulkanTypes>,
-        #[cfg(feature = "egui")] gui: &mut egui_winit_vulkano::Gui,
-    ) -> Result<(), VulkanError> {
-        if let Some(future) = self.vulkan().future.lock().as_mut() {
+    pub fn redraw_event(&mut self, scene: &Scene<VulkanTypes>) -> Result<(), VulkanError> {
+        let vulkan = VK.get().unwrap();
+
+        if let Ok(settings) = self.settings_channel.try_recv() {
+            self.settings = settings;
+        }
+
+        if let Some(future) = vulkan.future.lock().as_mut() {
             future.cleanup_finished();
         };
 
@@ -515,48 +500,34 @@ impl Draw {
             return Ok(());
         }
 
-        self.recreate_swapchain().map_err(VulkanError::Other)?;
+        let (image_num, suboptimal, acquire_future) = loop {
+            self.recreate_swapchain()?;
 
-        let (image_num, suboptimal, acquire_future) =
-            match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap) {
+            break match acquire_next_image(self.swapchain.clone(), None).map_err(Validated::unwrap)
+            {
                 Ok(r) => r,
                 Err(VulkanoError::OutOfDate) => {
                     self.recreate_swapchain = true;
-                    return Err(VulkanError::SwapchainOutOfDate);
+                    continue;
                 }
                 Err(e) => {
-                    return Err(VulkanError::Validated(e));
+                    return Err(e.into());
                 }
             };
+        };
 
         if suboptimal {
             self.recreate_swapchain = true;
         }
 
-        let (mut builder, mut secondary_builder) =
-            Self::make_command_buffer(self, image_num as usize)?;
+        let mut builder = self.make_command_buffer(image_num as usize, vulkan)?;
 
-        self.draw_scene(&mut secondary_builder, scene)
-            .map_err(VulkanError::Other)?;
+        self.draw_scene(&mut builder, scene, vulkan)?;
 
-        builder
-            .execute_commands(secondary_builder.build()?)
-            .map_err(|e| VulkanError::Other(e.into()))?;
+        builder.end_render_pass(Default::default()).unwrap();
+        let command_buffer = builder.build().map_err(|e| VulkanError::from(e.unwrap()))?;
 
-        #[cfg(feature = "egui")]
-        {
-            // Creates and draws the second command buffer in case of egui.
-            let cb = gui.draw_on_subpass_image(self.dimensions);
-            builder
-                .execute_commands(cb)
-                .map_err(|e| VulkanError::Other(e.into()))?;
-        }
-        builder
-            .end_render_pass(Default::default())
-            .map_err(|e| VulkanError::Other(e.into()))?;
-        let command_buffer = builder.build()?;
-
-        Self::execute_command_buffer(self, command_buffer, acquire_future, image_num)?;
+        self.execute_command_buffer(command_buffer, acquire_future, image_num, vulkan)?;
         Ok(())
     }
 }

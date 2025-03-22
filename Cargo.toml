@@ -22,6 +22,15 @@ lto = "fat"
 codegen-units = 1
 panic = "unwind"
 
+[profile.minimal]
+inherits = "release"
+
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+strip = "debuginfo"
+
 [workspace.dependencies]
 parking_lot = "0.12"
 foldhash = "0.1"
@@ -45,9 +54,3 @@ smol = "2.0"
 futures = "0.3"
 bytemuck = "1.21"
 
-[workspace.dependencies.vulkano]
-version = "0.35"
-# git = "https://github.com/vulkano-rs/vulkano.git"
-
-[workspace.dependencies.egui_winit_vulkano]
-version = "0.28"

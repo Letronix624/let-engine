@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    backend::graphics::{GraphicsInterface, Loaded},
+    backend::graphics::Loaded,
     resources::{buffer::Location, model::Vertex},
 };
 
@@ -92,10 +92,7 @@ impl<T: Loaded> AppearanceBuilder<T> {
     }
 
     /// Builds this struct into an `Appearance`.
-    pub fn build(
-        self,
-        interface: &impl GraphicsInterface<T>,
-    ) -> Result<Appearance<T>, AppearanceBuilderError<T>> {
+    pub fn build(self) -> Result<Appearance<T>, AppearanceBuilderError<T>> {
         let Some(material) = self.material else {
             return Err(AppearanceBuilderError::Uninitialized);
         };
@@ -130,8 +127,7 @@ impl<T: Loaded> AppearanceBuilder<T> {
         }
 
         // Validate backend
-        interface
-            .initialize_appearance(&material, &model, &self.descriptors)
+        T::initialize_appearance(&material, &model, &self.descriptors)
             .map_err(AppearanceBuilderError::<T>::InvalidCombination)?;
 
         Ok(Appearance {

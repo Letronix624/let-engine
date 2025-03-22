@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 
 pub mod graphics;
 
@@ -10,27 +10,27 @@ pub trait Backends {
 
     // type Audio: Backend;
 
-    type Networking: NetworkingBackend;
+    // type Networking: NetworkingBackend;
 }
 
-pub trait NetworkingBackend {
-    type Msg: for<'de> NetworkingMessages<'de>;
-    type Settings: Default + Clone;
-}
+// pub trait NetworkingBackend {
+//     type Msg: for<'de> NetworkingMessages<'de>;
+//     type Settings: Default + Clone;
+// }
 
-pub trait NetworkingMessages<'de>:
-    Send + Sync + Serialize + Deserialize<'de> + Clone + 'static
-{
-    type Tcp;
-    type Udp;
-}
+// pub trait NetworkingMessages<'de>:
+//     Send + Sync + Serialize + Deserialize<'de> + Clone + 'static
+// {
+//     type Tcp;
+//     type Udp;
+// }
 
-impl NetworkingBackend for () {
-    type Msg = ();
-    type Settings = ();
-}
+// impl NetworkingBackend for () {
+//     type Msg = ();
+//     type Settings = ();
+// }
 
-impl NetworkingMessages<'_> for () {
-    type Tcp = ();
-    type Udp = ();
-}
+// impl NetworkingMessages<'_> for () {
+//     type Tcp = ();
+//     type Udp = ();
+// }

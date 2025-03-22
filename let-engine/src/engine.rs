@@ -1,7 +1,4 @@
-use crate::backend::networking::{self, GameClient, GameServer, RemoteMessage};
 use crate::backend::DefaultBackends;
-#[cfg(all(feature = "egui", feature = "client"))]
-use crate::egui_feature;
 use crate::input::Input;
 use crate::prelude::EngineSettings;
 use crate::tick_system::TickSystem;
@@ -10,7 +7,7 @@ use anyhow::Result;
 use atomic_float::AtomicF64;
 use glam::uvec2;
 use let_engine_core::backend::graphics::GraphicsBackend;
-use let_engine_core::backend::{Backends, NetworkingBackend};
+use let_engine_core::backend::Backends;
 use let_engine_core::objects::scenes::Scene;
 use parking_lot::{Condvar, Mutex};
 use winit::application::ApplicationHandler;
@@ -24,8 +21,6 @@ use self::events::ScrollDelta;
 use crate::window::Window;
 
 use std::cell::OnceCell;
-#[cfg(feature = "egui")]
-use std::cell::RefCell;
 use std::sync::atomic::AtomicBool;
 use std::{
     sync::{atomic::Ordering, Arc},
@@ -86,23 +81,14 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     #[cfg(feature = "client")]
     fn input(&mut self, context: &EngineContext<B>, event: events::InputEvent) {}
 
-    /// Egui events.
-    #[cfg(feature = "egui")]
-    fn egui(
-        &mut self,
-        engine_context: &EngineContext<B>,
-        egui_context: egui_winit_vulkano::egui::Context,
-    ) {
-    }
-
-    /// A network event coming from the server or client, receiving a user specified message format.
-    fn net_event(
-        &mut self,
-        context: &EngineContext<B>,
-        connection: networking::Connection,
-        message: RemoteMessage<<B::Networking as NetworkingBackend>::Msg>,
-    ) {
-    }
+    // /// A network event coming from the server or client, receiving a user specified message format.
+    // fn net_event(
+    //     &mut self,
+    //     context: &EngineContext<B>,
+    //     connection: networking::Connection,
+    //     message: RemoteMessage<<B::Networking as NetworkingBackend>::Msg>,
+    // ) {
+    // }
 
     /// Runs last after the game has been stopped using the context's stop method.
     fn end(&mut self, context: &EngineContext<B>) {}
@@ -119,16 +105,14 @@ where
 {
     context: EngineContext<B>,
 
-    #[cfg(feature = "egui")]
-    gui: RefCell<Option<egui_winit_vulkano::Gui>>,
     #[cfg(feature = "client")]
     event_loop: Option<winit::event_loop::EventLoop<()>>,
 
     #[cfg(feature = "client")]
     graphics_backend: B::Graphics,
 
-    server: Option<GameServer<B::Networking>>,
-    client: Option<GameClient<B::Networking>>,
+    // server: Option<GameServer<B::Networking>>,
+    // client: Option<GameClient<B::Networking>>,
     game: Option<Arc<smol::lock::Mutex<G>>>,
 
     settings: EngineSettings<B>,
@@ -140,34 +124,30 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
     ///
     /// This function can only be called one time. Attempting to make a second one of those will return an error.
-    pub fn new(settings: impl Into<settings::EngineSettings<B>>) -> Result<Self, EngineError> {
+    pub fn new(
+        settings: impl Into<settings::EngineSettings<B>>,
+    ) -> Result<Self, EngineError<<B::Graphics as GraphicsBackend>::CreateError>> {
         let settings: settings::EngineSettings<B> = settings.into();
 
         #[cfg(feature = "client")]
-        let event_loop = winit::event_loop::EventLoop::builder()
-            .build()
-            .map_err(|e| EngineError::Other(e.into()))?;
+        let event_loop = winit::event_loop::EventLoop::new().unwrap();
 
         #[cfg(feature = "client")]
-        let graphics_backend = B::Graphics::new(settings.graphics.clone(), &event_loop);
+        let graphics_backend = B::Graphics::new(settings.graphics.clone(), &event_loop)
+            .map_err(EngineError::GraphicsBackend)?;
 
         let context = EngineContext::new(
             graphics_backend.interface().clone(),
             settings.tick_system.clone(),
         );
 
-        // #[cfg(all(feature = "egui", feature = "client"))]
-        // let gui = egui::init(&draw, &event_loop);
-
         Ok(Self {
             context,
-            #[cfg(all(feature = "egui", feature = "client"))]
-            gui: RefCell::new(None),
             graphics_backend,
             #[cfg(feature = "client")]
             event_loop: Some(event_loop),
-            server: None,
-            client: None,
+            // server: None,
+            // client: None,
             game: None,
             settings,
         })
@@ -179,7 +159,7 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
         smol::block_on(async {
             let game = Arc::new(smol::lock::Mutex::new(game(&self.context)));
 
-            game.lock().await.start(&self.context).await;
+            game.lock().await.start(&self.context);
 
             let game_clone = game.clone();
             let context_clone = self.context.clone();
@@ -253,8 +233,7 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
                 if let Ok((connection, message)) = result {
                     game.lock()
                         .await
-                        .net_event(&self.context, connection, message)
-                        .await;
+                        .net_event(&self.context, connection, message);
                 }
             }
 
@@ -301,20 +280,6 @@ where
 
         self.graphics_backend.init_window(window);
 
-        #[cfg(feature = "egui")]
-        let mut gui = egui_feature::init(&self.draw, _event_loop);
-        #[cfg(feature = "egui")]
-        smol::block_on(async {
-            let mut context = egui_winit_vulkano::egui::Context::default();
-            gui.immediate_ui(|gui| context = gui.context());
-            game.lock().await.event(events::Event::Egui(context)).await;
-        });
-
-        #[cfg(feature = "egui")]
-        {
-            self.gui = RefCell::new(Some(gui));
-        }
-
         smol::block_on(async {
             game.lock().await.start(&self.context);
 
@@ -336,13 +301,6 @@ where
         event: winit::event::WindowEvent,
     ) {
         use winit::event::WindowEvent;
-
-        #[cfg(feature = "egui")]
-        let mut gui = self.gui.borrow_mut();
-        #[cfg(feature = "egui")]
-        if let Some(gui) = gui.as_mut() {
-            gui.update(&event);
-        }
 
         let Some(game) = self.game.clone() else {
             return;
@@ -404,12 +362,6 @@ where
                 MouseScrollDelta::PixelDelta(x) => ScrollDelta::PixelDelta(x),
             }),
             WindowEvent::RedrawRequested => {
-                // redraw
-                #[cfg(feature = "egui")]
-                let Some(gui) = gui.as_mut() else {
-                    unreachable!()
-                };
-
                 self.graphics_backend.update(&self.context.scene);
 
                 self.context.time.update();
@@ -433,46 +385,35 @@ where
 
         smol::block_on(async {
             if self.context.exiting() {
-                if let Some(server) = &mut self.server {
-                    server.stop().await.unwrap();
-                }
+                // if let Some(server) = &mut self.server {
+                //     server.stop().await.unwrap();
+                // }
                 event_loop.exit();
             }
         });
 
-        {
-            if let Some(server) = &mut self.server {
-                smol::block_on(async {
-                    let messages = server.receive_messages().await;
-                    for message in messages {
-                        game.lock()
-                            .await
-                            .net_event(&self.context, message.0, message.1);
-                    }
-                });
-            }
-            if let Some(client) = &mut self.client {
-                smol::block_on(async {
-                    let messages = client.receive_messages().await;
-                    for message in messages {
-                        game.lock()
-                            .await
-                            .net_event(&self.context, message.0, message.1);
-                    }
-                });
-            }
-        }
-
-        #[cfg(feature = "egui")]
-        {
-            if let Some(gui) = self.gui.borrow_mut().as_mut() {
-                let mut context = egui_winit_vulkano::egui::Context::default();
-                gui.immediate_ui(|gui| context = gui.context());
-                smol::block_on(async {
-                    game.lock().await.event(events::Event::Egui(context)).await;
-                });
-            };
-        }
+        // {
+        //     if let Some(server) = &mut self.server {
+        //         smol::block_on(async {
+        //             let messages = server.receive_messages().await;
+        //             for message in messages {
+        //                 game.lock()
+        //                     .await
+        //                     .net_event(&self.context, message.0, message.1);
+        //             }
+        //         });
+        //     }
+        //     if let Some(client) = &mut self.client {
+        //         smol::block_on(async {
+        //             let messages = client.receive_messages().await;
+        //             for message in messages {
+        //                 game.lock()
+        //                     .await
+        //                     .net_event(&self.context, message.0, message.1);
+        //             }
+        //         });
+        //     }
+        // }
 
         smol::block_on(async {
             game.lock().await.update(&self.context);
@@ -487,19 +428,19 @@ where
         let Some(game) = self.game.as_mut() else {
             return;
         };
-        {
-            // Gracefully shutdown both server and client if open.
-            if let Some(server) = &mut self.server {
-                smol::block_on(async {
-                    let _ = server.stop().await;
-                });
-            }
-            if let Some(client) = &mut self.client {
-                smol::block_on(async {
-                    let _ = client.disconnect().await;
-                });
-            }
-        }
+        // {
+        //     // Gracefully shutdown both server and client if open.
+        //     if let Some(server) = &mut self.server {
+        //         smol::block_on(async {
+        //             let _ = server.stop().await;
+        //         });
+        //     }
+        //     if let Some(client) = &mut self.client {
+        //         smol::block_on(async {
+        //             let _ = client.disconnect().await;
+        //         });
+        //     }
+        // }
         smol::block_on(async {
             game.lock().await.end(&self.context);
         });

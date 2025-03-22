@@ -17,6 +17,8 @@ use crate::{
 
 /// Definition for a graphics backend for the let-engine.
 pub trait GraphicsBackend {
+    type CreateError: std::error::Error + Send + Sync;
+
     /// Will be stored in the [`EngineContext`](crate::engine::EngineContext)
     /// to interface the backend from multiple threads.
     type Interface: GraphicsInterface<Self::LoadedTypes>;
@@ -27,7 +29,12 @@ pub trait GraphicsBackend {
     type LoadedTypes: Loaded;
 
     /// Constructor of the backend with required settings.
-    fn new(settings: Self::Settings, handle: impl HasDisplayHandle) -> Self;
+    fn new(
+        settings: Self::Settings,
+        handle: impl HasDisplayHandle,
+    ) -> Result<Self, Self::CreateError>
+    where
+        Self: Sized;
 
     /// Gives a window reference to the backend to draw to.
     fn init_window(
@@ -46,16 +53,6 @@ pub trait GraphicsBackend {
 }
 
 pub trait GraphicsInterface<T: Loaded>: Clone + Send + Sync {
-    /// Validates if the backend allows this combination of material, model and buffers.
-    ///
-    /// Returns a string with an error message of what went wrong in case it did.
-    fn initialize_appearance(
-        &self,
-        material: &T::Material,
-        model: &T::DrawableModel,
-        descriptors: &BTreeMap<Location, Descriptor<T>>,
-    ) -> Result<(), T::AppearanceCreationError>;
-
     fn load_material<V: Vertex>(&self, material: Material) -> Result<T::Material>;
     fn load_buffer<B: AnyBitPattern + Send + Sync>(
         &self,
@@ -66,15 +63,6 @@ pub trait GraphicsInterface<T: Loaded>: Clone + Send + Sync {
 }
 
 impl GraphicsInterface<()> for () {
-    fn initialize_appearance(
-        &self,
-        _material: &(),
-        _model: &(),
-        _descriptors: &BTreeMap<Location, Descriptor<()>>,
-    ) -> Result<(), ()> {
-        Ok(())
-    }
-
     fn load_material<V: Vertex>(&self, _material: Material) -> Result<()> {
         Ok(())
     }
@@ -111,6 +99,15 @@ pub trait Loaded: Clone + Default {
     /// Error returned when combination of model material and buffers do not work together.
     type AppearanceCreationError: std::fmt::Debug;
 
+    /// Validates if the backend allows this combination of material, model and buffers.
+    ///
+    /// Returns a string with an error message of what went wrong in case it did.
+    fn initialize_appearance(
+        material: &Self::Material,
+        model: &Self::DrawableModel,
+        descriptors: &BTreeMap<Location, Descriptor<Self>>,
+    ) -> Result<(), Self::AppearanceCreationError>;
+
     fn draw_buffer<B: AnyBitPattern + Send + Sync>(buffer: Self::Buffer<B>)
         -> Self::DrawableBuffer;
     fn draw_model<V: Vertex>(model: Self::Model<V>) -> Self::DrawableModel;
@@ -125,6 +122,14 @@ impl Loaded for () {
     type DrawableModel = ();
     type AppearanceCreationError = ();
 
+    fn initialize_appearance(
+        _material: &Self::Material,
+        _model: &Self::DrawableModel,
+        _descriptors: &BTreeMap<Location, Descriptor<Self>>,
+    ) -> Result<(), Self::AppearanceCreationError> {
+        Ok(())
+    }
+
     fn draw_buffer<B: AnyBitPattern + Send + Sync>(
         _buffer: Self::Buffer<B>,
     ) -> Self::DrawableBuffer {
@@ -134,12 +139,18 @@ impl Loaded for () {
 }
 
 impl GraphicsBackend for () {
+    type CreateError = std::io::Error;
     type Interface = ();
     type Settings = ();
 
     type LoadedTypes = ();
 
-    fn new(_settings: Self::Settings, _handle: impl HasDisplayHandle) -> Self {}
+    fn new(
+        _settings: Self::Settings,
+        _handle: impl HasDisplayHandle,
+    ) -> Result<Self, Self::CreateError> {
+        Ok(())
+    }
 
     fn init_window(
         &mut self,

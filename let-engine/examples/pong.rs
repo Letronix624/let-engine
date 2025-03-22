@@ -2,7 +2,7 @@ use graphics::{
     buffer::GpuBuffer,
     material::{GpuMaterial, VulkanGraphicsShaders},
     model::GpuModel,
-    GraphicsInterface, VulkanTypes,
+    VulkanTypes,
 };
 //#![windows_subsystem = "windows"]
 #[cfg(feature = "client")]
@@ -102,18 +102,16 @@ impl Game {
             root_layer,
             (Key::Character("w".into()), Key::Character("s".into())),
             -0.95,
-            &context.graphics,
         );
         // The right paddle controlled with J and K. Weird controls, but 60% keyboard friendly
         let right_paddle = Paddle::new(
             root_layer,
             (Key::Character("k".into()), Key::Character("j".into())),
             0.95,
-            &context.graphics,
         );
 
         // Spawns a ball in the middle.
-        let ball = Ball::new(root_layer, &root_view, &context.graphics);
+        let ball = Ball::new(root_layer, &root_view);
 
         let mut labelifier = Labelifier::new(&context.graphics).unwrap();
 
@@ -136,14 +134,9 @@ impl Game {
         .unwrap();
 
         // initialize this one to the ui
-        NewObject::new(
-            left_score_label
-                .appearance()
-                .build(&context.graphics)
-                .unwrap(),
-        )
-        .init(&ui_layer)
-        .unwrap();
+        NewObject::new(left_score_label.appearance().build().unwrap())
+            .init(&ui_layer)
+            .unwrap();
 
         // Making a default label for the right side.
         let right_score_label = Label::new(
@@ -158,14 +151,9 @@ impl Game {
         )
         .unwrap();
 
-        NewObject::new(
-            right_score_label
-                .appearance()
-                .build(&context.graphics)
-                .unwrap(),
-        )
-        .init(&ui_layer)
-        .unwrap();
+        NewObject::new(right_score_label.appearance().build().unwrap())
+            .init(&ui_layer)
+            .unwrap();
 
         // Submit label creation task in the end.
         // labelifier.update().unwrap();
@@ -181,7 +169,7 @@ impl Game {
             vert(0.0, -0.7),
         ];
 
-        let middle_model = GpuModel::new(model!(vertices), &context.graphics).unwrap();
+        let middle_model = GpuModel::new(&model!(vertices)).unwrap();
 
         // A description of how the line should look like.
         let line_material_settings = MaterialSettingsBuilder::default()
@@ -192,15 +180,16 @@ impl Game {
 
         let line_material = GpuMaterial::new::<Vert>(
             line_material_settings,
-            VulkanGraphicsShaders::new_default(&context.graphics).unwrap(),
+            VulkanGraphicsShaders::new_default().unwrap(),
         )
         .unwrap();
 
         // The buffer is a Fixed Uniform here, because it's small and will never change.
-        let middle_line_color = GpuBuffer::new(
-            Buffer::from_data(BufferUsage::Uniform, BufferAccess::Fixed, Color::WHITE),
-            &context.graphics,
-        )
+        let middle_line_color = GpuBuffer::new(Buffer::from_data(
+            BufferUsage::Uniform,
+            BufferAccess::Fixed,
+            Color::WHITE,
+        ))
         .unwrap();
 
         let middle_line_appearance = AppearanceBuilder::default()
@@ -210,7 +199,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(middle_line_color)),
             ])
-            .build(&context.graphics)
+            .build()
             .unwrap();
 
         // Add the line to the ui layer
@@ -301,23 +290,19 @@ struct Paddle {
 
 #[cfg(feature = "client")]
 impl Paddle {
-    pub fn new(
-        layer: &Arc<Layer<VulkanTypes>>,
-        controls: (Key, Key),
-        x: f32,
-        graphics_interface: &GraphicsInterface,
-    ) -> Self {
+    pub fn new(layer: &Arc<Layer<VulkanTypes>>, controls: (Key, Key), x: f32) -> Self {
         // Next we describe the appearance of the paddle.
 
         // Here we make the pedal square and give it a default material
-        let model = GpuModel::new(model!(square), graphics_interface).unwrap();
-        let material = GpuMaterial::new_default(graphics_interface).unwrap();
+        let model = GpuModel::new(&model!(square)).unwrap();
+        let material = GpuMaterial::new_default().unwrap();
 
         // Make the paddle white
-        let buffer = GpuBuffer::new(
-            Buffer::from_data(BufferUsage::Uniform, BufferAccess::Fixed, Color::WHITE),
-            graphics_interface,
-        )
+        let buffer = GpuBuffer::new(Buffer::from_data(
+            BufferUsage::Uniform,
+            BufferAccess::Fixed,
+            Color::WHITE,
+        ))
         .unwrap();
 
         let appearance = AppearanceBuilder::default()
@@ -327,7 +312,7 @@ impl Paddle {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(buffer)),
             ])
-            .build(graphics_interface)
+            .build()
             .unwrap();
 
         let height = 0.05;
@@ -395,21 +380,18 @@ struct Ball {
 /// Ball logic.
 #[cfg(feature = "client")]
 impl Ball {
-    pub fn new(
-        layer: &Arc<Layer<VulkanTypes>>,
-        view: &Arc<LayerView<VulkanTypes>>,
-        graphics_interface: &GraphicsInterface,
-    ) -> Self {
+    pub fn new(layer: &Arc<Layer<VulkanTypes>>, view: &Arc<LayerView<VulkanTypes>>) -> Self {
         let lifetime = SystemTime::now();
 
-        let model = GpuModel::new(model!(square), graphics_interface).unwrap();
-        let material = GpuMaterial::new_default(graphics_interface).unwrap();
+        let model = GpuModel::new(&model!(square)).unwrap();
+        let material = GpuMaterial::new_default().unwrap();
 
         // Make the ball white
-        let buffer = GpuBuffer::new(
-            Buffer::from_data(BufferUsage::Uniform, BufferAccess::Fixed, Color::WHITE),
-            graphics_interface,
-        )
+        let buffer = GpuBuffer::new(Buffer::from_data(
+            BufferUsage::Uniform,
+            BufferAccess::Fixed,
+            Color::WHITE,
+        ))
         .unwrap();
 
         let appearance = AppearanceBuilder::default()
@@ -419,7 +401,7 @@ impl Ball {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(buffer)),
             ])
-            .build(graphics_interface)
+            .build()
             .unwrap();
 
         let mut object = NewObject::new(appearance);

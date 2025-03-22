@@ -8,7 +8,10 @@ use let_engine_core::resources::{
     model::Vertex,
 };
 
-use std::{hash::BuildHasher, sync::Arc};
+use std::{
+    hash::BuildHasher,
+    sync::{Arc, OnceLock},
+};
 use thiserror::Error;
 
 use vulkano::{
@@ -21,8 +24,11 @@ use vulkano::{
 
 use super::{
     vertex_buffer_description_to_vulkano,
-    vulkan::shaders::{default_shader, default_textured_shader},
-    GraphicsInterface, VulkanError,
+    vulkan::{
+        shaders::{default_shaders, default_textured_shaders},
+        VK,
+    },
+    VulkanError,
 };
 
 /// A material holding the way an object should be drawn.
@@ -135,19 +141,18 @@ impl GpuMaterial {
     }
 
     /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding 0, 0 and uses [`Vertex`] as the vertex type.
-    pub fn new_default(interface: &GraphicsInterface) -> Result<Self, GpuMaterialError> {
+    pub fn new_default() -> Result<Self, GpuMaterialError> {
         Self::new::<let_engine_core::resources::data::Vert>(
             MaterialSettings::default(),
-            VulkanGraphicsShaders::new_default(interface).map_err(GpuMaterialError::Shader)?,
+            VulkanGraphicsShaders::new_default().map_err(GpuMaterialError::Shader)?,
         )
     }
 
     /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding 0, 0 and uses [`TVertex`] as the vertex type.
-    pub fn new_default_textured(interface: &GraphicsInterface) -> Result<Self, GpuMaterialError> {
+    pub fn new_default_textured() -> Result<Self, GpuMaterialError> {
         Self::new::<let_engine_core::resources::data::TVert>(
             MaterialSettings::default(),
-            VulkanGraphicsShaders::new_default_textured(interface)
-                .map_err(GpuMaterialError::Shader)?,
+            VulkanGraphicsShaders::new_default_textured().map_err(GpuMaterialError::Shader)?,
         )
     }
 
@@ -246,18 +251,19 @@ impl PartialEq for VulkanGraphicsShaders {
     }
 }
 
+static DEFAULT_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
+static DEFAULT_TEXTURED_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
+
 impl VulkanGraphicsShaders {
     /// Creates a shader from SpirV bytes.
     ///
     /// # Safety
     ///
     /// When loading those shaders the engine does not know if they are right.
-    /// So when they are wrong I am not sure what will happen. Make it right!
-    pub unsafe fn from_bytes(
-        shaders: GraphicsShaders,
-        interface: &GraphicsInterface,
-    ) -> Result<Self, ShaderError> {
-        let device = interface.vulkan.device.clone();
+    pub unsafe fn from_bytes(shaders: GraphicsShaders) -> Result<Self, ShaderError> {
+        let vulkan = VK.get().ok_or(ShaderError::BackendNotInitialized)?;
+
+        let device = vulkan.device.clone();
 
         let hash = *{
             let hasher = foldhash::fast::RandomState::default();
@@ -269,7 +275,7 @@ impl VulkanGraphicsShaders {
 
         let vertex: Arc<ShaderModule> = unsafe {
             ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words))
-                .map_err(|x| ShaderError::Other(x.into()))?
+                .map_err(|x| ShaderError::Other(x.unwrap().into()))?
         };
 
         let vertex = vertex
@@ -283,7 +289,7 @@ impl VulkanGraphicsShaders {
             let words = bytes_to_words(&frag).map_err(|_| ShaderError::InvalidSpirV)?;
             let fragment = unsafe {
                 ShaderModule::new(device, ShaderModuleCreateInfo::new(&words))
-                    .map_err(|x| ShaderError::Other(x.into()))?
+                    .map_err(|x| ShaderError::Other(x.unwrap().into()))?
             };
             let Some(entry_point) = &shaders.fragment_entry_point else {
                 return Err(ShaderError::NoFragmentEntry);
@@ -311,12 +317,42 @@ impl VulkanGraphicsShaders {
         })
     }
 
-    pub fn new_default(interface: &GraphicsInterface) -> Result<Self, ShaderError> {
-        unsafe { Self::from_bytes(default_shader(), interface) }
+    /// Creates simple default shaders, which only draw the object.
+    ///
+    /// # Layout
+    ///
+    /// vertex type: [`Vert`](crate::prelude::Vert)
+    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
+    /// set 1, binding 0: [`Color`](crate::prelude::Color)
+    pub fn new_default() -> Result<Self, ShaderError> {
+        let default = DEFAULT_SHADER.get();
+        if let Some(default) = default {
+            Ok(default.clone())
+        } else {
+            let shaders = unsafe { Self::from_bytes(default_shaders()) }?;
+            DEFAULT_SHADER.set(shaders.clone()).unwrap();
+            Ok(shaders)
+        }
     }
 
-    pub fn new_default_textured(interface: &GraphicsInterface) -> Result<Self, ShaderError> {
-        unsafe { Self::from_bytes(default_textured_shader(), interface) }
+    /// Creates simple default texture shaders, which only draw the object with a texture.
+    /// The texture can be tinted using the color provided in set 2.
+    ///
+    /// # Layout
+    ///
+    /// vertex type: [`TVert`](crate::prelude::TVert)
+    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
+    /// set 1, binding 0: `(Color, u32)`
+    /// set 2, binding 0: Texture
+    pub fn new_default_textured() -> Result<Self, ShaderError> {
+        let default = DEFAULT_TEXTURED_SHADER.get();
+        if let Some(default) = default {
+            Ok(default.clone())
+        } else {
+            let shaders = unsafe { Self::from_bytes(default_textured_shaders()) }?;
+            DEFAULT_TEXTURED_SHADER.set(shaders.clone()).unwrap();
+            Ok(shaders)
+        }
     }
 
     /// Returns a single hashmap of locations and descriptor binding requirements for their corresponding bindings.
@@ -354,6 +390,12 @@ impl VulkanGraphicsShaders {
 /// Errors that occur from the creation of Shaders.
 #[derive(thiserror::Error, Debug)]
 pub enum ShaderError {
+    /// Returns when attempting to create a shader,
+    /// but the engine has not been started with [`Engine::start`](crate::Engine::start),
+    /// or the backend has closed down.
+    #[error("Can not create shader: Engine not initialized.")]
+    BackendNotInitialized,
+
     #[error("The given entry point to those shaders is not present in the given shaders.")]
     EntryPoint,
 

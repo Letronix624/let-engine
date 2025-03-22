@@ -9,7 +9,6 @@ use winit::raw_window_handle::HasDisplayHandle;
 mod debug;
 pub mod swapchain;
 
-use anyhow::{anyhow, Context, Result};
 use vulkano::{
     command_buffer::allocator::{
         StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
@@ -39,7 +38,9 @@ use vulkano::{
 
 use std::sync::{Arc, OnceLock};
 
-use super::material::GpuMaterial;
+use super::{material::GpuMaterial, DefaultGraphicsBackendError, VulkanError};
+
+pub static VK: OnceLock<Vulkan> = OnceLock::new();
 
 /// Just a holder of general immutable information about Vulkan.
 #[derive(Clone)]
@@ -59,8 +60,11 @@ pub struct Vulkan {
 }
 
 impl Vulkan {
-    pub fn init(handle: &impl HasDisplayHandle) -> Result<Self> {
-        let instance = instance::create_instance(handle)?;
+    pub fn init(
+        handle: &impl HasDisplayHandle,
+        surface_retries: usize,
+    ) -> Result<Self, DefaultGraphicsBackendError> {
+        let instance = instance::create_instance(handle, surface_retries)?;
 
         #[cfg(feature = "vulkan_debug")]
         std::mem::forget(debug::make_debug(&instance)?);
@@ -91,166 +95,12 @@ impl Vulkan {
 
         let subpass = OnceLock::new();
 
-        let vulkan_pipeline_cache =
-            unsafe { PipelineCache::new(device.clone(), PipelineCacheCreateInfo::default())? };
+        let vulkan_pipeline_cache = unsafe {
+            PipelineCache::new(device.clone(), PipelineCacheCreateInfo::default())
+                .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.unwrap().into()))?
+        };
 
         let pipeline_cache = Arc::new(Mutex::new(HashMap::default()));
-
-        // //Materials
-        // let vs = vertex_shader(device.clone())?;
-        // let fs = fragment_shader(device.clone())?;
-        // let default_shaders = Shaders::from_modules(vs.clone(), fs.clone(), "main");
-
-        // let tfs = textured_fragment_shader(device.clone())?;
-        // let default_textured_shaders = Shaders::from_modules(vs.clone(), tfs.clone(), "main");
-
-        // let tafs = texture_array_fragment_shader(device.clone())?;
-        // let default_texture_array_shaders = Shaders::from_modules(vs.clone(), tafs.clone(), "main");
-
-        // let instance_vert = instanced_vertex_shader(device.clone())?;
-        // let instance_frag = instanced_fragment_shader(device.clone())?;
-        // let default_instance_shaders =
-        //     Shaders::from_modules(instance_vert.clone(), instance_frag.clone(), "main");
-
-        // let textured_instance_frag = instanced_textured_fragment_shader(device.clone())?;
-        // let default_textured_instance_shaders = Shaders::from_modules(
-        //     instance_vert.clone(),
-        //     textured_instance_frag.clone(),
-        //     "main",
-        // );
-
-        // let texture_array_instance_frag = instanced_texture_array_fragment_shader(device.clone())?;
-        // let default_texture_array_instance_shaders = Shaders::from_modules(
-        //     instance_vert.clone(),
-        //     texture_array_instance_frag.clone(),
-        //     "main",
-        // );
-
-        // let vertex_buffer_description = [GameVertex::per_vertex(), InstanceData::per_instance()];
-
-        // let mut pipelines = vec![];
-
-        // let rasterisation_state = RasterizationState::default();
-
-        // let vertex = vs
-        //     .entry_point("main")
-        //     .expect("Main function of default vertex shader has no main function.");
-        // let fragment = fs
-        //     .entry_point("main")
-        //     .expect("Main function of default fragment shader has no main function.");
-
-        // let pipeline: Arc<GraphicsPipeline> = pipeline::create_pipeline(
-        //     &device,
-        //     vertex.clone(),
-        //     fragment,
-        //     InputAssemblyState::default(),
-        //     subpass.clone(),
-        //     vertex_buffer_description[0].definition(&vertex)?,
-        //     rasterisation_state.clone(),
-        //     None,
-        // )?;
-        // pipelines.push(pipeline.clone());
-
-        // let textured_fragment = tfs
-        //     .entry_point("main")
-        //     .expect("Main function not found in default textured fragment shader.");
-        // let textured_pipeline = pipeline::create_pipeline(
-        //     &device,
-        //     vertex.clone(),
-        //     textured_fragment,
-        //     InputAssemblyState::default(),
-        //     subpass.clone(),
-        //     vertex_buffer_description[0].definition(&vertex)?,
-        //     rasterisation_state.clone(),
-        //     None,
-        // )?;
-        // pipelines.push(textured_pipeline.clone());
-
-        // let texture_array_fragment = tafs
-        //     .entry_point("main")
-        //     .expect("Main function not found in default texture array shader.");
-        // let texture_array_pipeline = pipeline::create_pipeline(
-        //     &device,
-        //     vertex.clone(),
-        //     texture_array_fragment,
-        //     InputAssemblyState::default(),
-        //     subpass.clone(),
-        //     vertex_buffer_description[0].definition(&vertex)?,
-        //     rasterisation_state.clone(),
-        //     None,
-        // )?;
-        // pipelines.push(texture_array_pipeline.clone());
-
-        // let instance_vertex = instance_vert
-        //     .entry_point("main")
-        //     .expect("Main function not found in default instanced vertex shader.");
-        // let instance_fragment = instance_frag
-        //     .entry_point("main")
-        //     .expect("Main function not found in default instanced fragment shader.");
-        // let instance_pipeline = pipeline::create_pipeline(
-        //     &device,
-        //     instance_vertex.clone(),
-        //     instance_fragment,
-        //     InputAssemblyState::default(),
-        //     subpass.clone(),
-        //     vertex_buffer_description.definition(&instance_vertex)?,
-        //     rasterisation_state.clone(),
-        //     None,
-        // )?;
-        // pipelines.push(instance_pipeline.clone());
-
-        // let textured_instance_fragment = textured_instance_frag
-        //     .entry_point("main")
-        //     .expect("Main function not found in default textured instanced fragment shader.");
-        // let textured_instance_pipeline = pipeline::create_pipeline(
-        //     &device,
-        //     instance_vertex.clone(),
-        //     textured_instance_fragment,
-        //     InputAssemblyState::default(),
-        //     subpass.clone(),
-        //     vertex_buffer_description.definition(&instance_vertex)?,
-        //     rasterisation_state.clone(),
-        //     None,
-        // )?;
-        // pipelines.push(textured_instance_pipeline.clone());
-
-        // let texture_array_instance_fragment = texture_array_instance_frag
-        //     .entry_point("main")
-        //     .expect("Main function not found in default texture array instance fragment shader.");
-        // let texture_array_instance_pipeline = pipeline::create_pipeline(
-        //     &device,
-        //     instance_vertex.clone(),
-        //     texture_array_instance_fragment,
-        //     InputAssemblyState::default(),
-        //     subpass.clone(),
-        //     vertex_buffer_description.definition(&instance_vertex)?,
-        //     rasterisation_state,
-        //     None,
-        // )?;
-        // pipelines.push(texture_array_instance_pipeline.clone());
-
-        // let default_material = Material::from_pipeline(&pipeline, false, default_shaders.clone());
-        // let textured_material =
-        //     Material::from_pipeline(&textured_pipeline, false, default_textured_shaders.clone());
-        // let texture_array_material = Material::from_pipeline(
-        //     &texture_array_pipeline,
-        //     false,
-        //     default_texture_array_shaders.clone(),
-        // );
-        // let default_instance_material =
-        //     Material::from_pipeline(&instance_pipeline, true, default_instance_shaders.clone());
-
-        // let textured_instance_material = Material::from_pipeline(
-        //     &textured_instance_pipeline,
-        //     true,
-        //     default_textured_instance_shaders.clone(),
-        // );
-
-        // let texture_array_instance_material = Material::from_pipeline(
-        //     &texture_array_instance_pipeline,
-        //     true,
-        //     default_texture_array_instance_shaders.clone(),
-        // );
 
         Ok(Self {
             instance,
@@ -267,11 +117,11 @@ impl Vulkan {
         })
     }
 
-    pub fn subpass(&self) -> Result<&Subpass> {
-        self.subpass.get().ok_or(anyhow!("Subpass not initialized"))
+    pub fn subpass(&self) -> Option<&Subpass> {
+        self.subpass.get()
     }
 
-    fn cache_pipeline(&self, material: &GpuMaterial) -> Result<Arc<GraphicsPipeline>> {
+    fn cache_pipeline(&self, material: &GpuMaterial) -> Result<Arc<GraphicsPipeline>, VulkanError> {
         let shaders = material.graphics_shaders();
         let settings = material.settings();
 
@@ -281,13 +131,14 @@ impl Vulkan {
             stages.push(PipelineShaderStageCreateInfo::new(fragment.clone()));
         };
 
-        let layout = PipelineLayout::new(
-            self.device.clone(),
-            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                .into_pipeline_layout_create_info(self.device.clone())?,
-        )?;
+        let layout_create_info = PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+            .into_pipeline_layout_create_info(self.device.clone())
+            .map_err(|e| VulkanError::from(e.error.unwrap()))?;
 
-        let subpass = self.subpass()?.clone();
+        let layout = PipelineLayout::new(self.device.clone(), layout_create_info)
+            .map_err(|e| VulkanError::from(e.unwrap()))?;
+
+        let subpass = self.subpass().unwrap().clone();
 
         let pipeline = GraphicsPipeline::new(
             self.device.clone(),
@@ -315,9 +166,10 @@ impl Vulkan {
                 )),
                 subpass: Some(subpass.into()),
                 dynamic_state: HashSet::from_iter([DynamicState::Viewport]),
-                ..GraphicsPipelineCreateInfo::layout(layout)
+                ..GraphicsPipelineCreateInfo::new(layout)
             },
-        )?;
+        )
+        .map_err(|e| VulkanError::from(e.unwrap()))?;
 
         let mut cache = self.pipeline_cache.lock();
 
@@ -330,7 +182,10 @@ impl Vulkan {
         self.pipeline_cache.lock().get(material).cloned()
     }
 
-    pub fn get_or_init_pipeline(&self, material: &GpuMaterial) -> Result<Arc<GraphicsPipeline>> {
+    pub fn get_or_init_pipeline(
+        &self,
+        material: &GpuMaterial,
+    ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
         if let Some(pipeline) = self.get_pipeline(material) {
             Ok(pipeline)
         } else {
@@ -339,33 +194,30 @@ impl Vulkan {
     }
 }
 
-/// Sets the dynamic viewport up to work with the newly set resolution of the window.
-//  For games make the viewport less dynamic.
 pub fn window_size_dependent_setup(
     images: &[Arc<Image>],
     render_pass: Arc<RenderPass>,
     viewport: &mut Viewport,
-) -> Result<Vec<Arc<Framebuffer>>> {
+) -> Result<Vec<Arc<Framebuffer>>, VulkanError> {
     let extent = images[0].extent();
     viewport.extent = [extent[0] as f32, extent[1] as f32];
 
-    let framebuffers: Vec<Arc<Framebuffer>> = images
-        .iter()
-        .map(|image| {
-            let view = ImageView::new_default(image.clone())
-                .context("Could not make a frame texture.")
-                .unwrap();
-            Framebuffer::new(
-                render_pass.clone(),
-                FramebufferCreateInfo {
-                    attachments: vec![view],
-                    ..Default::default()
-                },
-            )
-            .context("Could not make a framebuffer to present to the window.")
-            .unwrap()
-        })
-        .collect();
+    let mut framebuffers: Vec<Arc<Framebuffer>> = Vec::with_capacity(images.len());
+
+    for image in images {
+        let view =
+            ImageView::new_default(image.clone()).map_err(|e| VulkanError::from(e.unwrap()))?;
+        let framebuffer = Framebuffer::new(
+            render_pass.clone(),
+            FramebufferCreateInfo {
+                attachments: vec![view],
+                ..Default::default()
+            },
+        )
+        .map_err(|e| VulkanError::from(e.unwrap()))?;
+
+        framebuffers.push(framebuffer);
+    }
 
     Ok(framebuffers)
 }

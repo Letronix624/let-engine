@@ -3,8 +3,6 @@
 use std::path::PathBuf;
 
 use crate::prelude::*;
-#[cfg(feature = "egui")]
-use egui_winit_vulkano::egui::Context;
 use winit::dpi;
 pub use winit::event::{ElementState, MouseButton};
 pub use winit::keyboard::*;

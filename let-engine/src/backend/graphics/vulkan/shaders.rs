@@ -2,7 +2,7 @@
 
 use let_engine_core::resources::material::GraphicsShaders;
 
-pub fn default_shader() -> GraphicsShaders {
+pub fn default_shaders() -> GraphicsShaders {
     GraphicsShaders::new(
         include_bytes!(concat!(env!("OUT_DIR"), "/default.vert")).to_vec(),
         "main".to_string(),
@@ -11,7 +11,7 @@ pub fn default_shader() -> GraphicsShaders {
     )
 }
 
-pub fn default_textured_shader() -> GraphicsShaders {
+pub fn default_textured_shaders() -> GraphicsShaders {
     GraphicsShaders::new(
         include_bytes!(concat!(env!("OUT_DIR"), "/default.vert")).to_vec(),
         "main".to_string(),

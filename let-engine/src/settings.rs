@@ -1,6 +1,6 @@
 //! Engine wide settings that are applicable using the [Settings](crate::settings::Settings) struct.
 
-use let_engine_core::backend::{graphics::GraphicsBackend, Backends, NetworkingBackend};
+use let_engine_core::backend::{graphics::GraphicsBackend, Backends};
 
 use crate::tick_system::TickSettings;
 
@@ -14,8 +14,7 @@ pub struct EngineSettings<B: Backends> {
     pub tick_system: TickSettings,
 
     pub graphics: <B::Graphics as GraphicsBackend>::Settings,
-
-    pub networking: <B::Networking as NetworkingBackend>::Settings,
+    // pub networking: <B::Networking as NetworkingBackend>::Settings,
 }
 
 impl<B: Backends> Default for EngineSettings<B> {
@@ -24,7 +23,7 @@ impl<B: Backends> Default for EngineSettings<B> {
             window: crate::window::WindowBuilder::default(),
             tick_system: TickSettings::default(),
             graphics: <B::Graphics as GraphicsBackend>::Settings::default(),
-            networking: <B::Networking as NetworkingBackend>::Settings::default(),
+            // networking: <B::Networking as NetworkingBackend>::Settings::default(),
         }
     }
 }
@@ -35,7 +34,7 @@ impl<B: Backends> Clone for EngineSettings<B> {
             window: self.window.clone(),
             tick_system: self.tick_system.clone(),
             graphics: self.graphics.clone(),
-            networking: self.networking.clone(),
+            // networking: self.networking.clone(),
         }
     }
 }
@@ -59,12 +58,12 @@ impl<B: Backends> EngineSettings<B> {
         self
     }
 
-    /// Sets the value `networking` and returns self.
-    pub fn networking(
-        mut self,
-        networking: <B::Networking as NetworkingBackend>::Settings,
-    ) -> Self {
-        self.networking = networking;
-        self
-    }
+    // /// Sets the value `networking` and returns self.
+    // pub fn networking(
+    //     mut self,
+    //     networking: <B::Networking as NetworkingBackend>::Settings,
+    // ) -> Self {
+    //     self.networking = networking;
+    //     self
+    // }
 }

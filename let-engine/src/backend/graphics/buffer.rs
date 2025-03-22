@@ -1,9 +1,5 @@
-use std::{
-    sync::{atomic::AtomicU8, Arc},
-    time::Duration,
-};
+use std::sync::{atomic::AtomicU8, Arc};
 
-use anyhow::Result;
 use bytemuck::AnyBitPattern;
 use let_engine_core::resources::buffer::{
     Buffer, BufferAccess, BufferUsage, LoadedBuffer, PreferOperation,
@@ -22,8 +18,8 @@ use vulkano::{
 };
 
 use super::{
-    vulkan::{Queues, Vulkan},
-    GraphicsInterface,
+    vulkan::{Queues, Vulkan, VK},
+    VulkanError,
 };
 
 #[derive(Clone)]
@@ -64,41 +60,28 @@ pub struct GpuBuffer<T: AnyBitPattern + Send + Sync> {
     access_method: AccessMethod<T>,
 
     usage: BufferUsage,
-
-    future: Arc<Mutex<Option<Box<dyn GpuFuture + Send>>>>,
-    queues: Arc<Queues>,
 }
 
 type BufferCreation<T> = (Subbuffer<T>, AccessMethod<T>);
 
 impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
     /// Creates a new buffer.
-    pub fn new(buffer: Buffer<T>, interface: &GraphicsInterface) -> Result<Self> {
-        let vulkan = interface.vulkan.clone();
+    pub fn new(buffer: Buffer<T>) -> Result<Self, GpuBufferError> {
+        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
 
-        let future = vulkan.future.clone();
-        let queues = vulkan.queues.clone();
-
-        let (data, access_method) = Self::create_buffer_and_staging(&vulkan, buffer)?;
+        let (data, access_method) = Self::create_buffer_and_staging(vulkan, buffer)?;
 
         Ok(Self {
             data,
             access_method,
 
             usage: *buffer.usage(),
-
-            future,
-            queues,
         })
     }
 
     /// Creates a new buffer which can only be accessed in the shaders.
-    pub fn new_gpu_only(
-        size: usize,
-        usage: BufferUsage,
-        interface: &GraphicsInterface,
-    ) -> Result<Self> {
-        let vulkan = interface.vulkan.clone();
+    pub fn new_gpu_only(size: usize, usage: BufferUsage) -> Result<Self, GpuBufferError> {
+        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
 
         let buffer = vulkano::buffer::Buffer::new_unsized(
             vulkan.memory_allocator.clone(),
@@ -114,18 +97,20 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                 ..Default::default()
             },
             size as u64,
-        )?;
+        )
+        .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
         Ok(Self {
             data: buffer,
             access_method: AccessMethod::Fixed,
             usage,
-            future: vulkan.future.clone(),
-            queues: vulkan.queues.clone(),
         })
     }
 
-    fn create_buffer_and_staging(vulkan: &Vulkan, buffer: Buffer<T>) -> Result<BufferCreation<T>> {
+    fn create_buffer_and_staging(
+        vulkan: &Vulkan,
+        buffer: Buffer<T>,
+    ) -> Result<BufferCreation<T>, GpuBufferError> {
         let memory_allocator = vulkan.memory_allocator.clone();
 
         let buffer_usage = *buffer.usage();
@@ -183,11 +168,12 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                 memory_type_filter,
                 ..Default::default()
             },
-        )?;
+        )
+        .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
         // If not staging or fixed, write data directly into the buffer.
         if staging_memory_type_filter.is_none() {
-            *data.write()? = *buffer;
+            *data.write().unwrap() = *buffer;
         };
 
         let access_method = match buffer_access {
@@ -203,7 +189,8 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                         ..Default::default()
                     },
                     *buffer,
-                )?;
+                )
+                .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
                 // Copy staging buffer to data.
                 let write = Self::copy_staging(staging.clone(), data.clone(), vulkan)?;
@@ -224,7 +211,8 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                         ..Default::default()
                     },
                     *buffer,
-                )?;
+                )
+                .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
                 // Copy staging buffer to data.
                 let write = Self::copy_staging(staging.clone(), data.clone(), vulkan)?;
@@ -261,9 +249,10 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                             memory_type_filter,
                             ..Default::default()
                         },
-                    )?;
+                    )
+                    .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
                     // Write data into this buffer
-                    *data.write()? = *buffer;
+                    *data.write().unwrap() = *buffer;
 
                     buffers.push(data);
                 }
@@ -286,7 +275,7 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
         src: Subbuffer<T>,
         dst: Subbuffer<T>,
         vulkan: &Vulkan,
-    ) -> Result<Arc<PrimaryAutoCommandBuffer>> {
+    ) -> Result<Arc<PrimaryAutoCommandBuffer>, GpuBufferError> {
         let command_buffer_allocator = vulkan.command_buffer_allocator.clone();
         let queues = vulkan.queues.clone();
 
@@ -295,11 +284,16 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
             command_buffer_allocator,
             queues.transfer_id(),
             vulkano::command_buffer::CommandBufferUsage::MultipleSubmit,
-        )?;
+        )
+        .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
-        command_buffer_builder.copy_buffer(CopyBufferInfo::buffers(src, dst))?;
+        command_buffer_builder
+            .copy_buffer(CopyBufferInfo::new(src, dst))
+            .unwrap();
 
-        let command_buffer = command_buffer_builder.build()?;
+        let command_buffer = command_buffer_builder
+            .build()
+            .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
         Ok(command_buffer)
     }
@@ -308,10 +302,12 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
         command_buffer: Arc<PrimaryAutoCommandBuffer>,
         queues: &Arc<Queues>,
         future: Arc<Mutex<Option<Box<dyn GpuFuture + Send>>>>,
-    ) -> Result<()> {
+    ) -> Result<(), GpuBufferError> {
         let transfer_future = command_buffer
-            .execute(queues.get_transfer().clone())?
-            .then_signal_semaphore_and_flush()?;
+            .execute(queues.get_transfer().clone())
+            .unwrap()
+            .then_signal_semaphore_and_flush()
+            .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
         let mut future = future.lock();
 
@@ -377,7 +373,13 @@ impl DrawableBuffer {
 }
 
 #[derive(Debug, Error)]
-pub enum BufferError {
+pub enum GpuBufferError {
+    /// Returns when attempting to create a buffer,
+    /// but the engine has not been started with [`Engine::start`](crate::Engine::start),
+    /// or the backend has closed down.
+    #[error("Can not create buffer: Engine not initialized.")]
+    BackendNotInitialized,
+
     // TODO: make more errors
     /// Returns if there was an error attempting to read or write to the buffer from or to the GPU.
     #[error("{0}")]
@@ -388,33 +390,34 @@ pub enum BufferError {
     UnsupportedAccess(BufferAccess),
 
     #[error("There was an error loading this buffer: {0}")]
-    Other(anyhow::Error),
+    Other(VulkanError),
 }
 
 impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for GpuBuffer<B> {
-    type Error = BufferError;
+    type Error = GpuBufferError;
 
     fn data(&self) -> std::result::Result<B, Self::Error> {
+        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
         match &self.access_method {
-            AccessMethod::Fixed => Err(BufferError::UnsupportedAccess(BufferAccess::Fixed)),
+            AccessMethod::Fixed => Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed)),
             AccessMethod::Staged { staging, read, .. } => {
                 // Execute read command and wait for it to finish.
                 read.clone()
-                    .execute(self.queues.get_transfer().clone())
-                    .map_err(|e| BufferError::Other(e.into()))?
+                    .execute(vulkan.queues.get_transfer().clone())
+                    .unwrap()
                     .then_signal_fence_and_flush()
-                    .map_err(|e| BufferError::Other(e.into()))?
+                    .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?
                     .wait(None)
-                    .map_err(|e| BufferError::Other(e.into()))?;
+                    .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
 
                 // Return data
-                let read = staging.read().map_err(BufferError::HostAccess)?;
+                let read = staging.read().map_err(GpuBufferError::HostAccess)?;
 
                 Ok(*read)
             }
             AccessMethod::Pinned(..) => {
                 // Wait for data access
-                if let Some(future) = self.future.lock().take() {
+                if let Some(future) = vulkan.future.lock().take() {
                     future
                         .then_signal_fence_and_flush()
                         .unwrap()
@@ -423,7 +426,7 @@ impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for GpuBuffer<B> {
                 };
 
                 // Read data
-                Ok(*(self.data.read().map_err(BufferError::HostAccess)?))
+                Ok(*(self.data.read().map_err(GpuBufferError::HostAccess)?))
             }
             AccessMethod::RingBuffer { buffers, turn, .. } => {
                 // Choose buffer not in use by the GPU
@@ -436,27 +439,29 @@ impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for GpuBuffer<B> {
                 };
 
                 // Read from this buffer
-                Ok(*(buffer.read().map_err(BufferError::HostAccess)?))
+                Ok(*(buffer.read().map_err(GpuBufferError::HostAccess)?))
             }
         }
     }
 
     fn write_data_mut<F: FnMut(&mut B)>(&self, mut f: F) -> std::result::Result<(), Self::Error> {
+        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
         match &self.access_method {
-            AccessMethod::Fixed => return Err(BufferError::UnsupportedAccess(BufferAccess::Fixed)),
+            AccessMethod::Fixed => {
+                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed))
+            }
             AccessMethod::Staged { staging, write, .. } => {
                 {
-                    let mut guard = staging.write().map_err(BufferError::HostAccess)?;
+                    let mut guard = staging.write().map_err(GpuBufferError::HostAccess)?;
 
                     f(&mut guard);
                 }
 
-                Self::execute_command(write.clone(), &self.queues, self.future.clone())
-                    .map_err(BufferError::Other)?;
+                Self::execute_command(write.clone(), &vulkan.queues, vulkan.future.clone())?;
             }
             AccessMethod::Pinned(..) => {
                 // Wait for buffer access
-                if let Some(future) = self.future.lock().take() {
+                if let Some(future) = vulkan.future.lock().take() {
                     dbg!(future.queue());
                     future
                         .then_signal_fence_and_flush()
@@ -467,7 +472,7 @@ impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for GpuBuffer<B> {
                 };
 
                 // Write
-                let mut guard = self.data.write().map_err(BufferError::HostAccess)?;
+                let mut guard = self.data.write().map_err(GpuBufferError::HostAccess)?;
 
                 f(&mut guard);
             }
@@ -484,7 +489,7 @@ impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for GpuBuffer<B> {
                 };
 
                 // Write
-                let mut guard = buffer.write().map_err(BufferError::HostAccess)?;
+                let mut guard = buffer.write().map_err(GpuBufferError::HostAccess)?;
 
                 f(&mut guard);
             }

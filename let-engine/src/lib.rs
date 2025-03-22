@@ -4,6 +4,7 @@
 //! [![Website](https://img.shields.io/website?up_message=Up&up_color=f6ffa6&down_message=Down&down_color=lightgrey&url=https%3A%2F%2Flet-server.net%2F&style=for-the-badge&logo=apache&color=f6ffa6&link=https%3A%2F%2Flet-server.net%2F)](https://let-server.net/)
 //!
 //! A Game engine made in Rust.
+
 pub mod backend;
 mod engine;
 #[cfg(feature = "client")]
@@ -13,19 +14,12 @@ pub mod input;
 pub mod settings;
 pub mod tick_system;
 
-#[cfg(all(feature = "egui", feature = "client"))]
-mod egui_feature;
-
 #[cfg(feature = "asset_system")]
 pub use asset_system;
 pub use engine::*;
 pub mod prelude;
 
 pub use glam::{vec2, Vec2};
-
-/// Egui feature on
-#[cfg(feature = "egui")]
-pub use egui_winit_vulkano::egui;
 
 #[cfg(feature = "client")]
 pub use let_engine_core::resources;
@@ -37,8 +31,8 @@ pub mod window;
 /// Cleans all caches for unused data. This decreases memory usage and may not
 /// hurt to be called between levels from time to time.
 pub fn clean_caches() {
-    #[cfg(feature = "default_networking_backend")]
-    crate::backend::networking::LAST_ORDS.lock().clear();
+    // #[cfg(feature = "default_networking_backend")] TODO
+    // crate::backend::networking::LAST_ORDS.lock().clear();
 
     #[cfg(feature = "asset_system")]
     asset_system::clear_cache();

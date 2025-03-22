@@ -14,23 +14,26 @@ extern crate self as let_engine_core;
 
 /// The game engine failed to start for the following reasons:
 #[derive(Debug, Error)]
-pub enum EngineError {
-    /// Your device's specifications do not hold up to the minimum requirements of this engine.
-    #[error(
-        "Your device does not fulfill the required specification to run this application: {0}"
-    )]
-    RequirementError(String),
-    /// Engine can only be made once.
-    #[error("You can only initialize this game engine one single time.")]
-    EngineInitialized,
-    /// Failed to initialize drawing backend of the game engine.
-    #[error("Failed to initialize drawing backend: {0}")]
-    DrawingBackendError(anyhow::Error),
-    /// The game engine is not ready to load resources.
-    #[error("The game engine is not ready to load resources right now. You have to initialize the game engine first.")]
-    NotReady,
-    #[error("Could not start the game engine for some reason: {0}")]
-    Other(anyhow::Error),
+pub enum EngineError<G>
+where
+    G: std::error::Error,
+    // A: std::error::Error,
+    // N: std::error::Error,
+{
+    /// It is only possible to create the engine one time.
+    #[error("Can not start another engine instance in the same application.")]
+    Recreation,
+
+    /// An error given by the used graphics backend upon creation.
+    #[error("{0}")]
+    GraphicsBackend(G),
+    // /// An error given by the used audio backend upon creation.
+    // #[error("{0}")]
+    // AudioBackend(A),
+
+    // /// An error given by the used networking backend upon creation.
+    // #[error("{0}")]
+    // NetworkingBackend(N),
 }
 
 /// Cardinal direction
