@@ -2,7 +2,7 @@
 
 use std::f32::consts::FRAC_1_SQRT_2;
 
-use glam::{vec2, Vec2};
+use glam::{vec2, Mat4, UVec2, Vec2};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -103,5 +103,30 @@ impl Camera {
     pub fn scaling(mut self, scaling: CameraScaling) -> Self {
         self.scaling = scaling;
         self
+    }
+
+    /// Creates a view matrix for the camera.
+    pub fn make_view_matrix(&self) -> Mat4 {
+        Mat4::look_at_rh(
+            self.transform.position.extend(1.0),
+            self.transform.position.extend(0.0),
+            Vec2::from_angle(self.transform.rotation).extend(0.0),
+        )
+    }
+
+    /// Creates a projection matrix for the camera.
+    pub fn make_projection_matrix(&self, dimensions: UVec2) -> Mat4 {
+        let zoom = 1.0 / self.transform.size;
+        let position = self.transform.position;
+        let dimensions = self.scaling.scale(dimensions.as_vec2());
+
+        Mat4::orthographic_rh(
+            position.x - zoom.x * dimensions.x,
+            position.x + zoom.x * dimensions.x,
+            position.y - zoom.y * dimensions.y,
+            position.y + zoom.y * dimensions.y,
+            -1.0,
+            1.0,
+        )
     }
 }

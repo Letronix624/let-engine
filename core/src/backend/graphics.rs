@@ -40,13 +40,14 @@ pub trait GraphicsBackend {
     fn init_window(
         &mut self,
         window: Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
+        scene: &Scene<Self::LoadedTypes>,
     );
 
     /// Returns the interface of the backend.
     fn interface(&self) -> &Self::Interface;
 
     /// Updates the backend.
-    fn update(&mut self, scene: &Scene<Self::LoadedTypes>);
+    fn update(&mut self);
 
     /// Gets called when the window has changed size.
     fn resize_event(&mut self, new_size: UVec2);
@@ -155,6 +156,7 @@ impl GraphicsBackend for () {
     fn init_window(
         &mut self,
         _window: Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
+        _scene: &Scene<Self>,
     ) {
     }
 
@@ -162,7 +164,7 @@ impl GraphicsBackend for () {
         &()
     }
 
-    fn update(&mut self, _scene: &Scene<Self>) {}
+    fn update(&mut self) {}
 
     fn resize_event(&mut self, _new_size: UVec2) {}
 }

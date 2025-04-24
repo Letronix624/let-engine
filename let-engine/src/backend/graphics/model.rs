@@ -1,19 +1,21 @@
-use std::sync::Arc;
+use std::{
+    marker::PhantomData,
+    sync::{atomic::AtomicUsize, Arc},
+};
 
 use anyhow::Result;
 use let_engine_core::resources::{
     buffer::BufferAccess,
     model::{LoadedModel, Model, Vertex, VertexBufferDescription},
 };
-use parking_lot::Mutex;
 use thiserror::Error;
 use vulkano::{
-    buffer::{Buffer, BufferCreateInfo, BufferUsage, Subbuffer},
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
-    Validated,
+    buffer::{Buffer, BufferCreateInfo, BufferUsage},
+    memory::allocator::{AllocationCreateInfo, DeviceLayout, MemoryTypeFilter},
 };
+use vulkano_taskgraph::{resource::HostAccessType, Id};
 
-use super::vulkan::VK;
+use super::{vulkan::VK, VulkanError};
 
 use let_engine_core::resources::data;
 
@@ -22,21 +24,22 @@ use let_engine_core::resources::data;
 /// This structure does not contain any data but only handles to data stored on the GPU.
 #[derive(Clone)]
 pub struct GpuModel<V: Vertex = data::Vert> {
-    inner_model: Arc<Mutex<InnerModel<V>>>,
-    buffer_access: BufferAccess,
-}
+    vertex_buffer_id: Id<Buffer>,
+    index_buffer_id: Option<Id<Buffer>>,
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct InnerModel<V: Vertex> {
-    vertex_sub_buffer: Subbuffer<[V]>,
-    index_sub_buffer: Option<Subbuffer<[u32]>>,
-    vertex_len: usize,
-    index_len: usize,
+    max_vertices: usize,
+    max_indices: usize,
+    vertex_len: Arc<AtomicUsize>,
+    index_len: Arc<AtomicUsize>,
+
+    buffer_access: BufferAccess,
+    _phantom: PhantomData<Arc<V>>,
 }
 
 impl<V: Vertex> PartialEq for GpuModel<V> {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.inner_model, &other.inner_model)
+        self.vertex_buffer_id == other.vertex_buffer_id
+            && self.index_buffer_id == other.index_buffer_id
             && other.buffer_access == self.buffer_access
     }
 }
@@ -48,39 +51,19 @@ impl<V: Vertex> GpuModel<V> {
             return Err(ModelError::EmptyModel);
         }
 
+        let max_vertices = model.max_vertices();
+        let max_indices = model.max_indices();
+
         let buffer_access = *model.buffer_access();
 
         let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
-        let memory_allocator = vulkan.memory_allocator.clone();
-
-        let vertex_sub_buffer = Buffer::new_slice::<V>(
-            memory_allocator.clone(),
-            BufferCreateInfo {
-                usage: BufferUsage::VERTEX_BUFFER,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
-                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                ..Default::default()
-            },
-            model.max_vertices() as u64,
-        )
-        .map_err(Validated::unwrap)
-        .map_err(ModelError::Allocation)?;
-
-        {
-            let mut write = vertex_sub_buffer.write().unwrap();
-
-            write[0..model.vertex_len()].copy_from_slice(model.vertices());
-        }
-
-        let index_sub_buffer = if model.is_indexed() {
-            let buffer = Buffer::new_slice::<u32>(
-                memory_allocator.clone(),
+        // Create buffers
+        let vertex_buffer_id = vulkan
+            .resources
+            .create_buffer(
                 BufferCreateInfo {
-                    usage: BufferUsage::INDEX_BUFFER,
+                    usage: BufferUsage::VERTEX_BUFFER,
                     ..Default::default()
                 },
                 AllocationCreateInfo {
@@ -88,30 +71,68 @@ impl<V: Vertex> GpuModel<V> {
                         | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                     ..Default::default()
                 },
-                model.index_len() as u64,
+                DeviceLayout::new_unsized::<[V]>(max_vertices as u64).unwrap(),
             )
-            .map_err(Validated::unwrap)
-            .map_err(ModelError::Allocation)?;
+            .unwrap();
 
-            {
-                let mut write = buffer.write().unwrap();
+        let index_buffer_id = if model.is_indexed() {
+            let index_buffer_id = vulkan
+                .resources
+                .create_buffer(
+                    BufferCreateInfo {
+                        usage: BufferUsage::INDEX_BUFFER,
+                        ..Default::default()
+                    },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    DeviceLayout::new_unsized::<[u32]>(max_indices as u64).unwrap(),
+                )
+                .unwrap();
 
-                write[0..model.index_len()].copy_from_slice(model.indices());
-            }
-
-            Some(buffer)
+            Some(index_buffer_id)
         } else {
             None
         };
 
+        // Next up: write to the buffers
+        unsafe {
+            vulkano_taskgraph::execute(
+                &vulkan.queues.get_transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    let write: &mut [V] =
+                        ctx.write_buffer(vertex_buffer_id, 0..model.vertex_len() as u64)?;
+
+                    write.copy_from_slice(model.vertices());
+
+                    if let Some(index_buffer_id) = index_buffer_id {
+                        let write: &mut [u32] =
+                            ctx.write_buffer(index_buffer_id, 0..model.index_len() as u64)?;
+
+                        write.copy_from_slice(model.indices());
+                    }
+                    Ok(())
+                },
+                [(vertex_buffer_id, HostAccessType::Write)],
+                [],
+                [],
+            )
+        }
+        .unwrap();
+
         Ok(Self {
-            inner_model: Arc::new(Mutex::new(InnerModel {
-                vertex_sub_buffer,
-                index_sub_buffer,
-                vertex_len: model.vertex_len(),
-                index_len: model.index_len(),
-            })),
+            vertex_buffer_id,
+            index_buffer_id,
+            max_vertices,
+            max_indices,
+            vertex_len: Arc::new(model.vertex_len().into()),
+            index_len: Arc::new(model.index_len().into()),
             buffer_access,
+            _phantom: PhantomData,
         })
     }
 
@@ -135,7 +156,7 @@ impl<V: Vertex> GpuModel<V> {
     ///
     /// This model must be created with indices in the first place to return true.
     pub fn is_indexed(&self) -> bool {
-        self.inner_model.lock().index_sub_buffer.is_some()
+        self.index_buffer_id.is_some()
     }
 
     /// Returns the size dimensions of this model.
@@ -172,13 +193,29 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
     /// Reads only the vertex buffer from the GPU.
     ///
     /// Mind that reading from the GPU is slow.
-    fn read_vertices<R: FnMut(&[V])>(&self, mut f: R) -> Result<(), Self::Error> {
-        let inner = self.inner_model.lock();
-        let vertices = inner
-            .vertex_sub_buffer
-            .read()
-            .map_err(ModelError::HostAccess)?;
-        f(&vertices);
+    fn read_vertices<R: FnOnce(&[V])>(&self, f: R) -> Result<(), Self::Error> {
+        let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
+
+        let flight = vulkan.resources.flight(vulkan.graphics_flight).unwrap();
+        flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
+
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.get_transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    let read =
+                        ctx.read_buffer(self.vertex_buffer_id, 0..self.vertex_count() as u64)?;
+                    f(read);
+                    Ok(())
+                },
+                [(self.vertex_buffer_id, HostAccessType::Read)],
+                [],
+                [],
+            )
+        }
+        .unwrap();
 
         Ok(())
     }
@@ -186,12 +223,32 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
     /// Reads the index buffer from the GPU.
     ///
     /// Mind that reading from the GPU is slow.
-    fn read_indices<R: FnMut(&[u32])>(&self, mut f: R) -> Result<(), Self::Error> {
-        if let Some(index_sub_buffer) = self.inner_model.lock().index_sub_buffer.as_ref() {
-            let mut index_buffer = index_sub_buffer.read().map_err(ModelError::HostAccess)?;
-            f(&mut index_buffer);
+    fn read_indices<R: FnOnce(&[u32])>(&self, f: R) -> Result<(), Self::Error> {
+        let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
+
+        if let Some(index_buffer_id) = self.index_buffer_id {
+            let flight = vulkan.resources.flight(vulkan.graphics_flight).unwrap();
+            flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
+
+            unsafe {
+                vulkano_taskgraph::execute(
+                    vulkan.queues.get_transfer(),
+                    &vulkan.resources,
+                    vulkan.transfer_flight,
+                    |_, ctx| {
+                        let read =
+                            ctx.read_buffer(index_buffer_id, 0..self.index_count() as u64)?;
+                        f(read);
+                        Ok(())
+                    },
+                    [(index_buffer_id, HostAccessType::Read)],
+                    [],
+                    [],
+                )
+            }
+            .unwrap();
         } else {
-            f(&mut []);
+            f(&[]);
         };
 
         Ok(())
@@ -199,87 +256,110 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
 
     /// Returns the number of elements present in the vertex buffer.
     fn vertex_count(&self) -> usize {
-        self.inner_model.lock().vertex_len
+        self.vertex_len.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Returns the number of elements present in the index buffer.
     ///
     /// Returns 0 when this model is not indexed.
     fn index_count(&self) -> usize {
-        self.inner_model.lock().index_len
+        self.index_len.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Takes a slice of vertices and copies it from slice to the GPU buffer.
     fn write_vertices(&self, vertices: &[V]) -> std::result::Result<(), Self::Error> {
-        let mut inner = self.inner_model.lock();
+        let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
+
+        let flight = vulkan.resources.flight(vulkan.graphics_flight).unwrap();
+        flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
 
         let vertices_len = vertices.len();
 
-        if vertices_len > inner.vertex_sub_buffer.len() as usize {
+        if vertices_len > self.max_vertices {
             return Err(ModelError::BufferOverflow);
         };
 
-        inner.vertex_len = vertices_len;
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.get_transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    let write: &mut [V] =
+                        ctx.write_buffer(self.vertex_buffer_id, 0..vertices_len as u64)?;
 
-        let mut guard = inner
-            .vertex_sub_buffer
-            .write()
-            .map_err(ModelError::HostAccess)?;
+                    write.copy_from_slice(vertices);
 
-        guard[..vertices_len].copy_from_slice(vertices);
+                    Ok(())
+                },
+                [(self.vertex_buffer_id, HostAccessType::Write)],
+                [],
+                [],
+            )
+        }
+        .unwrap();
+
+        self.vertex_len
+            .store(vertices_len, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     }
 
     /// Returns the maximum amounts of vertices that can be written in this buffer.
     fn max_vertices(&self) -> usize {
-        self.inner_model.lock().vertex_sub_buffer.len() as usize
+        self.max_vertices
     }
 
     /// Takes a slice of indices and copies it from slice to the GPU buffer in case indices are on.
     fn write_indices(&self, indices: &[u32]) -> std::result::Result<(), Self::Error> {
-        let mut inner = self.inner_model.lock();
+        let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
         let indices_len = indices.len();
 
-        if indices_len
-            > inner
-                .index_sub_buffer
-                .as_ref()
-                .map(|x| x.len() as usize)
-                .unwrap_or_default()
-        {
+        if indices_len > self.max_indices {
             return Err(ModelError::BufferOverflow);
         };
 
-        inner.index_len = indices_len;
+        if let Some(id) = self.index_buffer_id {
+            let flight = vulkan.resources.flight(vulkan.graphics_flight).unwrap();
+            flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
 
-        if let Some(index_sub_buffer) = inner.index_sub_buffer.as_ref() {
-            let mut guard = index_sub_buffer.write().map_err(ModelError::HostAccess)?;
+            unsafe {
+                vulkano_taskgraph::execute(
+                    vulkan.queues.get_transfer(),
+                    &vulkan.resources,
+                    vulkan.transfer_flight,
+                    |_, ctx| {
+                        let write: &mut [u32] = ctx.write_buffer(id, 0..indices_len as u64)?;
 
-            guard[..indices_len].copy_from_slice(indices);
-        } else {
-            return Err(ModelError::BufferOverflow);
+                        write.copy_from_slice(indices);
+
+                        Ok(())
+                    },
+                    [(id, HostAccessType::Write)],
+                    [],
+                    [],
+                )
+            }
+            .unwrap();
         }
+
+        self.index_len
+            .store(indices_len, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
     }
 
     /// Returns the maximum amounts of indices that can be written in this buffer.
     fn max_indices(&self) -> usize {
-        self.inner_model
-            .lock()
-            .index_sub_buffer
-            .as_ref()
-            .map(|x| x.len() as usize)
-            .unwrap_or_default()
+        self.max_indices
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct DrawableModel {
-    vertex_sub_buffer: Subbuffer<[u8]>,
-    index_sub_buffer: Option<Subbuffer<[u32]>>,
+    vertex_buffer_id: Id<Buffer>,
+    index_buffer_id: Option<Id<Buffer>>,
     vertex_buffer_description: VertexBufferDescription,
     vertex_len: u32,
     index_len: u32,
@@ -287,18 +367,12 @@ pub struct DrawableModel {
 
 impl DrawableModel {
     pub fn from_model<V: Vertex>(model: GpuModel<V>) -> Self {
-        let inner = model.inner_model.lock();
-
-        let vertex_sub_buffer = inner.vertex_sub_buffer.as_bytes().clone();
-
-        let index_sub_buffer = inner.index_sub_buffer.clone();
-
         Self {
-            vertex_sub_buffer,
-            index_sub_buffer,
+            vertex_buffer_id: model.vertex_buffer_id,
+            index_buffer_id: model.index_buffer_id,
             vertex_buffer_description: V::description(),
-            vertex_len: inner.vertex_len as u32,
-            index_len: inner.index_len as u32,
+            vertex_len: model.vertex_count() as u32,
+            index_len: model.index_count() as u32,
         }
     }
 
@@ -306,12 +380,12 @@ impl DrawableModel {
         &self.vertex_buffer_description
     }
 
-    pub(crate) fn vertex_buffer(&self) -> &Subbuffer<[u8]> {
-        &self.vertex_sub_buffer
+    pub(crate) fn vertex_buffer_id(&self) -> &Id<Buffer> {
+        &self.vertex_buffer_id
     }
 
-    pub(crate) fn index_buffer(&self) -> Option<&Subbuffer<[u32]>> {
-        self.index_sub_buffer.as_ref()
+    pub(crate) fn index_buffer_id(&self) -> Option<&Id<Buffer>> {
+        self.index_buffer_id.as_ref()
     }
 
     /// Returns the number of vertices this model contains.
@@ -353,4 +427,8 @@ pub enum ModelError {
     /// Returned when the data provided to a write method exceeds the buffer's capacity.
     #[error("Provided more elements than the buffer's size allows.")]
     BufferOverflow,
+
+    /// Returns when an unexpected Vulkan error occurs.
+    #[error("An unexpected Vulkan error occured: {0}")]
+    Other(VulkanError),
 }

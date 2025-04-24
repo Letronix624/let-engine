@@ -20,7 +20,7 @@ use derive_builder::Builder;
 use crate::{HashMap, Mutex};
 use std::sync::{Arc, Weak};
 
-use glam::{vec2, Vec2};
+use glam::{vec2, Mat4, Quat, Vec2};
 
 #[cfg(feature = "physics")]
 type RigidBodyParent<T> = Option<Option<Weak<Mutex<Node<T>>>>>;
@@ -142,11 +142,21 @@ impl<T: Loaded> VisualObject<T> {
     /// Combines the object position data.
     pub fn combined(object: &Object<T>, parent: &Object<T>) -> Self {
         let transform = object.transform.combine(parent.public_transform());
-        let appearance = object.appearance().clone();
         Self {
             transform,
-            appearance,
+            appearance: object.appearance.clone(),
         }
+    }
+
+    /// Creates a model matrix for the given object.
+    pub fn make_model_matrix(&self) -> Mat4 {
+        let transform = self.appearance.get_transform().combine(self.transform);
+
+        Mat4::from_scale_rotation_translation(
+            transform.size.extend(0.0),
+            Quat::from_rotation_z(transform.rotation),
+            transform.position.extend(0.0),
+        )
     }
 }
 

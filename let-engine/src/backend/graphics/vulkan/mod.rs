@@ -4,21 +4,20 @@ use foldhash::{HashMap, HashSet};
 pub use instance::Queues;
 use let_engine_core::resources::material::Topology;
 use parking_lot::Mutex;
+use vulkano_taskgraph::{
+    resource::{Flight, Resources},
+    Id,
+};
 use winit::raw_window_handle::HasDisplayHandle;
 #[cfg(feature = "vulkan_debug")]
 mod debug;
 pub mod swapchain;
 
 use vulkano::{
-    command_buffer::allocator::{
-        StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo,
-    },
     descriptor_set::allocator::{
         StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo,
     },
     device::{Device, DeviceFeatures},
-    image::{view::ImageView, Image},
-    memory::allocator::StandardMemoryAllocator,
     pipeline::{
         cache::{PipelineCache, PipelineCacheCreateInfo},
         graphics::{
@@ -26,45 +25,42 @@ use vulkano::{
             input_assembly::{InputAssemblyState, PrimitiveTopology},
             multisample::MultisampleState,
             rasterization::RasterizationState,
-            viewport::{Viewport, ViewportState},
+            viewport::ViewportState,
             GraphicsPipelineCreateInfo,
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
         DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
     },
-    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
-    sync::GpuFuture,
 };
 
 use std::sync::{Arc, OnceLock};
 
-use super::{material::GpuMaterial, DefaultGraphicsBackendError, VulkanError};
+use super::{material::GpuMaterial, DefaultGraphicsBackendError, Graphics, VulkanError};
 
 pub static VK: OnceLock<Vulkan> = OnceLock::new();
 
 /// Just a holder of general immutable information about Vulkan.
-#[derive(Clone)]
 pub struct Vulkan {
     pub instance: Arc<vulkano::instance::Instance>,
     pub device: Arc<Device>,
     pub queues: Arc<Queues>,
 
-    pub memory_allocator: Arc<StandardMemoryAllocator>,
     pub descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
-    pub command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
-    pub subpass: OnceLock<Subpass>,
-    pub vulkan_pipeline_cache: Arc<PipelineCache>,
-    pub pipeline_cache: Arc<Mutex<HashMap<GpuMaterial, Arc<GraphicsPipeline>>>>,
 
-    pub future: Arc<Mutex<Option<Box<dyn GpuFuture + Send>>>>,
+    pub resources: Arc<Resources>,
+    pub graphics_flight: Id<Flight>,
+    pub transfer_flight: Id<Flight>,
+
+    pub vulkan_pipeline_cache: Arc<PipelineCache>,
+    pub pipeline_cache: Mutex<HashMap<GpuMaterial, Arc<GraphicsPipeline>>>,
 }
 
 impl Vulkan {
     pub fn init(
         handle: &impl HasDisplayHandle,
-        surface_retries: usize,
+        settings: &Graphics,
     ) -> Result<Self, DefaultGraphicsBackendError> {
-        let instance = instance::create_instance(handle, surface_retries)?;
+        let instance = instance::create_instance(handle, settings.window_handle_retries)?;
 
         #[cfg(feature = "vulkan_debug")]
         std::mem::forget(debug::make_debug(&instance)?);
@@ -76,49 +72,44 @@ impl Vulkan {
         };
         let (device, queues) = instance::create_device_and_queues(&instance, features, handle)?;
 
-        let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             device.clone(),
             StandardDescriptorSetAllocatorCreateInfo::default(),
         )
         .into();
 
-        let command_buffer_allocator = StandardCommandBufferAllocator::new(
-            device.clone(),
-            StandardCommandBufferAllocatorCreateInfo {
-                secondary_buffer_count: 2,
-                ..Default::default()
-            },
-        )
-        .into();
+        let resources = Resources::new(&device, &Default::default())
+            .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.unwrap().into()))?;
 
-        let subpass = OnceLock::new();
+        let graphics_flight = resources
+            .create_flight(settings.max_frames_in_flight as u32)
+            .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.into()))?;
+
+        let transfer_flight = resources
+            .create_flight(1)
+            .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.into()))?;
 
         let vulkan_pipeline_cache = unsafe {
             PipelineCache::new(device.clone(), PipelineCacheCreateInfo::default())
                 .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.unwrap().into()))?
         };
 
-        let pipeline_cache = Arc::new(Mutex::new(HashMap::default()));
+        let pipeline_cache = Mutex::new(HashMap::default());
 
         Ok(Self {
             instance,
             device,
             queues,
 
-            memory_allocator,
             descriptor_set_allocator,
-            command_buffer_allocator,
-            subpass,
+
+            resources,
+            graphics_flight,
+            transfer_flight,
+
             vulkan_pipeline_cache,
             pipeline_cache,
-            future: Arc::new(Mutex::new(None)),
         })
-    }
-
-    pub fn subpass(&self) -> Option<&Subpass> {
-        self.subpass.get()
     }
 
     fn cache_pipeline(&self, material: &GpuMaterial) -> Result<Arc<GraphicsPipeline>, VulkanError> {
@@ -138,44 +129,45 @@ impl Vulkan {
         let layout = PipelineLayout::new(self.device.clone(), layout_create_info)
             .map_err(|e| VulkanError::from(e.unwrap()))?;
 
-        let subpass = self.subpass().unwrap().clone();
+        todo!();
+        // let subpass = ;
 
-        let pipeline = GraphicsPipeline::new(
-            self.device.clone(),
-            Some(self.vulkan_pipeline_cache.clone()),
-            GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(material.vertex_input_state.clone()),
-                input_assembly_state: Some(InputAssemblyState {
-                    topology: topology_to_vulkan(settings.topology),
-                    primitive_restart_enable: settings.primitive_restart,
-                    ..Default::default()
-                }),
-                viewport_state: Some(ViewportState::default()),
-                rasterization_state: Some(RasterizationState {
-                    line_width: settings.line_width,
-                    ..Default::default()
-                }),
-                multisample_state: Some(MultisampleState::default()),
-                color_blend_state: Some(ColorBlendState::with_attachment_states(
-                    subpass.num_color_attachments(),
-                    ColorBlendAttachmentState {
-                        blend: Some(AttachmentBlend::alpha()),
-                        ..Default::default()
-                    },
-                )),
-                subpass: Some(subpass.into()),
-                dynamic_state: HashSet::from_iter([DynamicState::Viewport]),
-                ..GraphicsPipelineCreateInfo::new(layout)
-            },
-        )
-        .map_err(|e| VulkanError::from(e.unwrap()))?;
+        // let pipeline = GraphicsPipeline::new(
+        //     self.device.clone(),
+        //     Some(self.vulkan_pipeline_cache.clone()),
+        //     GraphicsPipelineCreateInfo {
+        //         stages: stages.into_iter().collect(),
+        //         vertex_input_state: Some(material.vertex_input_state.clone()),
+        //         input_assembly_state: Some(InputAssemblyState {
+        //             topology: topology_to_vulkan(settings.topology),
+        //             primitive_restart_enable: settings.primitive_restart,
+        //             ..Default::default()
+        //         }),
+        //         viewport_state: Some(ViewportState::default()),
+        //         rasterization_state: Some(RasterizationState {
+        //             line_width: settings.line_width,
+        //             ..Default::default()
+        //         }),
+        //         multisample_state: Some(MultisampleState::default()),
+        //         color_blend_state: Some(ColorBlendState::with_attachment_states(
+        //             subpass.num_color_attachments(),
+        //             ColorBlendAttachmentState {
+        //                 blend: Some(AttachmentBlend::alpha()),
+        //                 ..Default::default()
+        //             },
+        //         )),
+        //         subpass: Some(subpass.into()),
+        //         dynamic_state: HashSet::from_iter([DynamicState::Viewport]),
+        //         ..GraphicsPipelineCreateInfo::new(layout)
+        //     },
+        // )
+        // .map_err(|e| VulkanError::from(e.unwrap()))?;
 
-        let mut cache = self.pipeline_cache.lock();
+        // let mut cache = self.pipeline_cache.lock();
 
-        cache.insert(material.clone(), pipeline.clone());
+        // cache.insert(material.clone(), pipeline.clone());
 
-        Ok(pipeline)
+        // Ok(pipeline)
     }
 
     pub fn get_pipeline(&self, material: &GpuMaterial) -> Option<Arc<GraphicsPipeline>> {
@@ -192,34 +184,6 @@ impl Vulkan {
             self.cache_pipeline(material)
         }
     }
-}
-
-pub fn window_size_dependent_setup(
-    images: &[Arc<Image>],
-    render_pass: Arc<RenderPass>,
-    viewport: &mut Viewport,
-) -> Result<Vec<Arc<Framebuffer>>, VulkanError> {
-    let extent = images[0].extent();
-    viewport.extent = [extent[0] as f32, extent[1] as f32];
-
-    let mut framebuffers: Vec<Arc<Framebuffer>> = Vec::with_capacity(images.len());
-
-    for image in images {
-        let view =
-            ImageView::new_default(image.clone()).map_err(|e| VulkanError::from(e.unwrap()))?;
-        let framebuffer = Framebuffer::new(
-            render_pass.clone(),
-            FramebufferCreateInfo {
-                attachments: vec![view],
-                ..Default::default()
-            },
-        )
-        .map_err(|e| VulkanError::from(e.unwrap()))?;
-
-        framebuffers.push(framebuffer);
-    }
-
-    Ok(framebuffers)
 }
 
 pub fn topology_to_vulkan(topology: Topology) -> PrimitiveTopology {

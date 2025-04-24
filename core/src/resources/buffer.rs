@@ -58,7 +58,7 @@ pub trait LoadedBuffer<B: AnyBitPattern + Send + Sync>: Clone + Send + Sync {
 
     fn data(&self) -> Result<B, Self::Error>;
 
-    fn write_data_mut<F: FnMut(&mut B)>(&self, f: F) -> Result<(), Self::Error>;
+    fn write_data_mut<F: FnOnce(&mut B)>(&self, f: F) -> Result<(), Self::Error>;
 }
 
 impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for () {
@@ -68,7 +68,7 @@ impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for () {
         Ok(B::zeroed())
     }
 
-    fn write_data_mut<F: FnMut(&mut B)>(&self, _f: F) -> Result<(), Self::Error> {
+    fn write_data_mut<F: FnOnce(&mut B)>(&self, _f: F) -> Result<(), Self::Error> {
         Ok(())
     }
 }

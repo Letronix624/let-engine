@@ -400,8 +400,8 @@ impl<V: Vertex> Model<V> {
 pub trait LoadedModel<V: Vertex>: Clone + Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
-    fn read_vertices<R: FnMut(&[V])>(&self, f: R) -> Result<(), Self::Error>;
-    fn read_indices<R: FnMut(&[u32])>(&self, f: R) -> Result<(), Self::Error>;
+    fn read_vertices<R: FnOnce(&[V])>(&self, f: R) -> Result<(), Self::Error>;
+    fn read_indices<R: FnOnce(&[u32])>(&self, f: R) -> Result<(), Self::Error>;
 
     fn vertex_count(&self) -> usize;
     fn max_vertices(&self) -> usize;
@@ -415,11 +415,11 @@ pub trait LoadedModel<V: Vertex>: Clone + Send + Sync {
 impl<V: Vertex> LoadedModel<V> for () {
     type Error = std::io::Error;
 
-    fn read_vertices<R: FnMut(&[V])>(&self, _f: R) -> Result<(), Self::Error> {
+    fn read_vertices<R: FnOnce(&[V])>(&self, _f: R) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn read_indices<R: FnMut(&[u32])>(&self, _f: R) -> Result<(), Self::Error> {
+    fn read_indices<R: FnOnce(&[u32])>(&self, _f: R) -> Result<(), Self::Error> {
         Ok(())
     }
 

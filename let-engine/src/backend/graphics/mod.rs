@@ -84,7 +84,7 @@ impl GraphicsBackend for DefaultGraphicsBackend {
     ) -> Result<Self, Self::CreateError> {
         // Initialize backend in case it is not already initialized.
         if VK.get().is_none() {
-            let vulkan = Vulkan::init(&handle, settings.window_handle_retries)?;
+            let vulkan = Vulkan::init(&handle, &settings)?;
             let _ = VK.set(vulkan);
         }
 
@@ -105,9 +105,10 @@ impl GraphicsBackend for DefaultGraphicsBackend {
                 + Send
                 + Sync,
         >,
+        scene: &Scene<Self::LoadedTypes>,
     ) {
         // TODO: Remove unwraps
-        let draw = Draw::setup(self.interface.clone(), window).unwrap();
+        let draw = Draw::setup(self.interface.clone(), window, scene.clone()).unwrap();
 
         let _ = self.draw.set(draw);
     }
@@ -116,9 +117,9 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         &self.interface
     }
 
-    fn update(&mut self, scene: &Scene<Self::LoadedTypes>) {
+    fn update(&mut self) {
         if let Some(draw) = self.draw.get_mut() {
-            draw.redraw_event(scene).unwrap(); // TODO
+            draw.redraw_event().unwrap(); // TODO
         }
     }
 
@@ -575,18 +576,36 @@ impl From<SpirvBytesNotMultipleOf4> for ShaderError {
 #[derive(Clone, Copy)]
 pub struct Graphics {
     /// An option that determines something called "VSync".
+    ///
+    /// # Default
+    ///
+    /// - [`PresentMode::Fifo`]
     pub present_mode: PresentMode,
 
     /// The clear color of the window.
     ///
     /// Replaces the background with this color each frame.
+    ///
+    /// # Default
+    ///
+    /// - [`Color::BLACK`]
     pub clear_color: Color, // TODO
 
     /// The amount of retries of creating a window surface to attempt before failing
     /// to create the backend.
+    ///
+    /// # Default
+    ///
+    /// - `20`
     pub window_handle_retries: usize,
-    // /// Time waited before each frame.
-    // pub framerate_limit: Duration,
+
+    /// The maximum amount of frames, which can be drawn in parallel.
+    ///
+    /// # Default
+    ///
+    /// - `2`
+    pub max_frames_in_flight: usize, // /// Time waited before each frame.
+                                     // pub framerate_limit: Duration,
 }
 
 impl Default for Graphics {
@@ -602,6 +621,7 @@ impl Graphics {
             present_mode: PresentMode::Fifo,
             clear_color: Color::BLACK,
             window_handle_retries: 20,
+            max_frames_in_flight: 2,
         }
     }
 }

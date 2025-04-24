@@ -43,6 +43,10 @@ optional = true
 git = "https://github.com/vulkano-rs/vulkano.git"
 optional = true
 
+[dependencies.vulkano-taskgraph]
+git = "https://github.com/vulkano-rs/vulkano.git"
+optional = true
+
 [dependencies.winit]
 workspace = true
 optional = true
@@ -99,7 +103,7 @@ default = [
 # egui = ["dep:egui_winit_vulkano", "client"]
 client = ["dep:vulkano", "dep:winit", "dep:image"]
 default_audio_backend = ["dep:kira"]
-default_graphics_backend = ["dep:vulkano"]
+default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph"]
 default_networking_backend = ["dep:local-ip-address"]
 vulkan_debug = ["default_graphics_backend"]
 physics = ["dep:rapier2d", "let-engine-core/physics"]

@@ -1,35 +1,46 @@
-use anyhow::{Context, Error};
+use glam::UVec2;
 use std::sync::Arc;
 use vulkano::device::Device;
-use vulkano::image::{Image, ImageUsage};
+use vulkano::image::ImageUsage;
 use vulkano::swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo};
+use vulkano_taskgraph::Id;
 use winit::window::Window;
 
-use crate::backend::graphics::GraphicsInterface;
+use crate::backend::graphics::{GraphicsInterface, VulkanError};
+
+use super::Vulkan;
 
 // Creates the swapchain.
-pub fn create_swapchain_and_images(
+pub fn create_swapchain(
     device: &Arc<Device>,
-    surface: &Arc<Surface>,
+    surface: Arc<Surface>,
     interface: &GraphicsInterface,
-) -> anyhow::Result<(Arc<Swapchain>, Vec<Arc<Image>>)> {
+    vulkan: &Vulkan,
+) -> Result<(Id<Swapchain>, UVec2), VulkanError> {
     let surface_capabilities = device
         .physical_device()
-        .surface_capabilities(surface, Default::default())?;
+        .surface_capabilities(&surface, Default::default())
+        .map_err(|e| VulkanError::from(e.unwrap()))?;
     let image_format = device
         .physical_device()
-        .surface_formats(surface, Default::default())?[0]
+        .surface_formats(&surface, Default::default())
+        .map_err(|e| VulkanError::from(e.unwrap()))?[0]
         .0;
-    let innersize = surface
-        .object()
-        .ok_or(Error::msg("Failed to cast the surface to a window."))?
-        .downcast_ref::<Window>()
-        .ok_or(Error::msg("Failed to cast the surface to a window."))?
-        .inner_size()
-        .into();
+
+    let inner_size = UVec2::from_array(
+        surface
+            .object()
+            .unwrap()
+            .downcast_ref::<Window>()
+            .unwrap()
+            .inner_size()
+            .into(),
+    );
+
     let present_mode = device
         .physical_device()
-        .surface_present_modes(surface, SurfaceInfo::default())?
+        .surface_present_modes(&surface, SurfaceInfo::default())
+        .map_err(|e| VulkanError::from(e.unwrap()))?
         .into_iter()
         .min_by_key(|compare| match compare {
             PresentMode::Mailbox => 0,
@@ -37,9 +48,7 @@ pub fn create_swapchain_and_images(
             PresentMode::Fifo => 2,
             _ => 3,
         })
-        .ok_or(Error::msg(
-            "Failed to get any presentation mode on this device.",
-        ))?;
+        .unwrap(); // This has to at least contain `Fifo`
 
     // Set the present mode of the game engine to this.
     interface.settings.write().present_mode = present_mode.into();
@@ -47,7 +56,8 @@ pub fn create_swapchain_and_images(
     // Give available present modes
     let mut present_modes: Vec<_> = device
         .physical_device()
-        .surface_present_modes(surface, SurfaceInfo::default())?
+        .surface_present_modes(&surface, SurfaceInfo::default())
+        .map_err(|e| VulkanError::from(e.unwrap()))?
         .into_iter()
         .map(|x| x.into())
         .collect();
@@ -58,18 +68,22 @@ pub fn create_swapchain_and_images(
     let create_info = SwapchainCreateInfo {
         min_image_count: surface_capabilities.min_image_count,
         image_format,
-        image_extent: innersize,
+        image_extent: inner_size.into(),
         image_usage: ImageUsage::COLOR_ATTACHMENT,
         present_mode,
         composite_alpha: surface_capabilities
             .supported_composite_alpha
             .into_iter()
             .next()
-            .ok_or(Error::msg(
-                "Failed to find a supported compositor on this device.",
-            ))?,
+            .unwrap(),
         ..Default::default()
     };
-    Swapchain::new(device.clone(), surface.clone(), create_info)
-        .context("Failed to create a swapchain.")
+
+    Ok((
+        vulkan
+            .resources
+            .create_swapchain(vulkan.graphics_flight, surface, create_info)
+            .map_err(|e| VulkanError::from(e.unwrap()))?,
+        inner_size,
+    ))
 }

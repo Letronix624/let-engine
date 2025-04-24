@@ -2,7 +2,6 @@ pub mod backend;
 pub mod camera;
 pub mod objects;
 pub mod resources;
-pub mod utils;
 
 use foldhash::HashMap;
 use parking_lot::Mutex;

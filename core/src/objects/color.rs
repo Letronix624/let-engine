@@ -16,10 +16,22 @@ pub struct Color {
 
 /// Declaration
 impl Color {
+    /// Full white color
     pub const WHITE: Self = Self::from_rgb(1.0, 1.0, 1.0);
+
+    /// Black color with full alpha channel
     pub const BLACK: Self = Self::from_r(0.0);
+
+    /// Full Black transparent color
+    pub const TRANSPARENT: Self = Self::from_rgba(0.0, 0.0, 0.0, 0.0);
+
+    /// Opaque red color
     pub const RED: Self = Self::from_r(1.0);
+
+    /// Opaque green color
     pub const GREEN: Self = Self::from_g(1.0);
+
+    /// Opaque blue color
     pub const BLUE: Self = Self::from_b(1.0);
 
     /// Makes a color from red, green, blue and alpha.

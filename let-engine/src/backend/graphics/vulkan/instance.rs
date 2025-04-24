@@ -17,28 +17,28 @@ use crate::backend::graphics::{
 #[derive(Debug)]
 pub struct Queues {
     general: Vec<Arc<Queue>>,
-    graphics: Vec<Arc<Queue>>,
+    graphics: Arc<Queue>,
     compute: Vec<Arc<Queue>>,
     transfer: Vec<Arc<Queue>>,
 
     general_id: AtomicUsize,
-    graphics_id: AtomicUsize,
     compute_id: AtomicUsize,
     transfer_id: AtomicUsize,
 }
 
 impl Queues {
     fn new(
-        general: Vec<Arc<Queue>>,
-        graphics: Vec<Arc<Queue>>,
+        mut general: Vec<Arc<Queue>>,
         compute: Vec<Arc<Queue>>,
         transfer: Vec<Arc<Queue>>,
     ) -> Self {
         // If there are no general queues, assure each specialized queue is present.
-        assert!(
-            !general.is_empty()
-                || !(graphics.is_empty() || compute.is_empty() || transfer.is_empty())
-        );
+        assert!(!general.is_empty());
+
+        let graphics = general[0].clone();
+        if compute.is_empty() && transfer.is_empty() {
+            general.clear();
+        }
 
         Self {
             general,
@@ -47,7 +47,6 @@ impl Queues {
             transfer,
 
             general_id: 0.into(),
-            graphics_id: 0.into(),
             compute_id: 0.into(),
             transfer_id: 0.into(),
         }
@@ -59,20 +58,11 @@ impl Queues {
     }
 
     pub fn get_graphics(&self) -> &Arc<Queue> {
-        if self.graphics.is_empty() {
-            return self.get_general();
-        };
-
-        let id = self.graphics_id.fetch_add(1, Ordering::Relaxed) % self.graphics.len();
-        &self.graphics[id]
+        &self.graphics
     }
 
     pub fn graphics_id(&self) -> u32 {
-        if let Some(graphics_queue) = self.graphics.first() {
-            graphics_queue.queue_family_index()
-        } else {
-            self.general[0].queue_family_index()
-        }
+        self.graphics.queue_family_index()
     }
 
     pub fn get_compute(&self) -> &Arc<Queue> {
@@ -178,13 +168,17 @@ pub fn create_instance(
     })
 }
 
-// Selects the physical device by prioritizing preferred device types and evaluating their queue family capabilities.
+/// Selects the physical device by prioritizing preferred device types and evaluating their queue family capabilities.
+///
+/// the `[Option<(usize, u32)>; 3]` represents 3 queue family types, graphics, compute and transfer.
+/// The usize is the queue family index, the u32 the amount of queues to make.
+#[allow(clippy::type_complexity)]
 fn choose_physical_device(
     instance: &Arc<Instance>,
     device_extensions: &DeviceExtensions,
     features: &DeviceFeatures,
     handle: &impl HasDisplayHandle,
-) -> Result<(Arc<PhysicalDevice>, [Option<(usize, u32)>; 4]), DefaultGraphicsBackendError> {
+) -> Result<(Arc<PhysicalDevice>, [Option<(usize, u32)>; 3]), DefaultGraphicsBackendError> {
     let devices = instance.enumerate_physical_devices().map_err(|e| {
         if let vulkano::VulkanError::InitializationFailed = e {
             Unsupported("The Vulkan implementation of your device is incomplete.")
@@ -214,8 +208,8 @@ fn choose_physical_device(
 fn find_queue_families(
     physical_device: &Arc<PhysicalDevice>,
     handle: &impl HasDisplayHandle,
-) -> Option<[Option<(usize, u32)>; 4]> {
-    let mut queue_families = [None; 4];
+) -> Option<[Option<(usize, u32)>; 3]> {
+    let mut queue_families = [None; 3];
     let mut flags = QueueFlags::empty();
 
     for (id, family) in physical_device.queue_family_properties().iter().enumerate() {
@@ -229,22 +223,17 @@ fn find_queue_families(
             continue;
         };
 
-        if family
-            .queue_flags
-            .contains(QueueFlags::GRAPHICS | QueueFlags::COMPUTE | QueueFlags::TRANSFER)
-        {
+        if family.queue_flags.contains(QueueFlags::GRAPHICS) {
             queue_families[0] = Some((id, family.queue_count));
-        } else if family.queue_flags.intersects(QueueFlags::GRAPHICS) {
-            queue_families[1] = Some((id, family.queue_count));
         } else if family.queue_flags.intersects(QueueFlags::COMPUTE) {
-            queue_families[2] = Some((id, family.queue_count));
+            queue_families[1] = Some((id, family.queue_count));
         } else if family.queue_flags.intersects(
             QueueFlags::VIDEO_DECODE | QueueFlags::VIDEO_ENCODE | QueueFlags::OPTICAL_FLOW,
         ) {
             // Ignore unneeded queues
             continue;
         } else if family.queue_flags.intersects(QueueFlags::TRANSFER) {
-            queue_families[3] = Some((id, family.queue_count));
+            queue_families[2] = Some((id, family.queue_count));
         }
 
         flags |= family.queue_flags;
@@ -252,6 +241,11 @@ fn find_queue_families(
 
     // Ensure that at least one queue family provides graphics, compute, and transfer capabilities.
     if flags.contains(QueueFlags::GRAPHICS | QueueFlags::COMPUTE | QueueFlags::TRANSFER) {
+        // Only one general queue needed, if specialized compute and transfer queues are available.
+        if queue_families[1].is_some() && queue_families[2].is_some() {
+            queue_families[0].as_mut().unwrap().1 = 1;
+        }
+
         Some(queue_families)
     } else {
         None
@@ -310,7 +304,7 @@ pub fn create_device_and_queues(
     let queues: Vec<Arc<Queue>> = queues.collect();
 
     // Determine which range of the queues vec belongs to which specialisation
-    let r: [usize; 4] = {
+    let r: [usize; 3] = {
         let mut last = 0;
         queue_families.map(|x| {
             if let Some((_, queues)) = x {
@@ -327,7 +321,6 @@ pub fn create_device_and_queues(
         queues[0..r[0]].to_vec(),
         queues[r[0]..r[1]].to_vec(),
         queues[r[1]..r[2]].to_vec(),
-        queues[r[2]..r[3]].to_vec(),
     ));
 
     Ok((device, queues))
