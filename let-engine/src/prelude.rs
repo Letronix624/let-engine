@@ -19,7 +19,7 @@ pub use tick_system::*;
 pub use let_engine_core::{camera::*, objects::*};
 
 pub use crate::*;
-pub use let_engine_core::{make_circle, model};
+pub use let_engine_core::{circle, model};
 
 // Client structs
 #[cfg(feature = "client")]

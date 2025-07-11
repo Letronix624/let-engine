@@ -4,6 +4,8 @@ use super::model::Vertex;
 use bytemuck::AnyBitPattern;
 use glam::f32::{vec2, Vec2, Vec4};
 
+pub trait Data: AnyBitPattern + Send + Sync {}
+
 /// A vertex containing a position (xy) and texture position (uv).
 #[repr(C)]
 #[derive(AnyBitPattern, Vertex, Debug, Clone, Copy, PartialEq)]
@@ -23,27 +25,27 @@ pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> TVert {
     }
 }
 
-/// A vertex containing just a position (xy) R32G32_SFLOAT.
-#[repr(C)]
-#[derive(AnyBitPattern, Vertex, Debug, Clone, Copy, PartialEq)]
-pub struct Vert {
-    #[format(Rg32Float)]
-    pub position: Vec2,
-}
+// /// A vertex containing just a position (xy) R32G32_SFLOAT.
+// #[repr(C)]
+// #[derive(AnyBitPattern, Vertex, Debug, Clone, Copy, PartialEq)]
+// pub struct Vert {
+//     #[format(Rg32Float)]
+//     pub position: Vec2,
+// }
 
-impl From<Vec2> for Vert {
-    fn from(value: Vec2) -> Self {
-        Self { position: value }
-    }
-}
+// impl From<Vec2> for Vert {
+//     fn from(value: Vec2) -> Self {
+//         Self { position: value }
+//     }
+// }
 
-/// Creates a vertex with given x and y coordinates.
-#[inline]
-pub const fn vert(x: f32, y: f32) -> Vert {
-    Vert {
-        position: vec2(x, y),
-    }
-}
+// /// Creates a vertex with given x and y coordinates.
+// #[inline]
+// pub const fn vert(x: f32, y: f32) -> Vert {
+//     Vert {
+//         position: vec2(x, y),
+//     }
+// }
 
 // /// MVP matrix.
 // #[repr(C)]

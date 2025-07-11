@@ -3,8 +3,7 @@ use derive_builder::Builder;
 /// Represents a material that defines how an object is rendered, including its shaders, textures, and buffers.
 ///
 /// A `Material` consists of several components that control the appearance of an object in the rendering pipeline.
-/// It includes shader programs, texture data, and buffers that define the object's properties, such as colors,
-/// transformations, and other GPU resources.
+/// It includes shader programs and settings, that define the object's properties.
 pub struct Material {
     /// The material's settings that define rendering configuration, such as pipeline state or other parameters.
     pub settings: MaterialSettings,

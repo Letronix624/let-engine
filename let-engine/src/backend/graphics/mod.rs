@@ -4,7 +4,6 @@ use std::{cell::OnceCell, collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use buffer::{DrawableBuffer, GpuBuffer};
-use bytemuck::AnyBitPattern;
 use crossbeam::channel::{bounded, Receiver, Sender};
 use draw::Draw;
 use glam::UVec2;
@@ -13,7 +12,9 @@ use let_engine_core::{
     objects::{scenes::Scene, Color, Descriptor},
     resources::{
         buffer::Location,
+        data::Data,
         model::{Vertex, VertexBufferDescription},
+        texture::LoadedTexture,
         Format,
     },
 };
@@ -35,6 +36,8 @@ use vulkano::{
 };
 
 use winit::raw_window_handle::HasDisplayHandle;
+
+pub use vulkano::DeviceSize;
 
 pub mod buffer;
 pub mod material;
@@ -98,17 +101,17 @@ impl GraphicsBackend for DefaultGraphicsBackend {
 
     fn init_window(
         &mut self,
-        window: Arc<
+        window: &Arc<
             impl winit::raw_window_handle::HasWindowHandle
                 + HasDisplayHandle
                 + std::any::Any
                 + Send
                 + Sync,
         >,
-        scene: &Scene<Self::LoadedTypes>,
+        scene: &Arc<Scene<Self::LoadedTypes>>,
     ) {
         // TODO: Remove unwraps
-        let draw = Draw::setup(self.interface.clone(), window, scene.clone()).unwrap();
+        let draw = Draw::new(self.interface.clone(), window, scene.clone()).unwrap();
 
         let _ = self.draw.set(draw);
     }
@@ -117,9 +120,9 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         &self.interface
     }
 
-    fn update(&mut self) {
+    fn update(&mut self, pre_present_notify: impl FnOnce()) {
         if let Some(draw) = self.draw.get_mut() {
-            draw.redraw_event().unwrap(); // TODO
+            draw.redraw_event(pre_present_notify).unwrap(); // TODO
         }
     }
 
@@ -135,7 +138,7 @@ pub struct VulkanTypes;
 
 impl Loaded for VulkanTypes {
     type Material = GpuMaterial;
-    type Buffer<B: AnyBitPattern + Send + Sync> = GpuBuffer<B>;
+    type Buffer<B: Data> = GpuBuffer<B>;
     type DrawableBuffer = DrawableBuffer;
     type Model<V: Vertex> = GpuModel<V>;
     type DrawableModel = DrawableModel;
@@ -191,7 +194,6 @@ impl Loaded for VulkanTypes {
 
             match buffer {
                 Descriptor::Texture(texture) => {
-                    let texture = texture.inner().lock();
                     let types = &requirement.descriptor_types;
                     let texture_type = texture.descriptor_type();
                     if !types.contains(&texture_type) {
@@ -202,7 +204,7 @@ impl Loaded for VulkanTypes {
                         });
                     }
 
-                    let texture_format = format_to_vulkano(texture.format());
+                    let texture_format = format_to_vulkano(&texture.settings().format);
 
                     if let Some(format) = requirement.image_format {
                         if format != texture_format {
@@ -273,13 +275,11 @@ impl Loaded for VulkanTypes {
             }
         }
 
-        //TODO Cache descriptor sets
+        // TODO: Cache descriptor sets
 
         Ok(())
     }
-    fn draw_buffer<B: AnyBitPattern + Send + Sync>(
-        buffer: Self::Buffer<B>,
-    ) -> Self::DrawableBuffer {
+    fn draw_buffer<B: Data>(buffer: Self::Buffer<B>) -> Self::DrawableBuffer {
         DrawableBuffer::from_buffer(buffer)
     }
 
@@ -379,32 +379,33 @@ pub struct GraphicsInterface {
 impl let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes> for GraphicsInterface {
     fn load_material<V: let_engine_core::resources::model::Vertex>(
         &self,
-        material: let_engine_core::resources::material::Material,
+        material: &let_engine_core::resources::material::Material,
     ) -> Result<GpuMaterial> {
-        let shaders = unsafe { VulkanGraphicsShaders::from_bytes(material.graphics_shaders)? };
+        let shaders =
+            unsafe { VulkanGraphicsShaders::from_bytes(material.graphics_shaders.clone())? };
 
-        GpuMaterial::new::<V>(material.settings, shaders).context("hello")
+        GpuMaterial::new::<V>(material.settings.clone(), shaders).context("hello")
     }
 
-    fn load_buffer<B: AnyBitPattern + Send + Sync>(
+    fn load_buffer<B: Data>(
         &self,
-        buffer: let_engine_core::resources::buffer::Buffer<B>,
+        buffer: &let_engine_core::resources::buffer::Buffer<B>,
     ) -> Result<GpuBuffer<B>> {
         GpuBuffer::new(buffer).context("failed to load buffer")
     }
 
     fn load_model<V: let_engine_core::resources::model::Vertex>(
         &self,
-        model: let_engine_core::resources::model::Model<V>,
+        model: &let_engine_core::resources::model::Model<V>,
     ) -> Result<GpuModel<V>> {
-        GpuModel::new(&model).context("failed to load model")
+        GpuModel::new(model).context("failed to load model")
     }
 
     fn load_texture(
         &self,
-        texture: let_engine_core::resources::texture::Texture,
+        texture: &let_engine_core::resources::texture::Texture,
     ) -> Result<GpuTexture> {
-        GpuTexture::new(&texture).context("failed to load texture")
+        GpuTexture::new(texture).context("failed to load texture")
     }
 }
 

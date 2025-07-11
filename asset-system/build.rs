@@ -17,7 +17,7 @@ fn main() -> Result<()> {
         return Ok(());
     };
 
-    println!("cargo:rerun-if-changed={}", assets_path);
+    println!("cargo:rerun-if-changed={assets_path}");
     let assets_path = PathBuf::from(assets_path);
     let output_path = PathBuf::from(&out_dir).join("../../..");
     let config = {
@@ -62,7 +62,7 @@ fn main() -> Result<()> {
                 None
             }
         };
-        println!("Content is {:?}.", group_config);
+        println!("Content is {group_config:?}.");
         let compression: Compression = {
             if let Some(config) = group_config.clone() {
                 config

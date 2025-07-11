@@ -2,6 +2,7 @@
 
 use anyhow::{Error, Result};
 use foldhash::HashMap;
+use glam::Vec2;
 use let_engine_core::resources::{
     buffer::Location,
     material::{GraphicsShaders, MaterialSettings},
@@ -25,7 +26,7 @@ use vulkano::{
 use super::{
     vertex_buffer_description_to_vulkano,
     vulkan::{
-        shaders::{default_shaders, default_textured_shaders},
+        shaders::{basic_shaders, default_shaders, default_textured_shaders},
         VK,
     },
     VulkanError,
@@ -140,19 +141,32 @@ impl GpuMaterial {
         })
     }
 
-    /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding 0, 0 and uses [`Vertex`] as the vertex type.
+    /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding (0, 0), a [`Vec4`] color vector at (0, 1) and uses [`Vec2`] as the vertex type.
     pub fn new_default() -> Result<Self, GpuMaterialError> {
-        Self::new::<let_engine_core::resources::data::Vert>(
+        Self::new::<Vec2>(
             MaterialSettings::default(),
             VulkanGraphicsShaders::new_default().map_err(GpuMaterialError::Shader)?,
         )
     }
 
-    /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding 0, 0 and uses [`TVertex`] as the vertex type.
+    /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding (0, 0),
+    /// a [`Vec4`] color at (0, 1) and a texture at (0, 2) and uses [`TVert`] as the vertex type.
+    ///
+    /// In the shader the fragment color simply gets set to the texture at that coordinate multiplied by the color.
     pub fn new_default_textured() -> Result<Self, GpuMaterialError> {
         Self::new::<let_engine_core::resources::data::TVert>(
             MaterialSettings::default(),
             VulkanGraphicsShaders::new_default_textured().map_err(GpuMaterialError::Shader)?,
+        )
+    }
+
+    /// Creates a new material containing a very basic shader that simply displays the model in white without any descriptors.
+    ///
+    /// Uses [`Vec2`] as the vertex type.
+    pub fn new_basic() -> Result<Self, GpuMaterialError> {
+        Self::new::<Vec2>(
+            MaterialSettings::default(),
+            VulkanGraphicsShaders::new_basic().map_err(GpuMaterialError::Shader)?,
         )
     }
 
@@ -253,6 +267,7 @@ impl PartialEq for VulkanGraphicsShaders {
 
 static DEFAULT_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
 static DEFAULT_TEXTURED_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
+static BASIC_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
 
 impl VulkanGraphicsShaders {
     /// Creates a shader from SpirV bytes.
@@ -274,7 +289,7 @@ impl VulkanGraphicsShaders {
             bytes_to_words(&shaders.vertex_bytes).map_err(|_| ShaderError::InvalidSpirV)?;
 
         let vertex: Arc<ShaderModule> = unsafe {
-            ShaderModule::new(device.clone(), ShaderModuleCreateInfo::new(&vertex_words))
+            ShaderModule::new(&device, &ShaderModuleCreateInfo::new(&vertex_words))
                 .map_err(|x| ShaderError::Other(x.unwrap().into()))?
         };
 
@@ -288,7 +303,7 @@ impl VulkanGraphicsShaders {
         let fragment = if let Some(frag) = shaders.fragment_bytes {
             let words = bytes_to_words(&frag).map_err(|_| ShaderError::InvalidSpirV)?;
             let fragment = unsafe {
-                ShaderModule::new(device, ShaderModuleCreateInfo::new(&words))
+                ShaderModule::new(&device, &ShaderModuleCreateInfo::new(&words))
                     .map_err(|x| ShaderError::Other(x.unwrap().into()))?
             };
             let Some(entry_point) = &shaders.fragment_entry_point else {
@@ -321,7 +336,7 @@ impl VulkanGraphicsShaders {
     ///
     /// # Layout
     ///
-    /// vertex type: [`Vert`](crate::prelude::Vert)
+    /// vertex type: [`Vec2`]
     /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
     /// set 1, binding 0: [`Color`](crate::prelude::Color)
     pub fn new_default() -> Result<Self, ShaderError> {
@@ -351,6 +366,18 @@ impl VulkanGraphicsShaders {
         } else {
             let shaders = unsafe { Self::from_bytes(default_textured_shaders()) }?;
             DEFAULT_TEXTURED_SHADER.set(shaders.clone()).unwrap();
+            Ok(shaders)
+        }
+    }
+
+    /// Creates a basic shader, which does not take any descriptors and only displays the object in white.
+    pub fn new_basic() -> Result<Self, ShaderError> {
+        let basic = BASIC_SHADER.get();
+        if let Some(basic) = basic {
+            Ok(basic.clone())
+        } else {
+            let shaders = unsafe { Self::from_bytes(basic_shaders()) }?;
+            BASIC_SHADER.set(shaders.clone()).unwrap();
             Ok(shaders)
         }
     }

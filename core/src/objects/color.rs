@@ -5,6 +5,8 @@ use glam::{vec3, vec4, Vec3, Vec4};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::resources::data::Data;
+
 /// Representation of a color in form of 4 `f32`'s for R, G, B and A.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default, Clone, Copy, Debug, PartialEq, bytemuck::AnyBitPattern, Vertex)]
@@ -13,6 +15,8 @@ pub struct Color {
     #[format(Rgba32Float)]
     rgba: [f32; 4],
 }
+
+impl Data for Color {}
 
 /// Declaration
 impl Color {
@@ -374,5 +378,19 @@ impl std::ops::DivAssign<f32> for Color {
     #[inline]
     fn div_assign(&mut self, rhs: f32) {
         self.rgba.map(|mut x| x.div_assign(rhs));
+    }
+}
+
+impl std::ops::Deref for Color {
+    type Target = [f32; 4];
+
+    fn deref(&self) -> &Self::Target {
+        &self.rgba
+    }
+}
+
+impl std::ops::DerefMut for Color {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.rgba
     }
 }

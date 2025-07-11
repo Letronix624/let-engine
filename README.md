@@ -70,7 +70,7 @@ rad clone rad:z35VMD8yfGYcrvb7k2eyxiUL4VUko
 
 run by doing
 ```bash
-cargo run --example pong / circle / egui
+cargo run --example 
 ```
 ## Tip
 For best performance compile to `release` with **this** in the `Cargo.toml`

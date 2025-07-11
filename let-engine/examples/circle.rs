@@ -1,23 +1,25 @@
 //! Simple circle scene.
-#[cfg(feature = "client")]
-use std::sync::Arc;
+//!
+//! # Controls
+//! - Scroll: change number of vertices
 
 #[cfg(feature = "client")]
 use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
 #[cfg(feature = "client")]
 use let_engine::prelude::*;
-use let_engine_core::make_circle;
+use let_engine_core::circle;
 
 #[cfg(not(feature = "client"))]
 fn main() {
     eprintln!("This example requires you to have the `client` feature enabled.");
 }
 
+const MAX_DEGREE: usize = 1000;
+
 #[cfg(feature = "client")]
 fn main() {
     // Log messages
 
-    #[cfg(feature = "vulkan_debug")]
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .init()
@@ -25,7 +27,9 @@ fn main() {
 
     // First you make a builder containing the description of the window.
 
-    let window_builder = WindowBuilder::new().inner_size(uvec2(1280, 720));
+    let window_builder = WindowBuilder::new()
+        .inner_size(uvec2(1280, 720))
+        .title(env!("CARGO_CRATE_NAME"));
     // Then you start the engine allowing you to load resources and layers.
     let mut engine =
         Engine::<Game>::new(EngineSettings::default().window(window_builder).graphics(
@@ -44,8 +48,8 @@ fn main() {
 /// Makes a game struct containing
 #[cfg(feature = "client")]
 struct Game {
-    /// the view perspective to draw
-    _root_view: Arc<LayerView<VulkanTypes>>,
+    model: GpuModel<Vec2>,
+    degree: u32,
 }
 
 #[cfg(feature = "client")]
@@ -57,18 +61,26 @@ impl Game {
 
         // The view will exist as long as this variable is kept. Dropping this eliminates the view.
         let root_view = context.scene.root_view();
-        // next we set the view of the game scene zoomed out and not stretchy.
-        root_view.set_camera(Camera {
-            transform: Transform::default().size(Vec2::splat(0.5)),
-            scaling: CameraScaling::Expand,
-        });
 
-        // Loads a circle model into the engine.
-        let circle_model = GpuModel::new(&make_circle!(20)).unwrap();
+        // next we set the view of the game scene zoomed out and not stretchy.
+        root_view.set_camera(Transform::with_size(Vec2::splat(2.0)));
+        root_view.set_scaling(CameraScaling::Circle);
+
+        let degree = 15;
+
+        // Create circle model
+        let mut circle_model = circle!(degree, BufferAccess::Staged);
+
+        // Raise maximum vertices and indices for growable model
+        circle_model.set_max_vertices(MAX_DEGREE + 1);
+        circle_model.set_max_indices(MAX_DEGREE * 3);
+
+        // Load circle model to the GPU.
+        let circle_model = GpuModel::new(&circle_model).unwrap();
 
         let default_material = GpuMaterial::new_default().unwrap();
 
-        let color_buffer = GpuBuffer::new(Buffer::from_data(
+        let color_buffer = GpuBuffer::new(&Buffer::from_data(
             buffer::BufferUsage::Uniform,
             BufferAccess::Fixed,
             Color::from_rgb(1.0, 0.3, 0.5),
@@ -76,14 +88,11 @@ impl Game {
         .unwrap();
 
         let circle_appearance = AppearanceBuilder::<VulkanTypes>::default()
-            .model(circle_model)
+            .model(circle_model.clone())
             .material(default_material)
             .descriptors(&[
                 (Location::new(0, 0), Descriptor::Mvp),
-                (
-                    Location::new(1, 0),
-                    Descriptor::buffer(color_buffer.clone()),
-                ),
+                (Location::new(1, 0), Descriptor::buffer(color_buffer)),
             ])
             .build()
             .unwrap();
@@ -95,9 +104,8 @@ impl Game {
         circle.init(&root_layer).unwrap();
 
         Self {
-            // color_buffer,
-            // Makes a base layer where you place your scene into.
-            _root_view: root_view,
+            model: circle_model,
+            degree,
         }
     }
 }
@@ -106,14 +114,30 @@ impl Game {
 #[cfg(feature = "client")]
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {
-        if let WindowEvent::CloseRequested = event {
-            context.exit();
+    fn window(&mut self, context: &EngineContext, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => context.exit(),
+            WindowEvent::MouseWheel(ScrollDelta::LineDelta(delta)) => {
+                if delta.y > 0.0 {
+                    if self.degree < MAX_DEGREE as u32 {
+                        self.degree += 1;
+                        log::info!("(+) Corners: {}", self.degree);
+                    }
+                } else if self.degree > 2 {
+                    self.degree -= 1;
+                    log::info!("(-) Corners: {}", self.degree);
+                }
+
+                let new_model = circle!(self.degree);
+
+                self.model.write_model(&new_model).unwrap();
+            }
+            _ => (),
         }
     }
 
     // Exit when the escape key is pressed.
-    fn input(&mut self, context: &EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: &EngineContext, event: InputEvent) {
         if let InputEvent::KeyboardInput { input } = event {
             if let ElementState::Pressed = input.state {
                 if let Key::Named(NamedKey::Escape) = input.key {

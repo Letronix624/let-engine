@@ -1,6 +1,6 @@
 use anyhow::Result;
 use derive_builder::Builder;
-use image::{DynamicImage, GenericImageView, ImageReader};
+use image::{EncodableLayout, GenericImageView, ImageReader};
 
 use crate::objects::Color;
 
@@ -21,32 +21,26 @@ pub trait LoadedTexture: Clone + Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     /// Return the data of the image.
-    fn data(&self) -> Result<Vec<u8>, Self::Error>;
+    fn data<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), Self::Error>;
 
-    fn dimensions(&self) -> ViewTypeDim;
+    fn write_data<F: FnOnce(&mut [u8])>(&self, f: F) -> Result<(), Self::Error>;
 
-    fn resize(&self, new_dimensions: ViewTypeDim) -> Result<(), Self::Error>;
-
-    fn write_data<F: FnMut(&mut [u8])>(&self, f: F) -> Result<(), Self::Error>;
+    fn dimensions(&self) -> &ViewTypeDim;
 }
 
 impl LoadedTexture for () {
     type Error = std::io::Error;
 
-    fn data(&self) -> Result<Vec<u8>, Self::Error> {
-        Ok(vec![])
-    }
-
-    fn dimensions(&self) -> ViewTypeDim {
-        ViewTypeDim::D1 { x: 0 }
-    }
-
-    fn resize(&self, _new_dimensions: ViewTypeDim) -> Result<(), Self::Error> {
+    fn data<F>(&self, _f: F) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn write_data<F: FnMut(&mut [u8])>(&self, _f: F) -> Result<(), Self::Error> {
+    fn write_data<F>(&self, _f: F) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    fn dimensions(&self) -> &ViewTypeDim {
+        &ViewTypeDim::D1 { x: 0 }
     }
 }
 
@@ -175,11 +169,17 @@ impl Texture {
 
     /// Creates a texture from the bytes of a decoded image of the given image format.
     ///
+    /// The image gets decoded as the provided format in `settings.format`. Supported formats are:
+    /// R8Unorm, Sr8, Rg8Unorm, Srg8, Rgb8Unorm, Srgb8, Rgba8Unorm, Srgba8, R16Unorm, Rg16Unorm, Rgb16Unorm, Rgba16Unorm, Rgb32Float, Rgba32Float
+    ///
+    /// # Note
+    /// Some formats are not supported on some devices. A good format to use would be Srgba8.
+    ///
     /// The view type equals [`ViewType::D2`].
     pub fn from_bytes(
         data: Vec<u8>,
         image_format: ImageFormat,
-        mut settings: TextureSettings,
+        settings: TextureSettings,
     ) -> Result<Self, TextureError> {
         let cursor = std::io::Cursor::new(data);
 
@@ -195,47 +195,17 @@ impl Texture {
 
         let dimensions = data.dimensions();
 
-        let data = match data {
-            DynamicImage::ImageLuma8(data) => {
-                settings.format = Format::Sr8;
-                data.to_vec()
-            }
-            DynamicImage::ImageLumaA8(data) => {
-                settings.format = Format::Srg8;
-                data.to_vec()
-            }
-            DynamicImage::ImageRgb8(data) => {
-                settings.format = Format::Srgb8;
-                data.to_vec()
-            }
-            DynamicImage::ImageRgba8(data) => {
-                settings.format = Format::Srgba8;
-                data.to_vec()
-            }
-            DynamicImage::ImageLuma16(data) => {
-                settings.format = Format::R16Unorm;
-                data.iter().flat_map(|x| x.to_le_bytes()).collect()
-            }
-            DynamicImage::ImageLumaA16(data) => {
-                settings.format = Format::Rg16Unorm;
-                data.iter().flat_map(|x| x.to_le_bytes()).collect()
-            }
-            DynamicImage::ImageRgb16(data) => {
-                settings.format = Format::Rgb16Unorm;
-                data.iter().flat_map(|x| x.to_le_bytes()).collect()
-            }
-            DynamicImage::ImageRgba16(data) => {
-                settings.format = Format::Rgba16Unorm;
-                data.iter().flat_map(|x| x.to_le_bytes()).collect()
-            }
-            DynamicImage::ImageRgb32F(data) => {
-                settings.format = Format::Rgb32Float;
-                data.iter().flat_map(|x| x.to_le_bytes()).collect()
-            }
-            DynamicImage::ImageRgba32F(data) => {
-                settings.format = Format::Rgba32Float;
-                data.iter().flat_map(|x| x.to_le_bytes()).collect()
-            }
+        let data = match settings.format {
+            Format::R8Unorm | Format::Sr8 => data.into_luma8().as_bytes().to_vec(),
+            Format::Rg8Unorm | Format::Srg8 => data.into_luma_alpha8().as_bytes().to_vec(),
+            Format::Rgb8Unorm | Format::Srgb8 => data.into_rgb8().as_bytes().to_vec(),
+            Format::Rgba8Unorm | Format::Srgba8 => data.into_rgba8().as_bytes().to_vec(),
+            Format::R16Unorm => data.into_luma16().as_bytes().to_vec(),
+            Format::Rg16Unorm => data.into_luma_alpha16().as_bytes().to_vec(),
+            Format::Rgb16Unorm => data.into_rgb16().as_bytes().to_vec(),
+            Format::Rgba16Unorm => data.into_rgba16().as_bytes().to_vec(),
+            Format::Rgb32Float => data.into_rgb32f().as_bytes().to_vec(),
+            Format::Rgba32Float => data.into_rgba32f().as_bytes().to_vec(),
             _ => return Err(TextureError::InvalidFormat),
         };
 
@@ -319,8 +289,8 @@ impl Texture {
 /// Errors that are possble when creating textures.
 #[derive(thiserror::Error, Debug)]
 pub enum TextureError {
-    /// The texture data does not match with the provided format in the texture from bytes method.
-    #[error("The format of the texture is not equivalent to the provided format.")]
+    /// The provided format for this texture is not supported.
+    #[error("The provided format to decode this texture into is not supported.")]
     InvalidFormat,
 
     /// The size of the texture does not match with the given dimensions or format size.
@@ -565,7 +535,7 @@ impl Default for Sampler {
 /// let settings = TextureSettingsBuilder::default()
 ///     .sampler(my_sampler)
 ///     .format(my_format)
-///     .preferred_access(Access::Reading)
+///     .access_pattern(BufferAccess::Fixed)
 ///     .build()
 ///     .unwrap();
 /// ```

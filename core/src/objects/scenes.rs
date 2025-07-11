@@ -44,9 +44,9 @@ impl<T: Loaded> Scene<T> {
     }
 
     /// Returns the only `LayerView` of the root layer.
-    pub fn root_view(&self) -> Arc<LayerView<T>> {
+    pub fn root_view(&self) -> &Arc<LayerView<T>> {
         // last one should never ever be empty.
-        self.root_view.clone()
+        &self.root_view
     }
 
     /// Returns a mutex of all layer views of the whole scene.
@@ -104,7 +104,7 @@ impl<T: Loaded> Layer<T> {
             objects_map: Mutex::new(HashMap::default()),
             #[cfg(feature = "physics")]
             rigid_body_roots: Mutex::new(HashMap::default()),
-            latest_object: AtomicU64::new(1),
+            latest_object: 0.into(),
             #[cfg(feature = "physics")]
             physics: Mutex::new(Physics::new()),
             #[cfg(feature = "physics")]
@@ -123,7 +123,7 @@ impl<T: Loaded> Layer<T> {
             objects_map: Mutex::new(HashMap::default()),
             #[cfg(feature = "physics")]
             rigid_body_roots: Mutex::new(HashMap::default()),
-            latest_object: AtomicU64::new(1),
+            latest_object: 0.into(),
             #[cfg(feature = "physics")]
             physics: Mutex::new(Physics::new()),
             #[cfg(feature = "physics")]
@@ -138,7 +138,8 @@ impl<T: Loaded> Layer<T> {
             parent: layer.self_weak.upgrade().unwrap(),
             camera: AtomicCell::new(Default::default()),
             draw: true.into(),
-            extent: UVec2 { x: 0, y: 0 },
+            extent: UVec2 { x: 0, y: 0 }.into(),
+            scaling: Default::default(),
         });
 
         let weak = Arc::downgrade(&view);
@@ -192,9 +193,10 @@ impl<T: Loaded> Layer<T> {
     /// You can not have multiple views of the root layer.
     pub fn new_view(
         &self,
-        camera: Camera,
         scene: &Scene<T>,
+        camera: Camera,
         extent: UVec2,
+        scaling: CameraScaling,
     ) -> Option<Arc<LayerView<T>>> {
         if self.self_weak.ptr_eq(&self.parent_layer) {
             return None;
@@ -204,7 +206,8 @@ impl<T: Loaded> Layer<T> {
             parent: self.self_weak.upgrade().unwrap(),
             camera: AtomicCell::new(camera),
             draw: true.into(),
-            extent,
+            extent: extent.into(),
+            scaling: scaling.into(),
         });
 
         // Add view just to have one reference more before updating.
@@ -762,12 +765,16 @@ impl<T: Loaded> std::hash::Hash for Layer<T> {
 /// to the screen in the case of the root layer.
 ///
 /// To delete a LayerView, drop the last reference to it.
+///
+/// In `camera`, the [`Transform`] acts as a camera, where `size` determines the zoom in both axis.
+///
+/// Setting the extent on the root view does not do anything.
 pub struct LayerView<T: Loaded> {
     parent: Arc<Layer<T>>,
     camera: AtomicCell<Camera>,
     draw: AtomicBool,
-    // Extent of 0, 0 means "Same as window resolution"
-    extent: UVec2,
+    extent: AtomicCell<UVec2>,
+    scaling: AtomicCell<CameraScaling>,
 }
 
 impl<T: Loaded> LayerView<T> {
@@ -779,6 +786,22 @@ impl<T: Loaded> LayerView<T> {
     /// Sets the camera.
     pub fn set_camera(&self, camera: Camera) {
         self.camera.store(camera)
+    }
+
+    pub fn scaling(&self) -> CameraScaling {
+        self.scaling.load()
+    }
+
+    pub fn set_scaling(&self, scaling: CameraScaling) {
+        self.scaling.store(scaling);
+    }
+
+    pub fn extent(&self) -> UVec2 {
+        self.extent.load()
+    }
+
+    pub fn set_extent(&self, extent: UVec2) {
+        self.extent.store(extent);
     }
 
     /// Returns if this view gets drawn.
@@ -809,11 +832,22 @@ impl<T: Loaded> LayerView<T> {
 
         let camera = self.camera.load();
 
-        let dimensions = camera.scaling.scale(self.extent.as_vec2());
-        let zoom = 1.0 / camera.transform.size;
+        let dimensions = self.scaling().scale(self.extent.load().as_vec2());
+        let zoom = 1.0 / camera.size;
         vec2(
-            direction[0] * (dimensions.x * zoom.x) + camera.transform.position.x * 2.0,
-            -direction[1] * (dimensions.y * zoom.y) + camera.transform.position.y * 2.0,
+            direction[0] * (dimensions.x * zoom.x) + camera.position.x * 2.0,
+            -direction[1] * (dimensions.y * zoom.y) + camera.position.y * 2.0,
         )
     }
+
+    /// Creates a projection matrix for the view.
+    pub fn make_projection_matrix(&self) -> Mat4 {
+        let scaled = self.scaling().scale(self.extent.load().as_vec2());
+        // let scaled = scaled * 1.0 / self.transform.size;
+        Mat4::orthographic_rh(-scaled.x, scaled.x, -scaled.y, scaled.y, -1.0, 1.0)
+    }
 }
+
+// pub struct RootView<T: Loaded> {
+//     view: LayerView,
+// }

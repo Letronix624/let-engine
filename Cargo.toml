@@ -9,10 +9,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.11.0-alpha"
+version = "0.11.0"
 edition = "2021"
 repository = "https://github.com/Letronix624/let-engine"
-homepage = "https://www.let.software" 
+homepage = "https://let.software" 
 keywords = ["gamedev", "graphics", "engine"]
 license = "Apache-2.0"
 

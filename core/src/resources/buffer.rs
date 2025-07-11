@@ -1,14 +1,14 @@
-use bytemuck::AnyBitPattern;
+use super::data::Data;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Buffer<T: AnyBitPattern + Send + Sync> {
+#[derive(Debug, Clone)]
+pub struct Buffer<T: Data> {
     data: T,
     // size: u64,
     usage: BufferUsage,
     buffer_access: BufferAccess,
 }
 
-impl<T: AnyBitPattern + Send + Sync> Buffer<T> {
+impl<T: Data> Buffer<T> {
     pub fn from_data(usage: BufferUsage, optimisation: BufferAccess, data: T) -> Self {
         Self {
             data,
@@ -16,6 +16,11 @@ impl<T: AnyBitPattern + Send + Sync> Buffer<T> {
             usage,
             buffer_access: optimisation,
         }
+    }
+
+    /// Returns the data contained in this buffer.
+    pub fn data(&self) -> &T {
+        &self.data
     }
 
     /// Returns the intended usage of this buffer.
@@ -39,7 +44,7 @@ impl<T: AnyBitPattern + Send + Sync> Buffer<T> {
     }
 }
 
-impl<T: AnyBitPattern + Send + Sync> std::ops::Deref for Buffer<T> {
+impl<T: Data> std::ops::Deref for Buffer<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -47,28 +52,32 @@ impl<T: AnyBitPattern + Send + Sync> std::ops::Deref for Buffer<T> {
     }
 }
 
-impl<T: AnyBitPattern + Send + Sync> std::ops::DerefMut for Buffer<T> {
+impl<T: Data> std::ops::DerefMut for Buffer<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
 }
 
-pub trait LoadedBuffer<B: AnyBitPattern + Send + Sync>: Clone + Send + Sync {
+pub trait LoadedBuffer<B: Data>: Clone + Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
-    fn data(&self) -> Result<B, Self::Error>;
+    fn data<F>(&self, f: F) -> Result<(), Self::Error>
+    where
+        F: FnOnce(&B);
 
-    fn write_data_mut<F: FnOnce(&mut B)>(&self, f: F) -> Result<(), Self::Error>;
+    fn write_data<F>(&self, f: F) -> Result<(), Self::Error>
+    where
+        F: FnOnce(&mut B);
 }
 
-impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for () {
+impl<B: Data> LoadedBuffer<B> for () {
     type Error = std::io::Error;
 
-    fn data(&self) -> Result<B, Self::Error> {
-        Ok(B::zeroed())
+    fn data<F>(&self, _: F) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    fn write_data_mut<F: FnOnce(&mut B)>(&self, _f: F) -> Result<(), Self::Error> {
+    fn write_data<F>(&self, _: F) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -125,6 +134,7 @@ pub enum PreferOperation {
 ///
 /// The default variant is [`BufferAccess::Fixed`]
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum BufferAccess {
     /// A simple buffer access pattern for static data that is uploaded once and never changed after.
     ///

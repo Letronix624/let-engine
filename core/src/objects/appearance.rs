@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     backend::graphics::Loaded,
-    resources::{buffer::Location, model::Vertex},
+    resources::{buffer::Location, data::Data, model::Vertex},
 };
 
 /// Builder struct to the [`Appearance`] struct.
@@ -12,9 +12,6 @@ use crate::{
 pub struct AppearanceBuilder<T: Loaded> {
     /// Initial transform
     pub transform: Transform,
-
-    /// The model view projection matrix configuration which will is not changeable after building.
-    pub mvp_config: MvpConfig,
 
     /// The initial material of the appearance.
     ///
@@ -37,7 +34,6 @@ impl<T: Loaded> Default for AppearanceBuilder<T> {
     fn default() -> Self {
         Self {
             transform: Transform::default(),
-            mvp_config: MvpConfig::default(),
             material: None,
             model: None,
             descriptors: BTreeMap::new(),
@@ -56,12 +52,6 @@ impl<T: Loaded> AppearanceBuilder<T> {
     /// Sets the transformation and returns self.
     pub fn transform(mut self, transform: Transform) -> Self {
         self.transform = transform;
-        self
-    }
-
-    /// Sets the mvp_configation and returns self.
-    pub fn mvp_config(mut self, mvp_config: MvpConfig) -> Self {
-        self.mvp_config = mvp_config;
         self
     }
 
@@ -133,7 +123,6 @@ impl<T: Loaded> AppearanceBuilder<T> {
         Ok(Appearance {
             visible: self.visible,
             transform: self.transform,
-            mvp_config: self.mvp_config,
             material,
             model,
             descriptors: self.descriptors,
@@ -163,8 +152,6 @@ pub struct Appearance<T: Loaded> {
     descriptors: BTreeMap<Location, Descriptor<T>>,
     transform: Transform,
 
-    mvp_config: MvpConfig,
-
     material: T::Material,
     model: T::DrawableModel,
     visible: bool,
@@ -176,7 +163,6 @@ impl<T: Loaded> Clone for Appearance<T> {
         Self {
             visible: self.visible,
             transform: self.transform,
-            mvp_config: self.mvp_config,
             material: self.material.clone(),
             model: self.model.clone(),
             // instance: self.instance.clone(),
@@ -194,7 +180,7 @@ pub enum Descriptor<T: Loaded> {
 }
 
 impl<T: Loaded> Descriptor<T> {
-    pub fn buffer<B: AnyBitPattern + Send + Sync>(buffer: T::Buffer<B>) -> Self {
+    pub fn buffer<B: Data>(buffer: T::Buffer<B>) -> Self {
         Self::Buffer(T::draw_buffer(buffer))
     }
 }
@@ -209,32 +195,7 @@ impl<T: Loaded> Clone for Descriptor<T> {
     }
 }
 
-/// The default model view projection matrices provided by the engine in the most optimized manner.
-///
-/// The format of this structure consists of a `mat4` for each enabled matrix.
-///
-/// This struct is located in the shader everywhere, where buffers is `Buffers::Mvp` in the appearance.
-///
-/// In case everything is set to `false`, this functionality is disabled.
-#[derive(Eq, Debug, Clone, Copy, PartialEq)]
-pub struct MvpConfig {
-    pub model: bool,
-    pub view: bool,
-    pub projection: bool,
-}
-
-impl Default for MvpConfig {
-    fn default() -> Self {
-        Self {
-            model: true,
-            view: true,
-            projection: true,
-        }
-    }
-}
-
 use anyhow::Result;
-use bytemuck::AnyBitPattern;
 use paste::paste;
 use thiserror::Error;
 
@@ -307,12 +268,6 @@ impl<T: Loaded> Appearance<T> {
     getters_and_setters!(transform, "the transform", Transform);
     getters_and_setters!(model, "the model", T::DrawableModel);
     getters_and_setters!(material, "the material", T::Material);
-
-    /// Returns the model view projection configuration for this appearance.
-    #[inline]
-    pub fn mvp_config(&self) -> &MvpConfig {
-        &self.mvp_config
-    }
 
     /// Returns a reference to the HashMap of descriptors in this appearance.
     #[inline]

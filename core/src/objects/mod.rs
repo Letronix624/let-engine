@@ -3,10 +3,12 @@
 mod appearance;
 mod color;
 pub use appearance::*;
+use bytemuck::AnyBitPattern;
 pub use color::Color;
 
 #[cfg(feature = "physics")]
 pub mod physics;
+use engine_macros::Vertex;
 #[cfg(feature = "physics")]
 use physics::*;
 
@@ -17,7 +19,7 @@ use anyhow::{anyhow, Error, Result};
 
 use derive_builder::Builder;
 
-use crate::{HashMap, Mutex};
+use crate::{resources::data::Data, HashMap, Mutex};
 use std::sync::{Arc, Weak};
 
 use glam::{vec2, Mat4, Quat, Vec2};
@@ -31,21 +33,93 @@ type WeakObject<T> = Weak<Mutex<Node<T>>>;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+impl Data for Transform {}
+
 /// Holds position size and rotation of an object.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Vertex, AnyBitPattern)]
 pub struct Transform {
+    #[format(Rg32Float)]
     pub position: Vec2,
+    #[format(Rg32Float)]
     pub size: Vec2,
+    #[format(R32Float)]
     pub rotation: f32,
 }
 impl Eq for Transform {}
 impl Transform {
     const ORIGIN: Self = Self {
-        position: vec2(0.0, 0.0),
-        size: vec2(1.0, 1.0),
+        position: Vec2::ZERO,
+        size: Vec2::ONE,
         rotation: 0.0,
     };
+
+    /// Creates a new [`Transform`].
+    #[inline]
+    pub fn new(position: Vec2, size: Vec2, rotation: f32) -> Self {
+        Self {
+            position,
+            size,
+            rotation,
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given position.
+    #[inline]
+    pub fn with_position(position: Vec2) -> Self {
+        Self {
+            position,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given size.
+    #[inline]
+    pub fn with_size(size: Vec2) -> Self {
+        Self {
+            size,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given rotation.
+    #[inline]
+    pub fn with_rotation(rotation: f32) -> Self {
+        Self {
+            rotation,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given position and size.
+    #[inline]
+    pub fn with_position_size(position: Vec2, size: Vec2) -> Self {
+        Self {
+            position,
+            size,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given position and rotation.
+    #[inline]
+    pub fn with_position_rotation(position: Vec2, rotation: f32) -> Self {
+        Self {
+            position,
+            rotation,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given size and rotation.
+    #[inline]
+    pub fn with_size_rotation(size: Vec2, rotation: f32) -> Self {
+        Self {
+            size,
+            rotation,
+            ..Default::default()
+        }
+    }
 
     /// Combines two Transforms with each other. It adds position, multiplies size and adds rotation.
     pub fn combine(self, parent: Self) -> Self {
@@ -68,22 +142,13 @@ impl Transform {
         }
     }
 
-    /// Sets the position of this transform and returns itself.
-    pub fn position(mut self, position: Vec2) -> Self {
-        self.position = position;
-        self
-    }
+    /// Creates a view matrix using the transform as a camera orientation.
+    pub fn make_view_matrix(&self) -> Mat4 {
+        let translation = Mat4::from_translation(self.position.extend(0.0));
+        let rotation = Mat4::from_rotation_z(self.rotation);
+        let scale = Mat4::from_scale(self.size.extend(1.0));
 
-    /// Sets the size of this transform and returns itself.
-    pub fn size(mut self, size: Vec2) -> Self {
-        self.size = size;
-        self
-    }
-
-    /// Sets the rotation of this transform and returns itself.
-    pub fn rotation(mut self, rotation: f32) -> Self {
-        self.rotation = rotation;
-        self
+        (translation * rotation * scale).inverse()
     }
 }
 

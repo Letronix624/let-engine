@@ -1,5 +1,7 @@
 //! Default labels given by the engine.
 
+use std::sync::LazyLock;
+
 use ab_glyph::FontArc;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use glyph_brush::ab_glyph::PxScale;
@@ -22,7 +24,7 @@ use anyhow::{Context, Result};
 use glam::{uvec2, vec2, UVec2, Vec2};
 use let_engine_core::resources::model::{LoadedModel, Model};
 use let_engine_core::resources::texture::{
-    LoadedTexture, Texture, TextureSettingsBuilder, ViewTypeDim,
+    LoadedTexture, Texture, TextureSettings, TextureSettingsBuilder, ViewTypeDim,
 };
 use let_engine_core::resources::Format;
 use let_engine_core::{objects::Transform, Direction};
@@ -177,8 +179,8 @@ impl<T: Loaded + 'static> Label<T> {
         );
 
         let label = Self {
-            model: graphics_interface.load_model(model)?,
-            buffer: graphics_interface.load_buffer(buffer)?,
+            model: graphics_interface.load_model(&model)?,
+            buffer: graphics_interface.load_buffer(&buffer)?,
             material: labelifier.material.clone(),
             texture: labelifier.texture.clone(),
             font: create_info.font,
@@ -209,8 +211,10 @@ impl<T: Loaded + 'static> Label<T> {
 
     /// Returns the appearance of this label to be used with objects for label objects.
     pub fn appearance(&self) -> AppearanceBuilder<T> {
+        let mut transform = self.transform;
+        transform.size *= self.extent.as_vec2();
         AppearanceBuilder::default()
-            .transform(self.transform)
+            .transform(transform)
             .model(self.model.clone())
             .material(self.material.clone())
             .descriptors(&[
@@ -352,6 +356,15 @@ pub struct Labelifier<T: Loaded + 'static> {
     receiver: Receiver<Label<T>>,
 }
 
+static TEXTURE_SETTINGS: LazyLock<TextureSettings> = LazyLock::new(|| {
+    TextureSettingsBuilder::default()
+        .access_pattern(BufferAccess::Staged)
+        .unwrap()
+        .format(Format::R8Unorm)
+        .build()
+        .unwrap()
+});
+
 impl<T: Loaded + 'static> Labelifier<T> {
     /// Makes a new label maker.
     pub fn new(interface: &impl GraphicsInterface<T>) -> Result<Self> {
@@ -360,10 +373,6 @@ impl<T: Loaded + 'static> Labelifier<T> {
             .build(); // beginning fonts
 
         let dimensions = glyph_brush.texture_dimensions();
-        let settings = TextureSettingsBuilder::default()
-            .access_pattern(BufferAccess::Staged)?
-            .format(Format::R8Unorm)
-            .build()?;
 
         let material_settings = MaterialSettingsBuilder::default()
             .topology(Topology::TriangleStrip)
@@ -379,10 +388,10 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let material = Material::new(material_settings, text_shaders);
 
         // Make the cache a texture.
-        let texture = Texture::new_empty(dimensions.into(), settings)?;
+        let texture = Texture::new_empty(dimensions.into(), TEXTURE_SETTINGS.to_owned())?;
 
-        let material = interface.load_material::<TVert>(material)?;
-        let texture = interface.load_texture(texture)?;
+        let material = interface.load_material::<TVert>(&material)?;
+        let texture = interface.load_texture(&texture)?;
 
         let (sender, receiver) = unbounded();
 
@@ -396,13 +405,17 @@ impl<T: Loaded + 'static> Labelifier<T> {
     }
 
     /// Clears every glyph from the cache, resizing the texture cache back to 256x256 pixels.
-    pub fn clear_cache(&mut self) {
+    pub fn clear_cache(&mut self, interface: &impl GraphicsInterface<T>) -> Result<()> {
         self.glyph_brush
             .to_builder()
             .initial_cache_size((256, 256))
             .rebuild(&mut self.glyph_brush);
         let dims = self.glyph_brush.texture_dimensions();
-        self.texture.resize(dims.into()).unwrap();
+        let new_texture = Texture::new_empty(dims.into(), TEXTURE_SETTINGS.to_owned())?;
+
+        self.texture = interface.load_texture(&new_texture)?;
+
+        Ok(())
     }
 
     /// Loads a font into the resources.
@@ -443,7 +456,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
             let model = &label.model;
 
             // write new vertex buffer
-            model.write_vertices(&vertices)?;
+            model.write_vertices(|write| write.copy_from_slice(&vertices), vertices.len())?;
         }
         Ok(())
     }
@@ -458,7 +471,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
             self.glyph_brush.queue(label.create_section(id));
 
             if label.buffer_changed {
-                label.buffer.write_data_mut(|b| *b = label.text_color)?;
+                label.buffer.write_data(|color| *color = label.text_color)?;
             }
 
             queue.push(DrawTask {
@@ -488,7 +501,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
 
                             for y in 0..height {
                                 let texture_row_start = (rect.min[1] as usize + y)
-                                    * texture_width as usize
+                                    * *texture_width as usize
                                     + rect.min[0] as usize;
                                 let src_row_start = y * width;
 
@@ -510,7 +523,8 @@ impl<T: Loaded + 'static> Labelifier<T> {
                     suggested: (width, height),
                 }) => {
                     self.glyph_brush.resize_texture(width, height);
-                    self.texture.resize((width, height).into())?;
+                    todo!(); // TODO
+                             // self.texture.resize((width, height).into())?;
                 }
             }
         };

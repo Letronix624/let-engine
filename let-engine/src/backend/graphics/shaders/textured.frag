@@ -3,8 +3,8 @@ layout (location = 0) out vec4 f_color;
 layout (location = 1) in vec2 tex_coords;
 layout (set = 1, binding = 0) uniform Object {
 	vec4 color;
-	uint layer;
 } object;
+
 layout (set = 2, binding = 0) uniform sampler2D tex;
 
 void main() {

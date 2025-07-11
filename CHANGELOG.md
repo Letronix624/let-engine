@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Root layer
 - EngineContext in events, to interface backends, retrieve debug info, set settings and delta time.
 - New `Vertex` macro from `engine-macros`
+- Constructors to `Transform`
 
 ### Changed
 
@@ -40,13 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Engine` now requires a generic `Game`, being the game struct.
 - MSRV is Rust 1.80.1
 - Move layer management functions to layers locally themselves.
-- Rename `CameraSettings` to `Camera` and add transform.
 - let-engine-core resources to be CPU only.
 - Move all default backend functionality completely to let-engine as features.
 - Rename plural modules to singular for textures, models and materials.
 - Most event loop events.
 - Window size formats from `f32` `Vec2`'s to `u32` `UVec2`'s.
-- Rename `Vertex` to `Vert`
+- Rename `TVertex` to `TVert`
 
 ### Fixed
 
@@ -61,9 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `InputEvent::ReceivedCharacter` in favour of Key::Chararcter
 - Labels from the game engine. To access them import the let-engine-widgets library.
 - update function for server mode
-- Camera settings from layers themselves.
+- Camera from layers themselves.
 - Low Memory warning
 - User accessable global variables
+- `Vertex` - use `Vec2` instead
 
 ## [0.10.0] - 2024-2-10
 

@@ -30,7 +30,6 @@ spin_sleep = "1.2"
 rand = "0.9"
 serde = { workspace = true }
 foldhash = { workspace = true }
-smallvec = "1.13.2"
 log = "0.4"
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 
@@ -92,6 +91,7 @@ shaderc = "0.9"
 # egui_demo_lib = "0.31"
 simple_logger = "5.0"
 let-engine-widgets = { path = "../widgets" }
+image = { workspace = true }
 
 [features]
 default = [
@@ -99,6 +99,7 @@ default = [
   "physics",
   "default_graphics_backend",
   "default_networking_backend",
+  # "egui"
 ]
 # egui = ["dep:egui_winit_vulkano", "client"]
 client = ["dep:vulkano", "dep:winit", "dep:image"]
@@ -119,4 +120,3 @@ bzip2 = ["asset-system/bzip2"]
 zstd = ["asset-system/zstd"]
 lzma = ["asset-system/lzma"]
 lz4 = ["asset-system/lz4"]
-

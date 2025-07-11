@@ -1,6 +1,8 @@
 //! The default input system by the engine.
 
-use let_engine_core::camera::Camera;
+use let_engine_core::{
+    backend::graphics::Loaded, camera::CameraScaling, objects::scenes::LayerView,
+};
 use std::{
     collections::HashSet,
     sync::atomic::{AtomicBool, Ordering},
@@ -96,20 +98,22 @@ impl Input {
     }
 
     /// Returns the cursor position going from -1.0 to 1.0 x and y scaled with the inserted layers scaling properties.
-    pub fn scaled_cursor(&self, camera: &Camera) -> Vec2 {
-        let dimensions = camera.scaling.scale(self.dimensions.load());
+    pub fn scaled_cursor(&self, scaling: CameraScaling) -> Vec2 {
+        let dimensions = scaling.scale(self.dimensions.load());
         let cp = self.cursor_position.load();
         vec2(cp[0], cp[1]) * dimensions
     }
 
     /// Returns the cursor position in layer world space.
-    pub fn cursor_to_world(&self, camera: &Camera) -> Vec2 {
+    pub fn cursor_to_world<T: Loaded>(&self, view: &LayerView<T>) -> Vec2 {
         let dims = self.dimensions.load();
-        let dimensions = camera.scaling.scale(dims);
+        let dimensions = view.scaling().scale(dims);
         let cp = self.cursor_position.load();
 
-        let cam = camera.transform.position;
-        let zoom = 1.0 / camera.transform.size;
+        let camera = view.camera();
+
+        let cam = camera.position;
+        let zoom = camera.size;
         vec2(
             cp[0] * (dimensions.x * zoom.x) + cam[0] * 2.0,
             cp[1] * (dimensions.y * zoom.y) + cam[1] * 2.0,

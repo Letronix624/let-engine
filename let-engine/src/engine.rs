@@ -5,7 +5,7 @@ use crate::tick_system::TickSystem;
 #[cfg(feature = "client")]
 use anyhow::Result;
 use atomic_float::AtomicF64;
-use glam::uvec2;
+use glam::{dvec2, uvec2, vec2};
 use let_engine_core::backend::graphics::GraphicsBackend;
 use let_engine_core::backend::Backends;
 use let_engine_core::objects::scenes::Scene;
@@ -22,10 +22,10 @@ use crate::window::Window;
 
 use std::cell::OnceCell;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 use std::{
     sync::{atomic::Ordering, Arc},
     time::Duration,
-    time::SystemTime,
 };
 
 #[cfg_attr(
@@ -57,21 +57,12 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     /// Runs right after the `start` function was called for the Engine.
     fn start(&mut self, context: &EngineContext<B>) {}
 
-    /// Runs before the frame is drawn.
+    /// Runs every frame.
     #[cfg(feature = "client")]
     fn update(&mut self, context: &EngineContext<B>) {}
 
-    /// Runs after the frame is drawn.
-    #[cfg(feature = "client")]
-    fn frame_update(&mut self, context: &EngineContext<B>) {}
-
     /// Runs based on the configured tick settings of the engine.
-    fn tick(
-        &mut self,
-        context: &EngineContext<B>,
-    ) -> impl std::future::Future<Output = ()> + std::marker::Send {
-        async {}
-    }
+    fn tick(&mut self, context: &EngineContext<B>) {}
 
     /// Events captured in the window.
     #[cfg(feature = "client")]
@@ -80,6 +71,9 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     /// Received input events.
     #[cfg(feature = "client")]
     fn input(&mut self, context: &EngineContext<B>, event: events::InputEvent) {}
+
+    // #[cfg(all(feature = "client", feature = "egui"))]
+    // fn egui(&mut self, engine_context: &EngineContext<B>, egui_context: ) {}
 
     // /// A network event coming from the server or client, receiving a user specified message format.
     // fn net_event(
@@ -113,7 +107,7 @@ where
 
     // server: Option<GameServer<B::Networking>>,
     // client: Option<GameClient<B::Networking>>,
-    game: Option<Arc<smol::lock::Mutex<G>>>,
+    game: Option<Arc<Mutex<G>>>,
 
     settings: EngineSettings<B>,
 }
@@ -156,100 +150,98 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
     /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
     #[cfg(not(feature = "client"))]
     pub fn start(mut self, game: impl FnOnce(&EngineContext<B>) -> G) {
-        smol::block_on(async {
-            let game = Arc::new(smol::lock::Mutex::new(game(&self.context)));
+        let game = Arc::new(smol::lock::Mutex::new(game(&self.context)));
 
-            game.lock().await.start(&self.context);
+        game.lock().await.start(&self.context);
 
-            let game_clone = game.clone();
-            let context_clone = self.context.clone();
-            smol::spawn(async move {
-                let game = game_clone;
-                let context = context_clone;
-                tick_system::run(context, game).await;
-            })
-            .detach();
-
-            // loop: check exit and break, if networking is active future both at the same time and a timer future.
-            // if the timeout is reached roll the loop again
-
-            loop {
-                if self.context.exiting() {
-                    break;
-                }
-
-                use futures::future::{select, Either};
-                use smol::Timer;
-
-                let server = self.server.as_ref().map(|s| s.messages.1.clone());
-                let client = self.client.as_ref().map(|c| c.messages.1.clone());
-
-                let result = match (server, client) {
-                    (Some(server), None) => {
-                        match select(
-                            Box::pin(server.recv()),
-                            Timer::after(Duration::from_millis(50)),
-                        )
-                        .await
-                        {
-                            Either::Left((left, _)) => left,
-                            Either::Right(_) => {
-                                continue;
-                            }
-                        }
-                    }
-                    (None, Some(client)) => {
-                        match select(
-                            Box::pin(client.recv()),
-                            Timer::after(Duration::from_millis(50)),
-                        )
-                        .await
-                        {
-                            Either::Left((left, _)) => left,
-                            Either::Right(_) => {
-                                continue;
-                            }
-                        }
-                    }
-                    (Some(server), Some(client)) => {
-                        match select(
-                            Box::pin(smol::future::race(server.recv(), client.recv())),
-                            Timer::after(Duration::from_millis(50)),
-                        )
-                        .await
-                        {
-                            Either::Left((left, _)) => left,
-                            Either::Right(_) => {
-                                continue;
-                            }
-                        }
-                    }
-                    (None, None) => {
-                        Timer::after(Duration::from_millis(50)).await;
-                        continue;
-                    }
-                };
-
-                if let Ok((connection, message)) = result {
-                    game.lock()
-                        .await
-                        .net_event(&self.context, connection, message);
-                }
-            }
-
-            // Gracefully shutdown both server and client if open.
-            if let Some(server) = self.server {
-                let _ = server.stop().await;
-            }
-            if let Some(client) = self.client {
-                let _ = client.disconnect().await;
-            }
+        let game_clone = game.clone();
+        let context_clone = self.context.clone();
+        smol::spawn(async move {
+            let game = game_clone;
+            let context = context_clone;
+            tick_system::run(context, game).await;
         })
+        .detach();
+
+        // loop: check exit and break, if networking is active future both at the same time and a timer future.
+        // if the timeout is reached roll the loop again
+
+        loop {
+            if self.context.exiting() {
+                break;
+            }
+
+            use futures::future::{select, Either};
+            use smol::Timer;
+
+            let server = self.server.as_ref().map(|s| s.messages.1.clone());
+            let client = self.client.as_ref().map(|c| c.messages.1.clone());
+
+            let result = match (server, client) {
+                (Some(server), None) => {
+                    match select(
+                        Box::pin(server.recv()),
+                        Timer::after(Duration::from_millis(50)),
+                    )
+                    .await
+                    {
+                        Either::Left((left, _)) => left,
+                        Either::Right(_) => {
+                            continue;
+                        }
+                    }
+                }
+                (None, Some(client)) => {
+                    match select(
+                        Box::pin(client.recv()),
+                        Timer::after(Duration::from_millis(50)),
+                    )
+                    .await
+                    {
+                        Either::Left((left, _)) => left,
+                        Either::Right(_) => {
+                            continue;
+                        }
+                    }
+                }
+                (Some(server), Some(client)) => {
+                    match select(
+                        Box::pin(smol::future::race(server.recv(), client.recv())),
+                        Timer::after(Duration::from_millis(50)),
+                    )
+                    .await
+                    {
+                        Either::Left((left, _)) => left,
+                        Either::Right(_) => {
+                            continue;
+                        }
+                    }
+                }
+                (None, None) => {
+                    Timer::after(Duration::from_millis(50)).await;
+                    continue;
+                }
+            };
+
+            if let Ok((connection, message)) = result {
+                game.lock()
+                    .await
+                    .net_event(&self.context, connection, message);
+            }
+        }
+
+        // Gracefully shutdown both server and client if open.
+        if let Some(server) = self.server {
+            let _ = server.stop().await;
+        }
+        if let Some(client) = self.client {
+            let _ = client.disconnect().await;
+        }
     }
 
     #[cfg(feature = "client")]
     pub fn start(&mut self, game: impl FnOnce(&EngineContext<B>) -> G) {
-        self.game = Some(Arc::new(smol::lock::Mutex::new(game(&self.context))));
+        self.game = Some(Arc::new(Mutex::new(game(&self.context))));
         let event_loop = std::mem::take(&mut self.event_loop).unwrap();
 
         event_loop.run_app(self).unwrap();
@@ -278,20 +270,18 @@ where
             .set(Window::new(window.clone()))
             .unwrap();
 
-        self.graphics_backend.init_window(window);
+        self.graphics_backend
+            .init_window(&window, &self.context.scene);
 
-        smol::block_on(async {
-            game.lock().await.start(&self.context);
+        game.lock().start(&self.context);
 
-            let game_clone = Arc::clone(&game);
-            let context_clone = self.context.clone();
-            smol::spawn(async {
-                let game = game_clone;
-                let context = context_clone;
-                tick_system::run(context, game).await;
-            })
-            .detach();
-        })
+        let game_clone = Arc::clone(&game);
+        let context_clone = self.context.clone();
+        std::thread::spawn(|| {
+            let game = game_clone;
+            let context = context_clone;
+            tick_system::run(context, game);
+        });
     }
 
     fn window_event(
@@ -310,87 +300,78 @@ where
 
         let window_event = match event {
             WindowEvent::Resized(size) => {
-                self.graphics_backend
-                    .resize_event(uvec2(size.width, size.height));
+                let size = uvec2(size.width, size.height);
+                self.graphics_backend.resize_event(size);
+                self.context.scene.root_view().set_extent(size);
                 events::WindowEvent::Resized(size)
             }
             WindowEvent::CloseRequested => events::WindowEvent::CloseRequested,
             WindowEvent::CursorEntered { .. } => events::WindowEvent::CursorEntered,
             WindowEvent::CursorLeft { .. } => events::WindowEvent::CursorLeft,
-            WindowEvent::CursorMoved { position, .. } => events::WindowEvent::CursorMoved(position),
+            WindowEvent::CursorMoved { position, .. } => {
+                events::WindowEvent::CursorMoved(dvec2(position.x, position.y))
+            }
             WindowEvent::Destroyed => events::WindowEvent::Destroyed,
             WindowEvent::HoveredFile(file) => events::WindowEvent::HoveredFile(file),
             WindowEvent::DroppedFile(file) => events::WindowEvent::DroppedFile(file),
             WindowEvent::HoveredFileCancelled => events::WindowEvent::HoveredFileCancelled,
             WindowEvent::Focused(focused) => events::WindowEvent::Focused(focused),
             WindowEvent::KeyboardInput { event, .. } => {
-                smol::block_on(async {
-                    game.lock().await.input(
-                        &self.context,
-                        events::InputEvent::KeyboardInput {
-                            input: events::KeyboardInput {
-                                physical_key: event.physical_key,
-                                key: event.logical_key,
-                                text: event.text,
-                                key_location: event.location,
-                                state: event.state,
-                                repeat: event.repeat,
-                            },
+                game.lock().input(
+                    &self.context,
+                    events::InputEvent::KeyboardInput {
+                        input: events::KeyboardInput {
+                            physical_key: event.physical_key,
+                            key: event.logical_key,
+                            text: event.text,
+                            key_location: event.location,
+                            state: event.state,
+                            repeat: event.repeat,
                         },
-                    );
-                });
+                    },
+                );
                 return;
             }
             WindowEvent::ModifiersChanged(_) => {
-                smol::block_on(async {
-                    game.lock()
-                        .await
-                        .input(&self.context, events::InputEvent::ModifiersChanged);
-                });
+                game.lock()
+                    .input(&self.context, events::InputEvent::ModifiersChanged);
                 return;
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                smol::block_on(async {
-                    game.lock()
-                        .await
-                        .input(&self.context, events::InputEvent::MouseInput(button, state))
-                });
+                game.lock()
+                    .input(&self.context, events::InputEvent::MouseInput(button, state));
                 return;
             }
             WindowEvent::MouseWheel { delta, .. } => events::WindowEvent::MouseWheel(match delta {
-                MouseScrollDelta::LineDelta(x, y) => ScrollDelta::LineDelta(glam::vec2(x, y)),
-                MouseScrollDelta::PixelDelta(x) => ScrollDelta::PixelDelta(x),
+                MouseScrollDelta::LineDelta(x, y) => ScrollDelta::LineDelta(vec2(x, y)),
+                MouseScrollDelta::PixelDelta(delta) => {
+                    ScrollDelta::PixelDelta(dvec2(delta.x, delta.y))
+                }
             }),
             WindowEvent::RedrawRequested => {
-                self.graphics_backend.update(&self.context.scene);
+                let window = self.context.window().unwrap();
 
-                self.context.time.update();
-                smol::block_on(async {
-                    game.lock().await.frame_update(&self.context);
+                game.lock().update(&self.context);
+                self.graphics_backend.update(|| {
+                    window.pre_present_notify();
                 });
+                self.context.time.update();
+
                 return;
             }
             _ => return,
         };
 
-        smol::block_on(async {
-            game.lock().await.window(&self.context, window_event);
-        });
+        game.lock().window(&self.context, window_event);
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let Some(game) = self.game.as_mut() else {
-            return;
-        };
-
-        smol::block_on(async {
-            if self.context.exiting() {
-                // if let Some(server) = &mut self.server {
-                //     server.stop().await.unwrap();
-                // }
-                event_loop.exit();
-            }
-        });
+        if self.context.exiting() {
+            // if let Some(server) = &mut self.server {
+            //     server.stop().await.unwrap();
+            // }
+            event_loop.exit();
+        }
 
         // {
         //     if let Some(server) = &mut self.server {
@@ -415,10 +396,6 @@ where
         //     }
         // }
 
-        smol::block_on(async {
-            game.lock().await.update(&self.context);
-        });
-
         if let Some(window) = self.context.window() {
             window.request_redraw();
         }
@@ -441,9 +418,7 @@ where
         //         });
         //     }
         // }
-        smol::block_on(async {
-            game.lock().await.end(&self.context);
-        });
+        game.lock().end(&self.context);
     }
 
     fn device_event(
@@ -458,25 +433,23 @@ where
         };
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                smol::block_on(async {
-                    game.lock().await.input(
-                        &self.context,
-                        events::InputEvent::MouseMotion(glam::vec2(delta.0 as f32, delta.1 as f32)),
-                    );
-                });
+                game.lock().input(
+                    &self.context,
+                    events::InputEvent::MouseMotion(glam::vec2(delta.0 as f32, delta.1 as f32)),
+                );
             }
             DeviceEvent::MouseWheel { delta } => {
-                smol::block_on(async {
-                    game.lock().await.input(
-                        &self.context,
-                        events::InputEvent::MouseWheel(match delta {
-                            MouseScrollDelta::LineDelta(x, y) => {
-                                ScrollDelta::LineDelta(glam::vec2(x, y))
-                            }
-                            MouseScrollDelta::PixelDelta(delta) => ScrollDelta::PixelDelta(delta),
-                        }),
-                    );
-                });
+                game.lock().input(
+                    &self.context,
+                    events::InputEvent::MouseWheel(match delta {
+                        MouseScrollDelta::LineDelta(x, y) => {
+                            ScrollDelta::LineDelta(glam::vec2(x, y))
+                        }
+                        MouseScrollDelta::PixelDelta(delta) => {
+                            ScrollDelta::PixelDelta(dvec2(delta.x, delta.y))
+                        }
+                    }),
+                );
             }
             _ => (),
         }
@@ -560,7 +533,6 @@ impl<B: Backends> EngineContext<B> {
     }
 
     fn update(&self, window_event: &winit::event::WindowEvent) {
-        self.time.update();
         if let Some(window) = self.window() {
             self.input
                 .update(window_event, window.inner_size().as_vec2());
@@ -571,10 +543,10 @@ impl<B: Backends> EngineContext<B> {
 /// Holds the timings of the engine like runtime and delta time.
 pub struct Time {
     /// Time since engine start.
-    time: SystemTime,
+    time: Instant,
     time_scale: AtomicF64,
     #[cfg(feature = "client")]
-    delta_instant: crossbeam::atomic::AtomicCell<SystemTime>,
+    delta_instant: crossbeam::atomic::AtomicCell<Instant>,
     #[cfg(feature = "client")]
     delta_time: AtomicF64,
     pub(crate) zero_cvar: (Mutex<()>, Condvar),
@@ -583,10 +555,10 @@ pub struct Time {
 impl Default for Time {
     fn default() -> Self {
         Self {
-            time: SystemTime::now(),
+            time: Instant::now(),
             time_scale: AtomicF64::new(1.0f64),
             #[cfg(feature = "client")]
-            delta_instant: crossbeam::atomic::AtomicCell::new(SystemTime::now()),
+            delta_instant: crossbeam::atomic::AtomicCell::new(Instant::now()),
             #[cfg(feature = "client")]
             delta_time: AtomicF64::new(0.0f64),
             zero_cvar: (Mutex::new(()), Condvar::new()),
@@ -599,11 +571,10 @@ impl Time {
     #[inline]
     #[cfg(feature = "client")]
     pub(crate) fn update(&self) {
-        self.delta_time.store(
-            self.delta_instant.load().elapsed().unwrap().as_secs_f64(),
-            Ordering::Release,
-        );
-        self.delta_instant.store(SystemTime::now());
+        let now = Instant::now();
+        let last = self.delta_instant.swap(now);
+        let delta = now.duration_since(last).as_secs_f64();
+        self.delta_time.store(delta, Ordering::Release);
     }
 
     /// Returns the time it took to execute last iteration.
@@ -630,7 +601,7 @@ impl Time {
     /// Returns the time since start of the engine game session.
     #[inline]
     pub fn time(&self) -> f64 {
-        self.time.elapsed().unwrap().as_secs_f64()
+        self.time.elapsed().as_secs_f64()
     }
 
     /// Returns the time scale of the game

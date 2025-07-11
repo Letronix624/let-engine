@@ -171,7 +171,25 @@ impl ObjectPhysics {
         id: u128,
         physics: &mut Physics,
     ) -> Option<Transform> {
-        let public_transform = transform.combine(parent_transform);
+        let public_transform = {
+            // Calculate the rotation matrix for the parent's rotation
+            let rotation_matrix = glam::Mat2::from_angle(parent_transform.rotation);
+
+            // Apply the parent's rotation to the child's position
+            let new_position = rotation_matrix * transform.position + parent_transform.position;
+
+            // Combine the sizes (assuming sizes scale multiplicatively)
+            let new_size = transform.size * parent_transform.size;
+
+            // Combine the rotations
+            let new_rotation = transform.rotation + parent_transform.rotation;
+
+            Transform {
+                position: new_position,
+                size: new_size,
+                rotation: new_rotation,
+            }
+        };
 
         physics.query_pipeline_out_of_date = true;
 

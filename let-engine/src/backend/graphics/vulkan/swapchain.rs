@@ -1,6 +1,7 @@
 use glam::UVec2;
 use std::sync::Arc;
 use vulkano::device::Device;
+use vulkano::format::Format;
 use vulkano::image::ImageUsage;
 use vulkano::swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo};
 use vulkano_taskgraph::Id;
@@ -16,14 +17,14 @@ pub fn create_swapchain(
     surface: Arc<Surface>,
     interface: &GraphicsInterface,
     vulkan: &Vulkan,
-) -> Result<(Id<Swapchain>, UVec2), VulkanError> {
+) -> Result<(Id<Swapchain>, UVec2, Format), VulkanError> {
     let surface_capabilities = device
         .physical_device()
-        .surface_capabilities(&surface, Default::default())
+        .surface_capabilities(&surface, &Default::default())
         .map_err(|e| VulkanError::from(e.unwrap()))?;
     let image_format = device
         .physical_device()
-        .surface_formats(&surface, Default::default())
+        .surface_formats(&surface, &Default::default())
         .map_err(|e| VulkanError::from(e.unwrap()))?[0]
         .0;
 
@@ -39,7 +40,7 @@ pub fn create_swapchain(
 
     let present_mode = device
         .physical_device()
-        .surface_present_modes(&surface, SurfaceInfo::default())
+        .surface_present_modes(&surface, &SurfaceInfo::default())
         .map_err(|e| VulkanError::from(e.unwrap()))?
         .into_iter()
         .min_by_key(|compare| match compare {
@@ -56,7 +57,7 @@ pub fn create_swapchain(
     // Give available present modes
     let mut present_modes: Vec<_> = device
         .physical_device()
-        .surface_present_modes(&surface, SurfaceInfo::default())
+        .surface_present_modes(&surface, &SurfaceInfo::default())
         .map_err(|e| VulkanError::from(e.unwrap()))?
         .into_iter()
         .map(|x| x.into())
@@ -82,8 +83,9 @@ pub fn create_swapchain(
     Ok((
         vulkan
             .resources
-            .create_swapchain(vulkan.graphics_flight, surface, create_info)
+            .create_swapchain(vulkan.graphics_flight, &surface, &create_info)
             .map_err(|e| VulkanError::from(e.unwrap()))?,
         inner_size,
+        image_format,
     ))
 }

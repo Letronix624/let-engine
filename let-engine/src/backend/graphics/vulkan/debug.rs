@@ -7,8 +7,8 @@ use log::{error, info, warn};
 pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
     unsafe {
         DebugUtilsMessenger::new(
-            instance.clone(),
-            DebugUtilsMessengerCreateInfo {
+            instance,
+            &DebugUtilsMessengerCreateInfo {
                 message_severity: DebugUtilsMessageSeverity::ERROR
                     | DebugUtilsMessageSeverity::WARNING
                     | DebugUtilsMessageSeverity::INFO
@@ -16,7 +16,7 @@ pub fn make_debug(instance: &Arc<Instance>) -> Result<DebugUtilsMessenger> {
                 message_type: DebugUtilsMessageType::GENERAL
                     | DebugUtilsMessageType::VALIDATION
                     | DebugUtilsMessageType::PERFORMANCE,
-                ..DebugUtilsMessengerCreateInfo::user_callback(DebugUtilsMessengerCallback::new(
+                ..DebugUtilsMessengerCreateInfo::new(&DebugUtilsMessengerCallback::new(
                     |severity, message_type, callback_data| {
                         let ty = if message_type.intersects(DebugUtilsMessageType::GENERAL) {
                             "general"

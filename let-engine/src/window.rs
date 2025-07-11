@@ -17,6 +17,11 @@ impl Window {
         Self { window }
     }
 
+    #[inline]
+    pub(crate) fn pre_present_notify(&self) {
+        self.window.pre_present_notify();
+    }
+
     /// Requests the window to be redrawn.
     #[inline]
     pub fn request_redraw(&self) {

@@ -1,25 +1,24 @@
 use std::{
-    cell::OnceCell,
     marker::PhantomData,
     sync::{atomic::AtomicU8, Arc},
 };
 
-use bytemuck::AnyBitPattern;
-use let_engine_core::resources::buffer::{
-    Buffer, BufferAccess, BufferUsage, LoadedBuffer, PreferOperation,
+use let_engine_core::resources::{
+    buffer::{Buffer, BufferAccess, BufferUsage, LoadedBuffer, PreferOperation},
+    data::Data,
 };
 use thiserror::Error;
 use vulkano::{
     buffer::{Buffer as VkBuffer, BufferCreateInfo, BufferUsage as VkBufferUsage},
     descriptor_set::layout::DescriptorType,
     memory::allocator::{AllocationCreateInfo, DeviceLayout, MemoryTypeFilter},
-    sync::{GpuFuture, HostAccessError},
+    sync::HostAccessError,
+    DeviceSize,
 };
 use vulkano_taskgraph::{
     command_buffer::CopyBufferInfo,
-    graph::TaskGraph,
     resource::{AccessTypes, HostAccessType},
-    Id, Task,
+    Id,
 };
 
 use super::{vulkan::VK, VulkanError};
@@ -38,6 +37,47 @@ enum AccessMethod {
     },
 }
 
+impl PartialEq for AccessMethod {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Self::Fixed => other == &Self::Fixed,
+            Self::Staged { staging_id } => {
+                if let Self::Staged {
+                    staging_id: otherid,
+                } = other
+                {
+                    staging_id == otherid
+                } else {
+                    false
+                }
+            }
+            Self::Pinned(a) => {
+                if let Self::Pinned(b) = other {
+                    a == b
+                } else {
+                    false
+                }
+            }
+            Self::RingBuffer {
+                buffers: b1,
+                turn: t1,
+                prefer: p1,
+            } => {
+                if let Self::RingBuffer {
+                    buffers: b2,
+                    turn: t2,
+                    prefer: p2,
+                } = other
+                {
+                    b1 == b2 && p1 == p2 && Arc::ptr_eq(t1, t2)
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
 impl From<AccessMethod> for BufferAccess {
     fn from(value: AccessMethod) -> Self {
         match value {
@@ -54,8 +94,9 @@ impl From<AccessMethod> for BufferAccess {
     }
 }
 
-#[derive(Clone)]
-pub struct GpuBuffer<T: AnyBitPattern + Send + Sync> {
+/// A GPU loaded representation of a data buffer.
+#[derive(Clone, PartialEq)]
+pub struct GpuBuffer<T: Data> {
     buffer_id: Id<VkBuffer>,
     access_method: AccessMethod,
 
@@ -63,11 +104,9 @@ pub struct GpuBuffer<T: AnyBitPattern + Send + Sync> {
     _phantom_data: PhantomData<Arc<T>>,
 }
 
-type BufferCreation = (Id<VkBuffer>, AccessMethod);
-
-impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
+impl<T: Data> GpuBuffer<T> {
     /// Creates a new buffer.
-    pub fn new(buffer: Buffer<T>) -> Result<Self, GpuBufferError> {
+    pub fn new(buffer: &Buffer<T>) -> Result<Self, GpuBufferError> {
         let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
 
         let buffer_usage = *buffer.usage();
@@ -78,40 +117,31 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
 
         let buffer_access = *buffer.optimisation();
 
-        let (memory_type_filter, staging_memory_type_filter) = match buffer_access {
-            BufferAccess::Fixed | BufferAccess::Staged => (
-                MemoryTypeFilter::PREFER_DEVICE,
-                Some(MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE),
-            ),
-            BufferAccess::Pinned(PreferOperation::Read) => (
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
-                None,
-            ),
-            BufferAccess::Pinned(PreferOperation::Write) => (
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                None,
-            ),
+        let memory_type_filter = match buffer_access {
+            BufferAccess::Fixed | BufferAccess::Staged => MemoryTypeFilter::PREFER_DEVICE,
+
+            BufferAccess::Pinned(PreferOperation::Read) => {
+                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS
+            }
+            BufferAccess::Pinned(PreferOperation::Write) => {
+                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE
+            }
             BufferAccess::RingBuffer {
                 prefer_operation: PreferOperation::Read,
                 ..
-            } => (
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
-                None,
-            ),
+            } => MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
             BufferAccess::RingBuffer {
                 prefer_operation: PreferOperation::Write,
                 ..
-            } => (
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                None,
-            ),
+            } => MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+            access => return Err(GpuBufferError::UnsupportedAccess(access)),
         };
 
         // Create data buffer
         let buffer_id = vulkan
             .resources
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: match buffer_access {
                         BufferAccess::Fixed => usage | VkBufferUsage::TRANSFER_DST,
                         // TODO: specialize staged to either one
@@ -122,7 +152,7 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                     },
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter,
                     ..Default::default()
                 },
@@ -130,132 +160,42 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
             )
             .unwrap();
 
-        // If not staging or fixed, write data directly into the buffer.
-        if staging_memory_type_filter.is_none() {
-            unsafe {
-                vulkano_taskgraph::execute(
-                    vulkan.queues.get_transfer(),
-                    &vulkan.resources,
-                    vulkan.transfer_flight,
-                    |_, ctx| {
-                        let write = ctx.write_buffer::<T>(buffer_id, ..)?;
-
-                        *write = *buffer;
-
-                        Ok(())
-                    },
-                    [(buffer_id, HostAccessType::Write)],
-                    [],
-                    [],
-                )
-            }
-            .unwrap();
-        };
-
         let access_method = match buffer_access {
             BufferAccess::Fixed => {
-                let staging_id = vulkan
-                    .resources
-                    .create_buffer(
-                        BufferCreateInfo {
-                            usage: usage
-                                | VkBufferUsage::TRANSFER_SRC
-                                | VkBufferUsage::TRANSFER_DST,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: staging_memory_type_filter.unwrap(),
-                            ..Default::default()
-                        },
-                        DeviceLayout::new_sized::<T>(),
-                    )
-                    .unwrap();
-
-                // Copy staging buffer to data.
-                unsafe {
-                    vulkano_taskgraph::execute(
-                        vulkan.queues.get_transfer(),
-                        &vulkan.resources,
-                        vulkan.transfer_flight,
-                        |cb, ctx| {
-                            // Write staging buffer
-                            let write = ctx.write_buffer::<T>(staging_id, ..)?;
-
-                            *write = *buffer;
-
-                            // Copy staging buffer to fixed buffer
-                            cb.copy_buffer(&CopyBufferInfo {
-                                src_buffer: staging_id,
-                                dst_buffer: buffer_id,
-                                ..Default::default()
-                            })?;
-
-                            Ok(())
-                        },
-                        [(staging_id, HostAccessType::Write)],
-                        [
-                            (staging_id, AccessTypes::COPY_TRANSFER_READ),
-                            (buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
-                        ],
-                        [],
-                    )
-                }
-                .unwrap();
+                Self::write_staging(vulkan, usage, buffer, buffer_id);
 
                 AccessMethod::Fixed
             }
             BufferAccess::Staged => {
-                let staging_id = vulkan
-                    .resources
-                    .create_buffer(
-                        BufferCreateInfo {
-                            usage: usage
-                                | VkBufferUsage::TRANSFER_SRC
-                                | VkBufferUsage::TRANSFER_DST,
-                            ..Default::default()
-                        },
-                        AllocationCreateInfo {
-                            memory_type_filter: staging_memory_type_filter.unwrap(),
-                            ..Default::default()
-                        },
-                        DeviceLayout::new_sized::<T>(),
-                    )
-                    .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
+                let staging_id = Self::write_staging(vulkan, usage, buffer, buffer_id);
 
-                // Copy staging buffer to data.
+                AccessMethod::Staged { staging_id }
+            }
+            BufferAccess::Pinned(prefer) => {
+                let flight = vulkan.transfer_flight().unwrap();
+
+                flight.wait(None).unwrap();
                 unsafe {
                     vulkano_taskgraph::execute(
-                        vulkan.queues.get_transfer(),
+                        vulkan.queues.transfer(),
                         &vulkan.resources,
                         vulkan.transfer_flight,
-                        |cb, ctx| {
-                            // Write staging buffer
-                            let write = ctx.write_buffer::<T>(staging_id, ..)?;
+                        |_, ctx| {
+                            let write = ctx.write_buffer::<T>(buffer_id, ..)?;
 
-                            *write = *buffer;
-
-                            // Copy staging buffer to fixed buffer
-                            cb.copy_buffer(&CopyBufferInfo {
-                                src_buffer: staging_id,
-                                dst_buffer: buffer_id,
-                                ..Default::default()
-                            })?;
+                            *write = *buffer.data();
 
                             Ok(())
                         },
-                        [(staging_id, HostAccessType::Write)],
-                        [
-                            (staging_id, AccessTypes::COPY_TRANSFER_READ),
-                            (buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
-                        ],
+                        [(buffer_id, HostAccessType::Write)],
+                        [],
                         [],
                     )
                 }
                 .unwrap();
 
-                AccessMethod::Staged { staging_id }
+                AccessMethod::Pinned(prefer)
             }
-            BufferAccess::Pinned(prefer) => AccessMethod::Pinned(prefer),
             BufferAccess::RingBuffer {
                 prefer_operation: _,
                 buffers: _,
@@ -296,7 +236,22 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
                 // }
                 todo!();
             }
+            access => return Err(GpuBufferError::UnsupportedAccess(access)),
         };
+
+        let access_types = match buffer.usage() {
+            BufferUsage::Uniform => {
+                AccessTypes::VERTEX_SHADER_UNIFORM_READ | AccessTypes::FRAGMENT_SHADER_UNIFORM_READ
+            }
+            BufferUsage::Storage => {
+                AccessTypes::FRAGMENT_SHADER_STORAGE_READ | AccessTypes::VERTEX_SHADER_STORAGE_READ
+            }
+        };
+
+        vulkan.add_resource(super::vulkan::Resource::Buffer {
+            id: buffer_id,
+            access_types,
+        });
 
         Ok(Self {
             buffer_id,
@@ -307,8 +262,67 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
         })
     }
 
+    fn write_staging(
+        vulkan: &super::Vulkan,
+        usage: VkBufferUsage,
+        buffer: &Buffer<T>,
+        buffer_id: Id<VkBuffer>,
+    ) -> Id<VkBuffer> {
+        let staging_id = vulkan
+            .resources
+            .create_buffer(
+                &BufferCreateInfo {
+                    usage: usage | VkBufferUsage::TRANSFER_SRC | VkBufferUsage::TRANSFER_DST,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                DeviceLayout::new_sized::<T>(),
+            )
+            .unwrap();
+
+        let flight = vulkan.resources.flight(vulkan.transfer_flight).unwrap();
+
+        flight.wait(None).unwrap();
+        // Copy staging buffer to data.
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |cb, ctx| {
+                    // Write staging buffer
+                    let write: &mut T = ctx.write_buffer::<T>(staging_id, ..)?;
+
+                    *write = *buffer.data();
+
+                    // Copy staging buffer to fixed buffer
+                    cb.copy_buffer(&CopyBufferInfo {
+                        src_buffer: staging_id,
+                        dst_buffer: buffer_id,
+                        ..Default::default()
+                    })?;
+
+                    Ok(())
+                },
+                [(staging_id, HostAccessType::Write)],
+                [
+                    (staging_id, AccessTypes::COPY_TRANSFER_READ),
+                    (buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
+                ],
+                [],
+            )
+        }
+        .unwrap();
+
+        staging_id
+    }
+
     /// Creates a new buffer which can only be accessed in the shaders.
-    pub fn new_gpu_only(size: u64, usage: BufferUsage) -> Result<Self, GpuBufferError> {
+    pub fn new_gpu_only(size: DeviceSize, usage: BufferUsage) -> Result<Self, GpuBufferError> {
         let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
 
         let Some(size) = DeviceLayout::new_unsized::<T>(size) else {
@@ -318,20 +332,34 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
         let buffer_id = vulkan
             .resources
             .create_buffer(
-                BufferCreateInfo {
+                &BufferCreateInfo {
                     usage: match usage {
                         BufferUsage::Uniform => VkBufferUsage::UNIFORM_BUFFER,
                         BufferUsage::Storage => VkBufferUsage::STORAGE_BUFFER,
                     },
                     ..Default::default()
                 },
-                AllocationCreateInfo {
+                &AllocationCreateInfo {
                     memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
                     ..Default::default()
                 },
                 size,
             )
             .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
+
+        let access_types = match usage {
+            BufferUsage::Uniform => {
+                AccessTypes::VERTEX_SHADER_UNIFORM_READ | AccessTypes::FRAGMENT_SHADER_UNIFORM_READ
+            }
+            BufferUsage::Storage => {
+                AccessTypes::FRAGMENT_SHADER_STORAGE_READ | AccessTypes::VERTEX_SHADER_STORAGE_READ
+            }
+        };
+
+        vulkan.add_resource(super::vulkan::Resource::Buffer {
+            id: buffer_id,
+            access_types,
+        });
 
         Ok(Self {
             buffer_id,
@@ -345,39 +373,19 @@ impl<T: AnyBitPattern + Send + Sync> GpuBuffer<T> {
 #[derive(Clone, Debug)]
 pub struct DrawableBuffer {
     buffer_id: Id<VkBuffer>,
-    ring: Option<(Vec<Id<VkBuffer>>, Arc<AtomicU8>)>,
     usage: BufferUsage,
 }
 
 impl DrawableBuffer {
-    pub fn from_buffer<B: AnyBitPattern + Send + Sync>(buffer: GpuBuffer<B>) -> Self {
-        let ring = if let AccessMethod::RingBuffer { buffers, turn, .. } = &buffer.access_method {
-            Some((buffers.clone(), turn.clone()))
-        } else {
-            None
-        };
-
+    pub fn from_buffer<B: Data>(buffer: GpuBuffer<B>) -> Self {
         Self {
             buffer_id: buffer.buffer_id,
-            ring,
             usage: buffer.usage,
         }
     }
 
     pub fn buffer(&self) -> Id<VkBuffer> {
-        // Roll the ring buffer at fetch
-        // TODO change this: do this once per frame not multiple times. FIXME
-        if let Some((buffers, turn)) = &self.ring {
-            let index = turn.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as usize
-                % (buffers.len() + 1);
-            if index == 0 {
-                self.buffer_id.clone()
-            } else {
-                buffers[index - 1].clone()
-            }
-        } else {
-            self.buffer_id.clone()
-        }
+        self.buffer_id
     }
 
     pub(crate) fn descriptor_type(&self) -> DescriptorType {
@@ -413,164 +421,169 @@ pub enum GpuBufferError {
     Other(VulkanError),
 }
 
-struct TransferTask {
-    src: Id<VkBuffer>,
-    dst: Id<VkBuffer>,
-}
-
-impl Task for TransferTask {
-    type World = ();
-
-    unsafe fn execute(
-        &self,
-        cbf: &mut vulkano_taskgraph::command_buffer::RecordingCommandBuffer<'_>,
-        _tcx: &mut vulkano_taskgraph::TaskContext<'_>,
-        _world: &Self::World,
-    ) -> vulkano_taskgraph::TaskResult {
-        cbf.copy_buffer(&CopyBufferInfo {
-            src_buffer: self.src,
-            dst_buffer: self.dst,
-            ..Default::default()
-        })?;
-
-        Ok(())
-    }
-}
-
-struct ReadTask<'a, T: AnyBitPattern + Send + Sync> {
-    src: Id<VkBuffer>,
-    function: &'a dyn Fn(&T),
-}
-
-unsafe impl<T: AnyBitPattern + Send + Sync> Send for ReadTask<'_, T> {}
-unsafe impl<T: AnyBitPattern + Send + Sync> Sync for ReadTask<'_, T> {}
-
-impl<T: AnyBitPattern + Send + Sync> Task for ReadTask<'static, T> {
-    type World = ();
-
-    unsafe fn execute(
-        &self,
-        _cbf: &mut vulkano_taskgraph::command_buffer::RecordingCommandBuffer<'_>,
-        tcx: &mut vulkano_taskgraph::TaskContext<'_>,
-        _world: &Self::World,
-    ) -> vulkano_taskgraph::TaskResult {
-        let read: &T = tcx.read_buffer(self.src, ..)?;
-
-        (self.function)(read);
-
-        Ok(())
-    }
-}
-
-impl<B: AnyBitPattern + Send + Sync> LoadedBuffer<B> for GpuBuffer<B> {
+impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
     type Error = GpuBufferError;
 
-    fn data(&self) -> std::result::Result<B, Self::Error> {
+    fn data<F>(&self, f: F) -> std::result::Result<(), Self::Error>
+    where
+        F: FnOnce(&B),
+    {
         let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
+
+        let queue = vulkan.queues.transfer();
+
+        let flight = vulkan.transfer_flight().unwrap();
+
         match &self.access_method {
-            AccessMethod::Fixed => Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed)),
+            AccessMethod::Fixed => {
+                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed))
+            }
             AccessMethod::Staged { staging_id } => {
-                let task_graph = TaskGraph::new(&vulkan.resources);
+                flight.wait(None).unwrap();
 
                 // Task 1: data -> staging
-                let transfer = task_graph
-                    .create_task_node(
-                        "transfer",
-                        vulkano_taskgraph::QueueFamilyType::Transfer,
-                        TransferTask {
-                            src: self.buffer_id,
-                            dst: *staging_id,
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |cb, _| {
+                            cb.copy_buffer(&CopyBufferInfo {
+                                src_buffer: self.buffer_id,
+                                dst_buffer: *staging_id,
+                                ..Default::default()
+                            })?;
+                            Ok(())
                         },
+                        [],
+                        [
+                            (self.buffer_id, AccessTypes::COPY_TRANSFER_READ),
+                            (*staging_id, AccessTypes::COPY_TRANSFER_WRITE),
+                        ],
+                        [],
                     )
-                    .buffer_access(self.buffer_id, AccessTypes::COPY_TRANSFER_READ)
-                    .buffer_access(*staging_id, AccessTypes::COPY_TRANSFER_WRITE)
-                    .build();
+                }
+                .unwrap();
 
-                let mut buffer = Option<usize>;
+                flight.wait(None).unwrap();
 
                 // Task 2: read staging
-                let read = task_graph.create_task_node("read", vulkano_taskgraph::QueueFamilyType::Transfer, ReadTask {src: staging_id, function: |data| {
-                }});
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let read: &B = ctx.read_buffer(*staging_id, ..)?;
 
-                todo!()
+                            f(read);
+
+                            Ok(())
+                        },
+                        [(*staging_id, HostAccessType::Read)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
             }
             AccessMethod::Pinned(..) => {
-                // Wait for data access
-                if let Some(future) = vulkan.future.lock().take() {
-                    future
-                        .then_signal_fence_and_flush()
-                        .unwrap()
-                        .wait(None)
-                        .unwrap();
-                };
+                flight.wait(None).unwrap();
 
-                // Read data
-                Ok(*(self.data.read().map_err(GpuBufferError::HostAccess)?))
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let read = ctx.read_buffer(self.buffer_id, ..)?;
+                            f(read);
+                            Ok(())
+                        },
+                        [(self.buffer_id, HostAccessType::Read)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
             }
             AccessMethod::RingBuffer { buffers, turn, .. } => {
-                // Choose buffer not in use by the GPU
-                let index =
-                    turn.load(std::sync::atomic::Ordering::Relaxed) as usize % (buffers.len() + 1);
-                let buffer = if index == 0 {
-                    &self.data
-                } else {
-                    &buffers[index - 1]
-                };
-
-                // Read from this buffer
-                Ok(*(buffer.read().map_err(GpuBufferError::HostAccess)?))
+                todo!()
             }
-        }
+        };
+
+        Ok(())
     }
 
-    fn write_data_mut<F: FnOnce(&mut B)>(&self, mut f: F) -> std::result::Result<(), Self::Error> {
+    fn write_data<F>(&self, f: F) -> std::result::Result<(), Self::Error>
+    where
+        F: FnOnce(&mut B),
+    {
         let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
         match &self.access_method {
             AccessMethod::Fixed => {
                 return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed))
             }
-            AccessMethod::Staged { staging, write, .. } => {
-                {
-                    let mut guard = staging.write().map_err(GpuBufferError::HostAccess)?;
+            AccessMethod::Staged { staging_id } => {
+                let queue = vulkan.queues.transfer();
+                let flight = vulkan.transfer_flight().unwrap();
 
-                    f(&mut guard);
+                flight.wait(None).unwrap();
+
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |cb, ctx| {
+                            let write: &mut B = ctx.write_buffer(*staging_id, ..)?;
+
+                            f(write);
+
+                            cb.copy_buffer(&CopyBufferInfo {
+                                src_buffer: *staging_id,
+                                dst_buffer: self.buffer_id,
+                                ..Default::default()
+                            })?;
+
+                            Ok(())
+                        },
+                        [(*staging_id, HostAccessType::Write)],
+                        [
+                            (*staging_id, AccessTypes::COPY_TRANSFER_READ),
+                            (self.buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
+                        ],
+                        [],
+                    )
                 }
-
-                Self::execute_command(write.clone(), &vulkan.queues, vulkan.future.clone())?;
+                .unwrap();
             }
             AccessMethod::Pinned(..) => {
                 // Wait for buffer access
-                if let Some(future) = vulkan.future.lock().take() {
-                    dbg!(future.queue());
-                    future
-                        .then_signal_fence_and_flush()
-                        .unwrap()
-                        .wait(None)
-                        .unwrap();
-                    dbg!("Waited");
-                };
+                let flight = vulkan.transfer_flight().unwrap();
 
-                // Write
-                let mut guard = self.data.write().map_err(GpuBufferError::HostAccess)?;
+                flight.wait(None).unwrap();
 
-                f(&mut guard);
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        vulkan.queues.transfer(),
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let write = ctx.write_buffer(self.buffer_id, ..)?;
+                            f(write);
+
+                            Ok(())
+                        },
+                        [(self.buffer_id, HostAccessType::Write)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
             }
             AccessMethod::RingBuffer { buffers, turn, .. } => {
-                // dbg!(data.write().is_err() && self.data.write().is_err());
-
-                // Choose buffer not in use by the GPU
-                let index =
-                    turn.load(std::sync::atomic::Ordering::Relaxed) as usize % (buffers.len() + 1);
-                let buffer = if index == 0 {
-                    &self.data
-                } else {
-                    &buffers[index - 1]
-                };
-
-                // Write
-                let mut guard = buffer.write().map_err(GpuBufferError::HostAccess)?;
-
-                f(&mut guard);
+                todo!()
             }
         }
 

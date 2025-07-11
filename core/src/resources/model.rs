@@ -1,11 +1,11 @@
 use bytemuck::AnyBitPattern;
 pub use engine_macros::Vertex;
-use foldhash::HashMap;
+use foldhash::{HashMap, HashMapExt};
 
-use super::{
-    buffer::BufferAccess,
-    data::{vert, Vert},
-};
+use glam::{vec2, Vec2, Vec3, Vec4};
+pub use let_engine_core::{circle, model};
+
+use super::buffer::BufferAccess;
 
 /// Vertex and optional index data for the appearance and shape of objects.
 /// Has 3 simple presets.
@@ -48,6 +48,13 @@ impl<V: Vertex> Model<V> {
     /// to be dynamically sized, use [`new_maxed`](Self::new_maxed) instead.
     pub fn new(vertices: Vec<V>, buffer_access: BufferAccess) -> Self {
         Self::new_maxed(vertices, 1, buffer_access)
+    }
+
+    pub fn with_access(buffer_access: BufferAccess) -> Self {
+        Self {
+            buffer_access,
+            ..Default::default()
+        }
     }
 
     /// Creates a new model with vertices, no index buffer and the given
@@ -129,29 +136,29 @@ impl<V: Vertex> Model<V> {
 ///
 /// ## Default models using vertex type [`Vert`](let_engine_core::resources::data::Vert)
 ///
-/// - `model!()` -> Creates an empty fixed dummy [`Model`] with max vertex size 1.
-/// - `model!(triangle)` -> Creates a simple 2D triangle spanning `(-1.0, 1.0)` to `(1.0, -1.0)` using 3 vertices and no indices.
-/// - `model!(square)` -> Creates a simple 2D square spanning `(-1.0, 1.0)` to `(1.0, -1.0)` using 6 vertices and no indices.
+/// - `model!()` → Creates an empty fixed dummy [`Model`] with max vertex size 1.
+/// - `model!(triangle)` → Creates a simple 2D triangle using 3 vertices and no indices.
+/// - `model!(square)` → Creates a simple 2D square spanning `(-1.0, 1.0)` to `(1.0, -1.0)` using 6 vertices and no indices.
 ///
 /// ## Creating Models with Custom Vertices
 ///
-/// - `model!(vertices)` -> Creates a model with the given vertex buffer and default [`BufferAccess`].
-/// - `model!(vertices, buffer_access)` -> Crates a model with the given vertex buffer and buffer access mode.
+/// - `model!(vertices)` → Creates a model with the given vertex buffer and default [`BufferAccess`].
+/// - `model!(vertices, buffer_access)` → Crates a model with the given vertex buffer and buffer access mode.
 ///
 /// ## Creating Indexed Models
 ///
-/// - `model!(vertices, indices)` -> Creates an indexed model with the given vertex and index buffers.
-/// - `model!(vertices, indices, buffer_access)` -> Creates an indexed model with the given vertex and index buffers with the specified [`BufferAccess`].
+/// - `model!(vertices, indices)` → Creates an indexed model with the given vertex and index buffers.
+/// - `model!(vertices, indices, buffer_access)` → Creates an indexed model with the given vertex and index buffers with the specified [`BufferAccess`].
 ///
 /// ## Creating Models with a Maximum Vertex Buffer Size
 ///
-/// - `model!(vertices, max_vertices)` -> Creates a model with a given maximum vertex buffer size.
-/// - `model!(vertices, max_vertices, buffer_access)` -> Crates a model with a given maximum vertex buffer size and buffer access mode.
+/// - `model!(vertices, max_vertices)` → Creates a model with a given maximum vertex buffer size.
+/// - `model!(vertices, max_vertices, buffer_access)` → Crates a model with a given maximum vertex buffer size and buffer access mode.
 ///
 /// ## Creating Indexed Models with Maximum Buffer Sizes
 ///
-/// - `model!(vertices, indices, max_vertices, max_indices)` -> Creates an indexed model with maximum vertex and index buffer sizes.
-/// - `model!(vertices, indices, max_vertices, max_indices, buffer_access)` -> Same as above, but with specified buffer access mode.
+/// - `model!(vertices, indices, max_vertices, max_indices)` → Creates an indexed model with maximum vertex and index buffer sizes.
+/// - `model!(vertices, indices, max_vertices, max_indices, buffer_access)` → Same as above, but with specified buffer access mode.
 ///
 /// ## Creating Empty Models with Maximum Buffer Sizes
 ///
@@ -359,7 +366,7 @@ impl<V: Vertex> Model<V> {
         &mut self.indices
     }
 
-    /// Returns if the data has an empty field.
+    /// Returns if the data of the vertices is empty.
     pub fn is_empty(&self) -> bool {
         self.vertices.is_empty()
     }
@@ -403,23 +410,36 @@ pub trait LoadedModel<V: Vertex>: Clone + Send + Sync {
     fn read_vertices<R: FnOnce(&[V])>(&self, f: R) -> Result<(), Self::Error>;
     fn read_indices<R: FnOnce(&[u32])>(&self, f: R) -> Result<(), Self::Error>;
 
+    fn write_vertices<W: FnOnce(&mut [V])>(&self, f: W, new_size: usize)
+        -> Result<(), Self::Error>;
+    fn write_indices<W: FnOnce(&mut [u32])>(
+        &self,
+        f: W,
+        new_size: usize,
+    ) -> Result<(), Self::Error>;
+
     fn vertex_count(&self) -> usize;
     fn max_vertices(&self) -> usize;
     fn index_count(&self) -> usize;
     fn max_indices(&self) -> usize;
-
-    fn write_vertices(&self, vertices: &[V]) -> Result<(), Self::Error>;
-    fn write_indices(&self, indices: &[u32]) -> Result<(), Self::Error>;
 }
 
 impl<V: Vertex> LoadedModel<V> for () {
     type Error = std::io::Error;
 
-    fn read_vertices<R: FnOnce(&[V])>(&self, _f: R) -> Result<(), Self::Error> {
+    fn read_vertices<R>(&self, _f: R) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn read_indices<R: FnOnce(&[u32])>(&self, _f: R) -> Result<(), Self::Error> {
+    fn read_indices<R>(&self, _f: R) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn write_vertices<W>(&self, _f: W, _new_vertex_size: usize) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn write_indices<W>(&self, _f: W, _new_index_size: usize) -> Result<(), Self::Error> {
         Ok(())
     }
 
@@ -438,20 +458,63 @@ impl<V: Vertex> LoadedModel<V> for () {
     fn max_indices(&self) -> usize {
         0
     }
-
-    fn write_vertices(&self, _vertices: &[V]) -> Result<(), Self::Error> {
-        Ok(())
-    }
-
-    fn write_indices(&self, _indices: &[u32]) -> Result<(), Self::Error> {
-        Ok(())
-    }
 }
 
 /// # Safety
 /// This trait should not be implemented by the user, but always using the derive macro of `Vertex`.
 pub unsafe trait Vertex: AnyBitPattern + Sized + Send + Sync {
     fn description() -> VertexBufferDescription;
+}
+
+unsafe impl Vertex for Vec2 {
+    fn description() -> VertexBufferDescription {
+        let mut members = HashMap::with_capacity(1);
+
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                offset: 0,
+                format: super::Format::Rg32Float,
+                num_elements: 1,
+                stride: 8,
+            },
+        );
+        VertexBufferDescription { members, stride: 8 }
+    }
+}
+
+unsafe impl Vertex for Vec3 {
+    fn description() -> VertexBufferDescription {
+        let mut members = HashMap::with_capacity(1);
+
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                offset: 0,
+                format: super::Format::Rgb32Float,
+                num_elements: 1,
+                stride: 8,
+            },
+        );
+        VertexBufferDescription { members, stride: 8 }
+    }
+}
+
+unsafe impl Vertex for Vec4 {
+    fn description() -> VertexBufferDescription {
+        let mut members = HashMap::with_capacity(1);
+
+        members.insert(
+            "position".to_string(),
+            VertexMemberInfo {
+                offset: 0,
+                format: super::Format::Rgba32Float,
+                num_elements: 1,
+                stride: 8,
+            },
+        );
+        VertexBufferDescription { members, stride: 8 }
+    }
 }
 
 /// Describes the contents of a VertexBuffer.
@@ -492,7 +555,7 @@ impl VertexMemberInfo {
     }
 }
 
-impl Model<Vert> {
+impl Model<Vec2> {
     pub fn triangle() -> Self {
         Self::new(TRIANGLE_2D.to_vec(), BufferAccess::Fixed)
     }
@@ -501,15 +564,15 @@ impl Model<Vert> {
     }
 }
 
-const TRIANGLE_2D: [Vert; 3] = [vert(0.0, -1.0), vert(-1.0, 1.0), vert(1.0, 1.0)];
+const TRIANGLE_2D: [Vec2; 3] = [vec2(0.0, -1.1547), vec2(-1.0, 0.5774), vec2(1.0, 0.5774)];
 
-const SQUARE_2D: [Vert; 6] = [
-    vert(1.0, 1.0),
-    vert(1.0, -1.0),
-    vert(-1.0, 1.0),
-    vert(-1.0, 1.0),
-    vert(1.0, -1.0),
-    vert(-1.0, -1.0),
+const SQUARE_2D: [Vec2; 6] = [
+    vec2(1.0, 1.0),
+    vec2(1.0, -1.0),
+    vec2(-1.0, 1.0),
+    vec2(-1.0, 1.0),
+    vec2(1.0, -1.0),
+    vec2(-1.0, -1.0),
 ];
 
 /// A macro that makes it easy to create circles.
@@ -522,44 +585,50 @@ const SQUARE_2D: [Vert; 6] = [
 /// ### $percent
 /// Using this with a `f64` makes a circle fan that looks like a pie with the given percentage missing.
 ///
-/// ## usage:
+/// ### $access
+/// Ending with a [`BufferAccess`] in this macro results in this access method being used.
+///
+/// ## Usage
 /// ```rust
 /// use let_engine::prelude::*;
 ///
-/// let hexagon: Data = make_circle!(6); // Makes a hexagon.
+/// let hexagon: Data = circle!(6); // Makes a hexagon.
 ///
 /// // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
-/// let pie: Data = make_circle!(20, 0.75);
+/// let pie: Data = circle!(20, 0.75);
 /// ```
+///
+/// ## Tip
+/// The amount of needed corners is similar to a logarithmical function.
+/// The more corners you use, the more resources you waste, and the less you notice any change.
+/// Try to use as little corners as possible for maximum resource efficiency.
 #[macro_export]
-macro_rules! make_circle {
+macro_rules! circle {
     (0) => {
         compile_error!("Number of corners must be greater than zero")
     };
 
+    // Default access
+    ($corners:expr) => {
+        let_engine::prelude::circle!($corners, let_engine::prelude::BufferAccess::Fixed)
+    };
     // Full circle fan
-    ($corners:expr) => {{
-        use let_engine_core::{
-            glam::vec2,
-            resources::{
-                data::{vert, Vert},
-                model::Model,
-            },
-        };
+    ($corners:expr, $access:expr) => {{
+        use let_engine_core::{glam::vec2, resources::model::Model};
 
         let corners: u32 = $corners;
 
-        let mut vertices: Vec<Vert> = vec![];
+        let mut vertices: Vec<Vec2> = vec![];
         let mut indices: Vec<u32> = vec![];
         use core::f64::consts::TAU;
 
         // first point in the middle
-        vertices.push(vert(0.0, 0.0));
+        vertices.push(vec2(0.0, 0.0));
 
         // Generate vertices
         for i in 0..corners {
             let angle = TAU * ((i as f64) / corners as f64);
-            vertices.push(vert(angle.cos() as f32, angle.sin() as f32));
+            vertices.push(vec2(angle.cos() as f32, angle.sin() as f32));
         }
 
         // Generate indices
@@ -569,17 +638,18 @@ macro_rules! make_circle {
         }
         indices.extend([0, corners, 1]);
 
-        Model::new_indexed(vertices, indices, let_engine::prelude::BufferAccess::Fixed)
+        Model::new_indexed(vertices, indices, $access)
     }};
 
+    // Default access pie
+    ($corners:expr, $percent:expr) => {
+        let_engine::prelude::circle!($corners, $percent, let_engine::prelude::BufferAccess::Fixed)
+    };
     // Pie circle
-    ($corners:expr, $percent:expr) => {{
+    ($corners:expr, $percent:expr, $access:expr) => {{
         use let_engine_core::{
-            glam::vec2,
-            resources::{
-                data::{vert, Vert},
-                model::Model,
-            },
+            glam::{vec2, Vec2},
+            resources::model::Model,
         };
 
         let corners: u32 = $corners;
@@ -588,18 +658,18 @@ macro_rules! make_circle {
         }
 
         let percent: f64 = ($percent as f64).clamp(0.0, 1.0);
-        let mut vertices: Vec<Vert> = vec![];
+        let mut vertices: Vec<Vec2> = vec![];
         let mut indices: Vec<u32> = vec![];
         use core::f64::consts::TAU;
 
         let angle_limit = TAU * percent;
 
-        vertices.push(vert(0.0, 0.0));
+        vertices.push(vec2(0.0, 0.0));
 
         // Generate vertices
         for i in 0..corners + 1 {
             let angle = angle_limit * (i as f64 / corners as f64);
-            vertices.push(vert(angle.cos() as f32, angle.sin() as f32));
+            vertices.push(vec2(angle.cos() as f32, angle.sin() as f32));
         }
 
         // Generate indices
@@ -607,6 +677,6 @@ macro_rules! make_circle {
             indices.extend([0, i + 1, i + 2]);
         }
 
-        Model::new_indexed(vertices, indices)
+        Model::new_indexed(vertices, indices, $access)
     }};
 }

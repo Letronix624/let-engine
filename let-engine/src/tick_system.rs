@@ -1,12 +1,12 @@
 use std::{
-    sync::{atomic::AtomicBool, Arc, LazyLock},
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, SystemTime},
 };
 
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
 use let_engine_core::backend::Backends;
-use smol::{lock::Mutex, Timer};
+use parking_lot::Mutex;
 
 use crate::{EngineContext, Game};
 
@@ -28,13 +28,8 @@ impl TickSystem {
     }
 }
 
-static SLEEP_ACCURACY: LazyLock<Duration> = LazyLock::new(|| {
-    let nano_seconds = spin_sleep::SpinSleeper::default().native_accuracy_ns();
-    Duration::from_nanos(nano_seconds as u64)
-});
-
 /// Runs the games `tick` function after every iteration.
-pub async fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G>>) {
+pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G>>) {
     let mut index: usize = 0;
 
     let interface = context.tick_system.clone();
@@ -45,12 +40,12 @@ pub async fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<M
             .tick_pause_lock
             .1
             .wait_while(&mut interface.tick_pause_lock.0.lock(), |x| *x);
-        let mut settings = interface.settings.lock().await;
+        let mut settings = interface.settings.lock();
         // capture tick start time.
         let start_time = SystemTime::now();
 
         // Run the logic
-        game.lock().await.tick(&context).await;
+        game.lock().tick(&context);
 
         // update the physics in case they are active in the tick settings.
         #[cfg(feature = "physics")]
@@ -89,7 +84,7 @@ pub async fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<M
         };
 
         // Spin sleep so windows users with their lower quality sleep functions get the same sleep duration
-        sleep(waiting_time).await;
+        spin_sleep::sleep(waiting_time);
 
         // report tick in case a reporter is active
         interface.report.store(Tick {
@@ -103,20 +98,6 @@ pub async fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<M
         if interface.stop.load(std::sync::atomic::Ordering::Acquire) {
             break;
         }
-    }
-}
-
-async fn sleep(duration: Duration) {
-    let start = SystemTime::now();
-    if duration > *SLEEP_ACCURACY {
-        Timer::after(duration - *SLEEP_ACCURACY).await;
-    }
-    // Spin the rest
-    while start.elapsed().unwrap_or_default() < duration {
-        #[cfg(windows)]
-        std::hint::spin_loop();
-        #[cfg(not(windows))]
-        std::thread::yield_now();
     }
 }
 

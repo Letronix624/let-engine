@@ -1,3 +1,12 @@
+//! Simple pong game
+//!
+//! # Controls
+//! - w: left paddle up
+//! - s: left paddle down
+//!
+//! - k: left paddle up
+//! - j: left paddle down
+
 use graphics::{
     buffer::GpuBuffer,
     material::{GpuMaterial, VulkanGraphicsShaders},
@@ -38,7 +47,7 @@ fn main() {
     let window_builder = WindowBuilder::default()
         .resizable(false)
         .inner_size(RESOLUTION)
-        .title("Pong 2");
+        .title(env!("CARGO_CRATE_NAME"));
     // Initialize the engine.
     let mut engine = Engine::<Game>::new(
         EngineSettings::default()
@@ -82,17 +91,16 @@ impl Game {
 
         // next we set the view of the game scene to -1 to 1 max
         let root_view = context.scene.root_view();
-        root_view.set_camera(Camera::default().scaling(CameraScaling::Limited));
+        root_view.set_scaling(CameraScaling::Box);
 
         // When making UI, a recommended scaling mode is `Expand`, because it makes sure the UI is
         // the same size no matter how the window is scaled. Size of the transform is zoom here.
         let _ui_view = ui_layer
             .new_view(
-                Camera::default()
-                    .scaling(CameraScaling::Expand)
-                    .transform(Transform::default().size(Vec2::splat(0.8))),
                 &context.scene,
-                uvec2(0, 0),
+                Transform::default(),
+                RESOLUTION,
+                CameraScaling::Expand,
             )
             .unwrap();
         // The view will exist as long as this variable is kept. Dropping this eliminates the view.
@@ -111,7 +119,7 @@ impl Game {
         );
 
         // Spawns a ball in the middle.
-        let ball = Ball::new(root_layer, &root_view);
+        let ball = Ball::new(root_layer, root_view);
 
         let mut labelifier = Labelifier::new(&context.graphics).unwrap();
 
@@ -125,7 +133,11 @@ impl Game {
             LabelCreateInfo::default()
                 .text("0")
                 .align(Direction::No)
-                .transform(Transform::default().position(vec2(-0.55, 0.0)))
+                .transform(Transform::with_position(vec2(
+                    RESOLUTION.x as f32 * -0.55,
+                    80.0,
+                )))
+                .extent(RESOLUTION / uvec2(2, 1))
                 .scale(Vec2::splat(50.0))
                 .font(font.clone()),
             &mut labelifier,
@@ -141,10 +153,14 @@ impl Game {
         // Making a default label for the right side.
         let right_score_label = Label::new(
             LabelCreateInfo::default()
-                .transform(Transform::default().position(vec2(0.55, 0.0)))
                 .text("0")
                 .align(Direction::Nw)
-                .scale(vec2(50.0, 50.0))
+                .transform(Transform::with_position(vec2(
+                    RESOLUTION.x as f32 * 0.55,
+                    80.0,
+                )))
+                .extent(RESOLUTION / uvec2(2, 1))
+                .scale(Vec2::splat(50.0))
                 .font(font),
             &mut labelifier,
             &context.graphics,
@@ -156,17 +172,16 @@ impl Game {
             .unwrap();
 
         // Submit label creation task in the end.
-        // labelifier.update().unwrap();
-        // dbg!("Updated");
+        labelifier.update().unwrap();
 
         /* Line in the middle */
 
         // Make a custom model that is just 2 lines.
         let vertices = vec![
-            vert(0.0, 0.7),
-            vert(0.0, 0.3),
-            vert(0.0, -0.3),
-            vert(0.0, -0.7),
+            vec2(0.0, RESOLUTION.y as f32 * 0.8),
+            vec2(0.0, RESOLUTION.y as f32 * 0.1),
+            vec2(0.0, RESOLUTION.y as f32 * -0.1),
+            vec2(0.0, RESOLUTION.y as f32 * -0.8),
         ];
 
         let middle_model = GpuModel::new(&model!(vertices)).unwrap();
@@ -178,14 +193,14 @@ impl Game {
             .build()
             .unwrap();
 
-        let line_material = GpuMaterial::new::<Vert>(
+        let line_material = GpuMaterial::new::<Vec2>(
             line_material_settings,
             VulkanGraphicsShaders::new_default().unwrap(),
         )
         .unwrap();
 
         // The buffer is a Fixed Uniform here, because it's small and will never change.
-        let middle_line_color = GpuBuffer::new(Buffer::from_data(
+        let middle_line_color = GpuBuffer::new(&Buffer::from_data(
             BufferUsage::Uniform,
             BufferAccess::Fixed,
             Color::WHITE,
@@ -230,7 +245,6 @@ impl let_engine::Game for Game {
 
         // If anyone has won after the ball has updated, modify the score counter
         if self.ball.update(&context.time) {
-            dbg!("Win");
             // Update score labels
             self.left_score_label
                 .update_text(format!("{}", self.ball.wins[0]))
@@ -298,7 +312,7 @@ impl Paddle {
         let material = GpuMaterial::new_default().unwrap();
 
         // Make the paddle white
-        let buffer = GpuBuffer::new(Buffer::from_data(
+        let buffer = GpuBuffer::new(&Buffer::from_data(
             BufferUsage::Uniform,
             BufferAccess::Fixed,
             Color::WHITE,
@@ -387,7 +401,7 @@ impl Ball {
         let material = GpuMaterial::new_default().unwrap();
 
         // Make the ball white
-        let buffer = GpuBuffer::new(Buffer::from_data(
+        let buffer = GpuBuffer::new(&Buffer::from_data(
             BufferUsage::Uniform,
             BufferAccess::Fixed,
             Color::WHITE,
@@ -448,19 +462,23 @@ impl Ball {
                 && (self.direction.x.is_sign_negative()
                     == self.object.transform.position.x.is_sign_negative())
             {
-                self.rebound(position.x as f64, time);
+                self.rebound(position.x as f64);
                 // It's getting faster with time.
                 self.speed += 0.03;
-            } else if touching_floor || touching_roof {
-                self.direction.y *= -1.0;
+            } else if touching_roof {
+                self.direction.y *= -self.direction.y.signum();
+            } else if touching_floor {
+                self.direction.y *= self.direction.y.signum();
             } else if touching_wall {
                 // Right wins increase by 1 in case the X is negative.
-                if position.x.is_sign_negative() {
-                    self.wins[1] += 1;
-                } else {
+                if position.x.is_sign_positive() {
                     self.wins[0] += 1;
+                    log::info!("Left scored!")
+                } else {
+                    self.wins[1] += 1;
+                    log::info!("Right scored!")
                 }
-                self.reset(time);
+                self.reset();
                 return true;
             }
 
@@ -476,17 +494,17 @@ impl Ball {
         false
     }
 
-    fn reset(&mut self, time: &Time) {
+    fn reset(&mut self) {
         self.new_round = SystemTime::now();
         self.object.transform.position = vec2(0.0, 0.0);
-        self.direction = Self::random_direction(time);
+        self.direction = Self::random_direction();
         self.speed = 1.1;
         self.object.sync().unwrap();
     }
 
-    fn rebound(&mut self, x: f64, time: &Time) {
+    fn rebound(&mut self, x: f64) {
         // Random 0.0 to 1.0 value. Some math that makes a random direction.
-        let random = (time.time() * 135225.3).sin().copysign(-x);
+        let random = (rand::random_range(0.0..1.0) as f64).copysign(-x);
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(-x)) - FRAC_PI_2;
 
         self.direction = Vec2::from_angle(direction as f32).normalize();
@@ -495,10 +513,11 @@ impl Ball {
         // self.bounce_sound.play().unwrap();
     }
 
-    fn random_direction(time: &Time) -> Vec2 {
-        // Random -1.0 to 1.0 value. Some math that makes a random direction.
-        let random = (time.time() * 135225.3).sin();
+    fn random_direction() -> Vec2 {
+        let random = rand::random_range(0.0..1.0) as f64;
+
+        // FIX
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(random)) - FRAC_PI_2;
-        Vec2::from_angle(direction as f32)
+        Vec2::from_angle(direction as f32).normalize()
     }
 }
