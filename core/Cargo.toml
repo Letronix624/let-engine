@@ -33,6 +33,10 @@ engine-macros = { path = "../macros" }
 workspace = true
 features = ["bytemuck", "mint"]
 
+[dependencies.kira]
+version = "0.10"
+optional = true
+
 [dependencies.nalgebra]
 workspace = true
 features = ["convert-mint"]
@@ -47,7 +51,9 @@ optional = true
 
 [features]
 physics = ["dep:rapier2d"]
+audio-backend = ["dep:kira"]
 serde = ["glam/serde", "rapier2d/serde-serialize"]
 
 rand = ["glam/rand"]
 fast-math = ["glam/fast-math"]
+

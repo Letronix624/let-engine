@@ -3,6 +3,11 @@ pub mod camera;
 pub mod objects;
 pub mod resources;
 
+use backend::{
+    audio::{self, AudioBackendError},
+    graphics::GraphicsBackend,
+    Backends,
+};
 use foldhash::HashMap;
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -12,12 +17,11 @@ pub use glam;
 extern crate self as let_engine_core;
 
 /// The game engine failed to start for the following reasons:
-#[derive(Debug, Error)]
-pub enum EngineError<G>
+#[derive(Error)]
+pub enum EngineError<B>
 where
-    G: std::error::Error,
-    // A: std::error::Error,
-    // N: std::error::Error,
+    B: Backends,
+    <B::Kira as audio::Backend>::Error: std::fmt::Debug,
 {
     /// It is only possible to create the engine one time.
     #[error("Can not start another engine instance in the same application.")]
@@ -25,14 +29,38 @@ where
 
     /// An error given by the used graphics backend upon creation.
     #[error("{0}")]
-    GraphicsBackend(G),
-    // /// An error given by the used audio backend upon creation.
-    // #[error("{0}")]
-    // AudioBackend(A),
+    GraphicsBackend(<B::Graphics as GraphicsBackend>::Error),
 
+    // /// An error given by the used audio backend.
+    #[error("{0}")]
+    AudioBackend(AudioBackendError<<B::Kira as audio::Backend>::Error>),
     // /// An error given by the used networking backend upon creation.
     // #[error("{0}")]
     // NetworkingBackend(N),
+}
+
+impl<B: Backends> std::fmt::Debug for EngineError<B>
+where
+    B: Backends,
+    <B::Kira as audio::Backend>::Error: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Recreation => {
+                write!(
+                    f,
+                    "Can not start another engine instance in the same application."
+                )?;
+            }
+            Self::GraphicsBackend(e) => {
+                write!(f, "{e}")?;
+            }
+            Self::AudioBackend(e) => {
+                write!(f, "{e:?}")?;
+            }
+        };
+        Ok(())
+    }
 }
 
 /// Cardinal direction

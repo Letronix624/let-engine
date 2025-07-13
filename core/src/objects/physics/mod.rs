@@ -36,6 +36,12 @@ pub(crate) struct Physics {
     pub query_pipeline_out_of_date: bool,
 }
 
+impl std::fmt::Debug for Physics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Physics")
+    }
+}
+
 impl Default for Physics {
     fn default() -> Self {
         Self::new()

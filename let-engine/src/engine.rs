@@ -6,6 +6,7 @@ use crate::tick_system::TickSystem;
 use anyhow::Result;
 use atomic_float::AtomicF64;
 use glam::{dvec2, uvec2, vec2};
+use let_engine_core::backend::audio::{self, AudioInterface};
 use let_engine_core::backend::graphics::GraphicsBackend;
 use let_engine_core::backend::Backends;
 use let_engine_core::objects::scenes::Scene;
@@ -114,30 +115,40 @@ where
 
 use let_engine_core::EngineError;
 
-impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
+impl<G: Game<B>, B: Backends + 'static> Engine<G, B>
+where
+    <B::Kira as audio::Backend>::Settings: Default,
+    <B::Kira as audio::Backend>::Error: std::fmt::Debug,
+{
     /// Initializes the game engine with the given settings ready to be launched using the `start` method.
     ///
     /// This function can only be called one time. Attempting to make a second one of those will return an error.
-    pub fn new(
-        settings: impl Into<settings::EngineSettings<B>>,
-    ) -> Result<Self, EngineError<<B::Graphics as GraphicsBackend>::CreateError>> {
+    pub fn new(settings: impl Into<settings::EngineSettings<B>>) -> Result<Self, EngineError<B>> {
         let settings: settings::EngineSettings<B> = settings.into();
 
         #[cfg(feature = "client")]
         let event_loop = winit::event_loop::EventLoop::new().unwrap();
 
         #[cfg(feature = "client")]
-        let graphics_backend = B::Graphics::new(settings.graphics.clone(), &event_loop)
+        let graphics_backend = B::Graphics::new(&settings.graphics, &event_loop)
             .map_err(EngineError::GraphicsBackend)?;
+
+        #[cfg(feature = "client")]
+        let audio_interface =
+            AudioInterface::new(&settings.audio).map_err(EngineError::AudioBackend)?;
 
         let context = EngineContext::new(
             graphics_backend.interface().clone(),
+            audio_interface,
             settings.tick_system.clone(),
         );
 
         Ok(Self {
             context,
+            #[cfg(feature = "client")]
             graphics_backend,
+            // #[cfg(feature = "client")]
+            // audio_backend,
             #[cfg(feature = "client")]
             event_loop: Some(event_loop),
             // server: None,
@@ -352,9 +363,11 @@ where
                 let window = self.context.window().unwrap();
 
                 game.lock().update(&self.context);
-                self.graphics_backend.update(|| {
-                    window.pre_present_notify();
-                });
+                self.graphics_backend
+                    .update(|| {
+                        window.pre_present_notify();
+                    })
+                    .unwrap(); // TODO: Error handling events
                 self.context.time.update();
 
                 return;
@@ -471,7 +484,7 @@ where
     pub(super) window: OnceCell<Window>,
 
     pub graphics: <B::Graphics as GraphicsBackend>::Interface,
-    // pub audio: <<B as Backends<Msg>>::Audio as Backend>::Interface,
+    pub audio: AudioInterface<B::Kira>,
     // pub networking: Arc<networking::Networking>,
     // pub networking: <<B as Backends<Msg>>::Networking as Backend>::Interface,
 }
@@ -493,6 +506,7 @@ where
             tick_system: self.tick_system.clone(),
             window: self.window.clone(),
             graphics: self.graphics.clone(),
+            audio: self.audio.clone(),
         }
     }
 }
@@ -500,6 +514,7 @@ where
 impl<B: Backends> EngineContext<B> {
     fn new(
         graphics: <B::Graphics as GraphicsBackend>::Interface,
+        audio: AudioInterface<B::Kira>,
         tick_system: tick_system::TickSettings,
     ) -> Self {
         let scene = Arc::new(Scene::new());
@@ -512,7 +527,7 @@ impl<B: Backends> EngineContext<B> {
             tick_system: Arc::new(TickSystem::new(tick_system)),
             window: OnceCell::new(),
             graphics,
-            // audio,
+            audio,
             // networking,
         }
     }

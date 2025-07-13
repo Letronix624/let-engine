@@ -507,7 +507,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                 }
                 .unwrap();
             }
-            AccessMethod::RingBuffer { buffers, turn, .. } => {
+            AccessMethod::RingBuffer { .. } => {
                 todo!()
             }
         };
@@ -582,7 +582,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                 }
                 .unwrap();
             }
-            AccessMethod::RingBuffer { buffers, turn, .. } => {
+            AccessMethod::RingBuffer { .. } => {
                 todo!()
             }
         }

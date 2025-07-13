@@ -130,8 +130,6 @@ impl Game {
         circle.transform.position.x = 2.0; // move circle to the right
         let circle = circle.init(&root_layer).unwrap();
 
-        dbg!(triangle.id(), square.id(), circle.id());
-
         Self {
             color_buffer: circle_buffer,
             view_cycle: 0,

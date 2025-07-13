@@ -31,6 +31,15 @@ debug = false
 panic = "abort"
 strip = "debuginfo"
 
+[profile.dev.package.kira]
+opt-level = 3
+
+[profile.dev.package.cpal]
+opt-level = 3
+
+[profile.dev.package.vulkano]
+opt-level = 3
+
 [workspace.dependencies]
 parking_lot = "0.12"
 foldhash = "0.1"

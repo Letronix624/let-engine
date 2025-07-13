@@ -51,6 +51,7 @@ use super::{
 };
 
 /// Responsible for drawing on the surface.
+#[derive(Debug)]
 pub struct Draw {
     swapchain_id: Id<Swapchain>,
     virtual_swapchain_id: Id<Swapchain>,
@@ -633,6 +634,7 @@ impl Task for DrawTask {
                         &[],
                     )
                     .unwrap();
+                cbf.destroy_objects(descriptors);
                 cbf.push_constants(graphics_pipeline.layout(), 0, &model_matrix)?;
                 cbf.bind_vertex_buffers(
                     0,

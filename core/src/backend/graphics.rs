@@ -16,8 +16,8 @@ use crate::{
 };
 
 /// Definition for a graphics backend for the let-engine.
-pub trait GraphicsBackend {
-    type CreateError: std::error::Error + Send + Sync;
+pub trait GraphicsBackend: std::fmt::Debug {
+    type Error: std::error::Error + Send + Sync;
 
     /// Will be stored in the [`EngineContext`](crate::engine::EngineContext)
     /// to interface the backend from multiple threads.
@@ -29,10 +29,7 @@ pub trait GraphicsBackend {
     type LoadedTypes: Loaded;
 
     /// Constructor of the backend with required settings.
-    fn new(
-        settings: Self::Settings,
-        handle: impl HasDisplayHandle,
-    ) -> Result<Self, Self::CreateError>
+    fn new(settings: &Self::Settings, handle: impl HasDisplayHandle) -> Result<Self, Self::Error>
     where
         Self: Sized;
 
@@ -50,7 +47,7 @@ pub trait GraphicsBackend {
     ///
     /// This is used for redraws. A function `pre_present_notify` gets included,
     /// which should be called right before presenting for optimisation.
-    fn update(&mut self, pre_present_notify: impl FnOnce());
+    fn update(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error>;
 
     /// Gets called when the window has changed size.
     fn resize_event(&mut self, new_size: UVec2);
@@ -136,16 +133,16 @@ impl Loaded for () {
 }
 
 impl GraphicsBackend for () {
-    type CreateError = std::io::Error;
+    type Error = std::io::Error;
     type Interface = ();
     type Settings = ();
 
     type LoadedTypes = ();
 
     fn new(
-        _settings: Self::Settings,
+        _settings: &Self::Settings,
         _handle: impl HasDisplayHandle,
-    ) -> Result<Self, Self::CreateError> {
+    ) -> Result<Self, Self::Error> {
         Ok(())
     }
 
@@ -160,7 +157,9 @@ impl GraphicsBackend for () {
         &()
     }
 
-    fn update(&mut self, _: impl FnOnce()) {}
+    fn update(&mut self, _: impl FnOnce()) -> Result<(), Self::Error> {
+        Ok(())
+    }
 
     fn resize_event(&mut self, _new_size: UVec2) {}
 }

@@ -47,6 +47,7 @@ pub mod texture;
 mod draw;
 mod vulkan;
 
+#[derive(Debug)]
 pub struct DefaultGraphicsBackend {
     draw: OnceCell<Draw>,
     interface: GraphicsInterface,
@@ -73,25 +74,28 @@ pub enum DefaultGraphicsBackendError {
     Vulkan(VulkanError),
 }
 
+impl From<VulkanError> for DefaultGraphicsBackendError {
+    fn from(value: VulkanError) -> Self {
+        Self::Vulkan(value)
+    }
+}
+
 impl GraphicsBackend for DefaultGraphicsBackend {
-    type CreateError = DefaultGraphicsBackendError;
+    type Error = DefaultGraphicsBackendError;
 
     type Settings = Graphics;
     type Interface = GraphicsInterface;
 
     type LoadedTypes = VulkanTypes;
 
-    fn new(
-        settings: Self::Settings,
-        handle: impl HasDisplayHandle,
-    ) -> Result<Self, Self::CreateError> {
+    fn new(settings: &Self::Settings, handle: impl HasDisplayHandle) -> Result<Self, Self::Error> {
         // Initialize backend in case it is not already initialized.
         if VK.get().is_none() {
-            let vulkan = Vulkan::init(&handle, &settings)?;
+            let vulkan = Vulkan::init(&handle, settings)?;
             let _ = VK.set(vulkan);
         }
 
-        let interface = GraphicsInterface::new(settings);
+        let interface = GraphicsInterface::new(*settings);
 
         Ok(Self {
             draw: OnceCell::new(),
@@ -120,9 +124,11 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         &self.interface
     }
 
-    fn update(&mut self, pre_present_notify: impl FnOnce()) {
+    fn update(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error> {
         if let Some(draw) = self.draw.get_mut() {
-            draw.redraw_event(pre_present_notify).unwrap(); // TODO
+            draw.redraw_event(pre_present_notify).map_err(|e| e.into())
+        } else {
+            Ok(())
         }
     }
 
@@ -367,7 +373,7 @@ pub enum AppearanceCreationError {
     },
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct GraphicsInterface {
     settings: Arc<RwLock<Graphics>>,
     settings_channels: (Sender<Graphics>, Receiver<Graphics>),
@@ -574,7 +580,7 @@ impl From<SpirvBytesNotMultipleOf4> for ShaderError {
 }
 
 /// Backend wide Graphics settings.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Graphics {
     /// An option that determines something called "VSync".
     ///

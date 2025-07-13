@@ -1,6 +1,6 @@
 //! Engine wide settings that are applicable using the [Settings](crate::settings::Settings) struct.
 
-use let_engine_core::backend::{graphics::GraphicsBackend, Backends};
+use let_engine_core::backend::{audio::AudioSettings, graphics::GraphicsBackend, Backends};
 
 use crate::tick_system::TickSettings;
 
@@ -14,6 +14,8 @@ pub struct EngineSettings<B: Backends> {
     pub tick_system: TickSettings,
 
     pub graphics: <B::Graphics as GraphicsBackend>::Settings,
+    #[cfg(feature = "client")]
+    pub audio: AudioSettings,
     // pub networking: <B::Networking as NetworkingBackend>::Settings,
 }
 
@@ -23,6 +25,7 @@ impl<B: Backends> Default for EngineSettings<B> {
             window: crate::window::WindowBuilder::default(),
             tick_system: TickSettings::default(),
             graphics: <B::Graphics as GraphicsBackend>::Settings::default(),
+            audio: AudioSettings::default(),
             // networking: <B::Networking as NetworkingBackend>::Settings::default(),
         }
     }
@@ -34,6 +37,7 @@ impl<B: Backends> Clone for EngineSettings<B> {
             window: self.window.clone(),
             tick_system: self.tick_system.clone(),
             graphics: self.graphics.clone(),
+            audio: self.audio.clone(),
             // networking: self.networking.clone(),
         }
     }

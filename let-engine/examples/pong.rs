@@ -7,6 +7,10 @@
 //! - k: left paddle up
 //! - j: left paddle down
 
+use audio::{
+    gen_square_wave,
+    sound::static_sound::{StaticSoundData, StaticSoundSettings},
+};
 use graphics::{
     buffer::GpuBuffer,
     material::{GpuMaterial, VulkanGraphicsShaders},
@@ -17,6 +21,7 @@ use graphics::{
 #[cfg(feature = "client")]
 use let_engine::prelude::*;
 
+use let_engine_core::backend::audio::{AudioInterface, DefaultAudioBackend};
 #[cfg(feature = "client")]
 use let_engine_widgets::labels::{Label, LabelCreateInfo, Labelifier};
 
@@ -244,7 +249,7 @@ impl let_engine::Game for Game {
         self.right_paddle.update(context);
 
         // If anyone has won after the ball has updated, modify the score counter
-        if self.ball.update(&context.time) {
+        if self.ball.update(&context.time, &context.audio) {
             // Update score labels
             self.left_score_label
                 .update_text(format!("{}", self.ball.wins[0]))
@@ -388,7 +393,7 @@ struct Ball {
     speed: f32,
     new_round: SystemTime,
     pub wins: [u32; 2],
-    // bounce_sound: Sound,
+    bounce_sound: StaticSoundData,
 }
 
 /// Ball logic.
@@ -423,11 +428,12 @@ impl Ball {
 
         let object = object.init(layer).unwrap();
 
-        // // make a sound to play when bouncing.
-        // let bounce_sound = Sound::new(
-        //     SoundData::gen_square_wave(777.0, 0.03),
-        //     SoundSettings::default().volume(0.05),
-        // );
+        // make a sound to play when bouncing.
+        let bounce_sound = gen_square_wave(
+            777.0,
+            Duration::from_millis(30),
+            StaticSoundSettings::new().volume(-10.0),
+        );
 
         Self {
             object,
@@ -437,12 +443,16 @@ impl Ball {
             speed: 1.1,
             new_round: lifetime,
             wins: [0; 2],
-            // bounce_sound,
+            bounce_sound,
         }
     }
 
     /// Updates the ball and returns true if the ball has touched the wall
-    pub fn update(&mut self, time: &Time) -> bool {
+    pub fn update(
+        &mut self,
+        time: &Time,
+        audio_interface: &AudioInterface<DefaultAudioBackend>,
+    ) -> bool {
         // Wait one second before starting the round.
         if self.new_round.elapsed().unwrap().as_secs() > 0 {
             let position = self.object.transform.position;
@@ -462,7 +472,7 @@ impl Ball {
                 && (self.direction.x.is_sign_negative()
                     == self.object.transform.position.x.is_sign_negative())
             {
-                self.rebound(position.x as f64);
+                self.rebound(position.x as f64, audio_interface);
                 // It's getting faster with time.
                 self.speed += 0.03;
             } else if touching_roof {
@@ -502,15 +512,15 @@ impl Ball {
         self.object.sync().unwrap();
     }
 
-    fn rebound(&mut self, x: f64) {
+    fn rebound(&mut self, x: f64, audio_interface: &AudioInterface<DefaultAudioBackend>) {
         // Random 0.0 to 1.0 value. Some math that makes a random direction.
         let random = (rand::random_range(0.0..1.0) as f64).copysign(-x);
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(-x)) - FRAC_PI_2;
 
         self.direction = Vec2::from_angle(direction as f32).normalize();
 
-        // // play the bounce sound.
-        // self.bounce_sound.play().unwrap();
+        // play the bounce sound.
+        audio_interface.play(self.bounce_sound.clone()).unwrap();
     }
 
     fn random_direction() -> Vec2 {

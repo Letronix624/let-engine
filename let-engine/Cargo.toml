@@ -77,12 +77,8 @@ path = "../asset-system"
 optional = true
 
 [dependencies.let-engine-core]
-version = "0.11.0-alpha"
+version = "0.11.0"
 path = "../core"
-
-[dependencies.kira]
-version = "0.10"
-optional = true
 
 [build-dependencies]
 shaderc = "0.9"
@@ -98,12 +94,10 @@ default = [
   "client",
   "physics",
   "default_graphics_backend",
-  "default_networking_backend",
-  # "egui"
 ]
+
 # egui = ["dep:egui_winit_vulkano", "client"]
-client = ["dep:vulkano", "dep:winit", "dep:image"]
-default_audio_backend = ["dep:kira"]
+client = ["dep:vulkano", "dep:winit", "dep:image", "let-engine-core/audio-backend"]
 default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph"]
 default_networking_backend = ["dep:local-ip-address"]
 vulkan_debug = ["default_graphics_backend"]
@@ -120,3 +114,4 @@ bzip2 = ["asset-system/bzip2"]
 zstd = ["asset-system/zstd"]
 lzma = ["asset-system/lzma"]
 lz4 = ["asset-system/lz4"]
+

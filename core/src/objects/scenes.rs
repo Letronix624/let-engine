@@ -20,6 +20,16 @@ pub struct Scene<T: Loaded> {
     physics_pipeline: Mutex<PhysicsPipeline>,
 }
 
+impl<T: Loaded> std::fmt::Debug for Scene<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: Debug actual scene
+        write!(f, "Root layer")?;
+        write!(f, "Views")?;
+        write!(f, "Root View")?;
+        write!(f, "Physics Pipeline")
+    }
+}
+
 impl<T: Loaded> Default for Scene<T> {
     fn default() -> Self {
         Self::new()
@@ -80,6 +90,7 @@ impl<T: Loaded> Scene<T> {
 }
 
 /// A layer struct holding it's own object hierarchy, camera and physics iteration.
+#[derive(Debug)]
 pub struct Layer<T: Loaded> {
     pub(crate) objects: Mutex<Vec<NObject<T>>>,
     pub(crate) objects_map: Mutex<ObjectsMap<T>>,
@@ -769,6 +780,7 @@ impl<T: Loaded> std::hash::Hash for Layer<T> {
 /// In `camera`, the [`Transform`] acts as a camera, where `size` determines the zoom in both axis.
 ///
 /// Setting the extent on the root view does not do anything.
+#[derive(Debug)]
 pub struct LayerView<T: Loaded> {
     parent: Arc<Layer<T>>,
     camera: AtomicCell<Camera>,

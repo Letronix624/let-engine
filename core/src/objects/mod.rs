@@ -176,6 +176,7 @@ impl Default for Transform {
 }
 
 /// Node structure for the layer.
+#[derive(Debug)]
 pub struct Node<T: Loaded> {
     pub object: Object<T>,
     #[cfg(feature = "physics")]

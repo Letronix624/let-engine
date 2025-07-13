@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- A new async asset system for managing and loading resources from the disk with ease.
+- `asset-system`
 - Scale function for camera scaling.
 - `Model` now has a `Data` function allowing you to get the model data.
 - Error handling for removed objects.
@@ -27,26 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `CoefficientCombineRule's` location to `objects::physics`
-- Layer's `size_to_world` function does not require dimensions anymore.
-- The auto_scale function of appearance now takes a pixel per unit value.
 - The `init_with_parent` function does not require a layer anymore.
 - Setting an object to invisible makes all children invisible too. For the old effect use `None` as model.
-- Switched from dynamic to fixed viewports, hopefully making games faster when not resizing windows.
 - Split crate features into multiple crates including `asset-system`, `let-engine-core`, `let-engine-audio`, `let-engine-widgets` and `let-engine`
-- Playing spatial sounds now requires a `Listener` to be existant.
 - Updated Rapier
 - Log crate macros instead of println are getting used for the vulkan validation layer feature.
 - Updated winit, therefore updated `keycode` to `key`and added most of the key parts to the `KeyboardEvent` struct.
-- `Game` functions are now all async, except for `exit`.
 - `Engine` now requires a generic `Game`, being the game struct.
 - MSRV is Rust 1.80.1
 - Move layer management functions to layers locally themselves.
-- let-engine-core resources to be CPU only.
+- `let-engine-core` resources to be CPU only.
 - Move all default backend functionality completely to let-engine as features.
 - Rename plural modules to singular for textures, models and materials.
 - Most event loop events.
 - Window size formats from `f32` `Vec2`'s to `u32` `UVec2`'s.
 - Rename `TVertex` to `TVert`
+- Graphics backend system entirely.
+- Audio system. For now bound more to the Kira library.
 
 ### Fixed
 
@@ -65,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Low Memory warning
 - User accessable global variables
 - `Vertex` - use `Vec2` instead
+- Texture auto scale method
 
 ## [0.10.0] - 2024-2-10
 

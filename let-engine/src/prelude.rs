@@ -31,6 +31,9 @@ mod client {
 #[cfg(feature = "client")]
 pub use client::*;
 
+#[cfg(feature = "client")]
+pub use let_engine_core::backend::audio::*;
+
 // Physics structs
 #[cfg(feature = "physics")]
 pub use joints::*;
@@ -46,10 +49,6 @@ pub use asset_system::*;
 // // Networking
 // #[cfg(feature = "default_networking_backend")]
 // pub use backend::networking::*;
-
-// Audio
-#[cfg(feature = "default_audio_backend")]
-pub use backend::audio::*;
 
 // // Graphics
 #[cfg(feature = "default_graphics_backend")]
