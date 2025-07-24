@@ -168,7 +168,7 @@ impl<T: Loaded + 'static> Label<T> {
         let model = Model::<TVert>::new_maxed(
             vec![tvert(0.0, 0.0, 0.0, 0.0)],
             // TEMP: 1024 character limit, TODO: Give user choice to set.
-            1024 * 4,
+            1024 * 6,
             BufferAccess::Staged,
         );
 
@@ -339,7 +339,7 @@ impl<T: Loaded + 'static> Label<T> {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct TextVertex {
-    rect: [TVert; 4],
+    rect: [TVert; 6],
     id: usize,
 }
 
@@ -375,7 +375,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let dimensions = glyph_brush.texture_dimensions();
 
         let material_settings = MaterialSettingsBuilder::default()
-            .topology(Topology::TriangleStrip)
+            .topology(Topology::TriangleList)
             .build()?;
 
         let text_shaders = GraphicsShaders::new(
@@ -456,7 +456,12 @@ impl<T: Loaded + 'static> Labelifier<T> {
             let model = &label.model;
 
             // write new vertex buffer
-            model.write_vertices(|write| write.copy_from_slice(&vertices), vertices.len())?;
+            if vertices.is_empty() {
+                // Set a single vertex to hide
+                model.write_vertices(|_| (), 1)?;
+            } else {
+                model.write_vertices(|write| write.copy_from_slice(&vertices), vertices.len())?;
+            }
         }
         Ok(())
     }
@@ -564,12 +569,19 @@ fn to_vertex(
         ],
     };
 
+    let top_left = tvert(rect.min[0], rect.min[1], tex_coords.min.x, tex_coords.min.y);
+    let top_right = tvert(rect.max[0], rect.min[1], tex_coords.max.x, tex_coords.min.y);
+    let bottom_left = tvert(rect.min[0], rect.max[1], tex_coords.min.x, tex_coords.max.y);
+    let bottom_right = tvert(rect.max[0], rect.max[1], tex_coords.max.x, tex_coords.max.y);
+
     TextVertex {
         rect: [
-            tvert(rect.min[0], rect.min[1], tex_coords.min.x, tex_coords.min.y),
-            tvert(rect.min[0], rect.max[1], tex_coords.min.x, tex_coords.max.y),
-            tvert(rect.max[0], rect.min[1], tex_coords.max.x, tex_coords.min.y),
-            tvert(rect.max[0], rect.max[1], tex_coords.max.x, tex_coords.max.y),
+            bottom_left,
+            bottom_right,
+            top_right,
+            bottom_left,
+            top_right,
+            top_left,
         ],
         id: *extra,
     }
@@ -643,7 +655,7 @@ struct DrawTask<T: Loaded + 'static> {
 /// A font to be used with the default label system.
 ///
 /// Should be used with the same labelifier with which it was created.
-#[derive(Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Font {
     id: FontId,
 }
