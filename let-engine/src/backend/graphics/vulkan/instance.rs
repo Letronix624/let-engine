@@ -56,7 +56,7 @@ pub fn create_instance(
         match Surface::required_extensions(handle) {
             Err(winit::raw_window_handle::HandleError::Unavailable) => {
                 log::error!("Window handle currently unavailable. Retrying... {i}/{max_retries}");
-                std::thread::sleep(std::time::Duration::from_millis(500))
+                spin_sleep::native_sleep(std::time::Duration::from_millis(500))
             }
             Ok(extensions) => {
                 required_extensions = Some(extensions);

@@ -2,9 +2,11 @@
 
 use super::model::Vertex;
 use bytemuck::AnyBitPattern;
-use glam::f32::{vec2, Vec2, Vec4};
+use glam::f32::{vec2, Vec2};
 
 pub trait Data: AnyBitPattern + Send + Sync {}
+
+impl<T> Data for T where T: AnyBitPattern + Send + Sync {}
 
 /// A vertex containing a position (xy) and texture position (uv).
 #[repr(C)]
@@ -72,20 +74,20 @@ pub const fn tvert(x: f32, y: f32, tx: f32, ty: f32) -> TVert {
 //     pub proj: Mat4,
 // }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Vertex, AnyBitPattern)]
-pub(crate) struct ObjectFrag {
-    #[format(Rgba32Float)]
-    pub color: Vec4,
-    #[format(R32Float)]
-    pub texture_id: u32,
-}
+// #[repr(C)]
+// #[derive(Clone, Copy, Debug, PartialEq, Vertex, AnyBitPattern)]
+// pub(crate) struct ObjectFrag {
+//     #[format(Rgba32Float)]
+//     pub color: Vec4,
+//     #[format(R32Float)]
+//     pub texture_id: u32,
+// }
 
-impl Default for ObjectFrag {
-    fn default() -> Self {
-        Self {
-            color: Vec4::splat(0.0),
-            texture_id: 0,
-        }
-    }
-}
+// impl Default for ObjectFrag {
+//     fn default() -> Self {
+//         Self {
+//             color: Vec4::splat(0.0),
+//             texture_id: 0,
+//         }
+//     }
+// }

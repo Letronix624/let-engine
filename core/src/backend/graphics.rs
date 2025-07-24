@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Definition for a graphics backend for the let-engine.
-pub trait GraphicsBackend: std::fmt::Debug {
+pub trait GraphicsBackend: Sized {
     type Error: std::error::Error + Send + Sync;
 
     /// Will be stored in the [`EngineContext`](crate::engine::EngineContext)
@@ -24,14 +24,12 @@ pub trait GraphicsBackend: std::fmt::Debug {
     type Interface: GraphicsInterface<Self::LoadedTypes>;
 
     /// Settings used by the backend to define the functionality.
-    type Settings: Default + Clone;
+    type Settings: Default + Clone + Send + Sync;
 
     type LoadedTypes: Loaded;
 
     /// Constructor of the backend with required settings.
-    fn new(settings: &Self::Settings, handle: impl HasDisplayHandle) -> Result<Self, Self::Error>
-    where
-        Self: Sized;
+    fn new(settings: &Self::Settings, handle: impl HasDisplayHandle) -> Result<Self, Self::Error>;
 
     /// Gives a window reference to the backend to draw to.
     fn init_window(
@@ -43,11 +41,9 @@ pub trait GraphicsBackend: std::fmt::Debug {
     /// Returns the interface of the backend.
     fn interface(&self) -> &Self::Interface;
 
-    /// Updates the backend.
-    ///
-    /// This is used for redraws. A function `pre_present_notify` gets included,
+    /// This is used for draws. A function `pre_present_notify` gets included,
     /// which should be called right before presenting for optimisation.
-    fn update(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error>;
+    fn draw(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error>;
 
     /// Gets called when the window has changed size.
     fn resize_event(&mut self, new_size: UVec2);
@@ -157,7 +153,7 @@ impl GraphicsBackend for () {
         &()
     }
 
-    fn update(&mut self, _: impl FnOnce()) -> Result<(), Self::Error> {
+    fn draw(&mut self, _: impl FnOnce()) -> Result<(), Self::Error> {
         Ok(())
     }
 

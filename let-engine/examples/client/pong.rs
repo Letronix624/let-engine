@@ -17,15 +17,12 @@ use graphics::{
     model::GpuModel,
     VulkanTypes,
 };
-//#![windows_subsystem = "windows"]
-#[cfg(feature = "client")]
-use let_engine::prelude::*;
 
+use let_engine::prelude::*;
 use let_engine_core::backend::audio::{AudioInterface, DefaultAudioBackend};
-#[cfg(feature = "client")]
+
 use let_engine_widgets::labels::{Label, LabelCreateInfo, Labelifier};
 
-#[cfg(feature = "client")]
 use std::{
     f64::consts::{FRAC_PI_2, FRAC_PI_4},
     sync::Arc,
@@ -33,15 +30,8 @@ use std::{
 };
 
 // A const that contains the constant window resolution.
-#[cfg(feature = "client")]
 const RESOLUTION: UVec2 = uvec2(800, 600);
 
-#[cfg(not(feature = "client"))]
-fn main() {
-    eprintln!("This example requires you to have the `client` feature enabled.");
-}
-
-#[cfg(feature = "client")]
 fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
@@ -54,7 +44,8 @@ fn main() {
         .inner_size(RESOLUTION)
         .title(env!("CARGO_CRATE_NAME"));
     // Initialize the engine.
-    let mut engine = Engine::<Game>::new(
+    Engine::<Game>::start(
+        Game::new,
         EngineSettings::default()
             .window(window_builder)
             // Do not update physics because there are no physics.
@@ -67,12 +58,8 @@ fn main() {
             ),
     )
     .unwrap();
-
-    // Runs the game
-    engine.start(Game::new);
 }
 
-#[cfg(feature = "client")]
 struct Game {
     // We only keep the ui_view to keep it from dropping so it keeps existing.
     _ui_view: Arc<LayerView<VulkanTypes>>,
@@ -86,7 +73,6 @@ struct Game {
     left_score_label: Label<VulkanTypes>,
     right_score_label: Label<VulkanTypes>,
 }
-#[cfg(feature = "client")]
 impl Game {
     pub fn new(context: &EngineContext) -> Self {
         // First we get the root layer where the scene will be simulated on.
@@ -130,7 +116,7 @@ impl Game {
 
         // Loading the font for the score.
         let font = labelifier
-            .font_from_slice(include_bytes!("Px437_CL_Stingray_8x16.ttf"))
+            .font_from_slice(include_bytes!("../assets/Px437_CL_Stingray_8x16.ttf"))
             .expect("Font is invalid.");
 
         // Making a default label for the left side.
@@ -144,7 +130,7 @@ impl Game {
                 )))
                 .extent(RESOLUTION / uvec2(2, 1))
                 .scale(Vec2::splat(50.0))
-                .font(font.clone()),
+                .font(font),
             &mut labelifier,
             &context.graphics,
         )
@@ -241,7 +227,6 @@ impl Game {
     }
 }
 
-#[cfg(feature = "client")]
 impl let_engine::Game for Game {
     fn update(&mut self, context: &EngineContext) {
         // run the update functions of the paddles.
@@ -300,14 +285,12 @@ impl let_engine::Game for Game {
     }
 }
 
-#[cfg(feature = "client")]
 struct Paddle {
     controls: (Key, Key), //up/down
     object: Object<VulkanTypes>,
     height: f32,
 }
 
-#[cfg(feature = "client")]
 impl Paddle {
     pub fn new(layer: &Arc<Layer<VulkanTypes>>, controls: (Key, Key), x: f32) -> Self {
         // Next we describe the appearance of the paddle.
@@ -384,7 +367,6 @@ impl Paddle {
     }
 }
 
-#[cfg(feature = "client")]
 struct Ball {
     object: Object<VulkanTypes>,
     layer: Arc<Layer<VulkanTypes>>,
@@ -397,7 +379,6 @@ struct Ball {
 }
 
 /// Ball logic.
-#[cfg(feature = "client")]
 impl Ball {
     pub fn new(layer: &Arc<Layer<VulkanTypes>>, view: &Arc<LayerView<VulkanTypes>>) -> Self {
         let lifetime = SystemTime::now();
@@ -524,9 +505,8 @@ impl Ball {
     }
 
     fn random_direction() -> Vec2 {
-        let random = rand::random_range(0.0..1.0) as f64;
+        let random = rand::random_range(-1.0..1.0) as f64;
 
-        // FIX
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(random)) - FRAC_PI_2;
         Vec2::from_angle(direction as f32).normalize()
     }

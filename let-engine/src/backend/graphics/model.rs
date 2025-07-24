@@ -839,13 +839,15 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
             return Err(ModelError::UnsupportedAccess(BufferAccess::Fixed));
         };
 
+        if new_vertex_size > self.max_vertices {
+            return Err(ModelError::BufferOverflow);
+        } else if new_vertex_size == 0 {
+            return Err(ModelError::EmptyModel);
+        };
+
         let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
         let queue = vulkan.queues.transfer();
-
-        if new_vertex_size > self.max_vertices {
-            return Err(ModelError::BufferOverflow);
-        };
 
         let flight = vulkan.transfer_flight().unwrap();
 
@@ -933,6 +935,8 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
 
         if new_index_size > self.max_indices {
             return Err(ModelError::BufferOverflow);
+        } else if new_index_size == 0 {
+            return Err(ModelError::EmptyModel);
         };
 
         if let Some(id) = self.index_buffer_id {

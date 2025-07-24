@@ -21,6 +21,8 @@ parking_lot = { workspace = true }
 crossbeam = { workspace = true }
 serde = { workspace = true }
 foldhash = { workspace = true }
+rkyv = { workspace = true }
+image = { workspace = true }
 indexmap = "2.7"
 paste = "1.0"
 mint = "0.5.9"
@@ -28,21 +30,15 @@ raw-window-handle = "0.6.2"
 half = "2.4"
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 engine-macros = { path = "../macros" }
+kira = "0.10"
 
 [dependencies.glam]
 workspace = true
 features = ["bytemuck", "mint"]
 
-[dependencies.kira]
-version = "0.10"
-optional = true
-
 [dependencies.nalgebra]
 workspace = true
 features = ["convert-mint"]
-
-[dependencies.image]
-workspace = true
 
 [dependencies.rapier2d]
 workspace = true
@@ -51,9 +47,7 @@ optional = true
 
 [features]
 physics = ["dep:rapier2d"]
-audio-backend = ["dep:kira"]
 serde = ["glam/serde", "rapier2d/serde-serialize"]
 
 rand = ["glam/rand"]
 fast-math = ["glam/fast-math"]
-

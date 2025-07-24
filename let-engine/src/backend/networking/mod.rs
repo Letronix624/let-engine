@@ -41,342 +41,347 @@ mod server;
 
 use std::{
     io::{self, ErrorKind},
-    net::SocketAddr,
-    sync::atomic::AtomicUsize,
+    net::{IpAddr, SocketAddr},
     time::{Duration, SystemTime},
 };
 
 pub use client::*;
-use crossbeam::atomic::AtomicCell;
-use serde::Serialize;
+use let_engine_core::backend::networking::{NetEvent, NetworkingBackend};
 pub use server::*;
-use smol::channel::{Receiver, Sender};
+use smol::{
+    channel::{bounded, Receiver},
+    future::race,
+};
+use thiserror::Error;
+
+const SAFE_MTU_SIZE: usize = 1200;
+
+pub trait NetSerializable
+where
+    for<'a> Self: Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, rancor::Error>> + Archive,
+    for<'a> Self::Archived: CheckBytes<HighValidator<'a, rancor::Error>> + 'static,
+    Self: Send + Sync,
+{
+}
+
+impl<T> NetSerializable for T
+where
+    for<'a> T: Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, rancor::Error>> + Archive,
+    for<'a> T::Archived: CheckBytes<HighValidator<'a, rancor::Error>> + 'static,
+    T: Send + Sync,
+{
+}
+
+pub struct DefaultNetworkingBackend<ServerMsg, ClientMsg> {
+    server_interface: server::ServerInterface<ServerMsg>,
+    client_interface: client::ClientInterface<ClientMsg>,
+    server_receiver: Receiver<(Connection, ServerMessage)>,
+    client_receiver: Receiver<ClientMessage>,
+}
+
+impl<ServerMsg, ClientMsg> NetworkingBackend for DefaultNetworkingBackend<ServerMsg, ClientMsg>
+where
+    ClientMsg: NetSerializable,
+    ServerMsg: NetSerializable,
+    for<'a> ClientMsg::Archived: CheckBytes<HighValidator<'a, rancor::Error>> + 'static,
+    for<'a> ServerMsg::Archived: CheckBytes<HighValidator<'a, rancor::Error>> + 'static,
+{
+    type Settings = NetworkingSettings;
+    type Error = NetworkingError;
+
+    type ServerEvent<'a> = RemoteMessage<'a, <ClientMsg as Archive>::Archived>;
+    type ClientEvent<'a> = RemoteMessage<'a, <ServerMsg as Archive>::Archived>;
+
+    type Connection = Connection;
+
+    type ServerInterface = server::ServerInterface<ServerMsg>;
+    type ClientInterface = client::ClientInterface<ClientMsg>;
+
+    fn new(settings: &Self::Settings) -> Result<Self, Self::Error> {
+        let (server_sender, server_receiver) = bounded(2);
+        let (client_sender, client_receiver) = bounded(2);
+
+        let arena = std::sync::Arc::new(parking_lot::Mutex::new(Arena::new()));
+
+        let server_interface =
+            server::ServerInterface::new(settings.clone(), server_sender, arena.clone()).unwrap();
+        let client_interface =
+            client::ClientInterface::new(settings.clone(), client_sender, arena).unwrap();
+
+        Ok(Self {
+            server_interface,
+            client_interface,
+            server_receiver,
+            client_receiver,
+        })
+    }
+
+    fn server_interface(&self) -> &Self::ServerInterface {
+        &self.server_interface
+    }
+
+    fn client_interface(&self) -> &Self::ClientInterface {
+        &self.client_interface
+    }
+
+    fn receive<F>(&mut self, f: F) -> Result<(), Self::Error>
+    where
+        F: for<'a> FnOnce(NetEvent<'a, Self>),
+    {
+        enum Event {
+            Server((Connection, ServerMessage)),
+            Client(ClientMessage),
+        }
+
+        let event = smol::block_on(race(
+            async {
+                // Server
+                Event::Server(self.server_receiver.recv().await.unwrap())
+            },
+            async {
+                // Client
+                Event::Client(self.client_receiver.recv().await.unwrap())
+            },
+        ));
+
+        match event {
+            Event::Server((connection, message)) => match message {
+                ServerMessage::Error(e) => f(NetEvent::Error(NetworkingError::Io(e))),
+                ServerMessage::Warning(w) => f(NetEvent::Server {
+                    connection,
+                    event: RemoteMessage::Warning(w),
+                }),
+                ServerMessage::Connected => f(NetEvent::Server {
+                    connection,
+                    event: RemoteMessage::Connected,
+                }),
+                ServerMessage::Disconnected(reason) => f(NetEvent::Server {
+                    connection,
+                    event: RemoteMessage::Disconnected(reason),
+                }),
+                ServerMessage::Tcp(msg) => {
+                    let result = rkyv::access(&msg);
+
+                    f(match result {
+                        Ok(archive) => NetEvent::Server {
+                            connection,
+                            event: RemoteMessage::Tcp(archive),
+                        },
+
+                        Err(e) => NetEvent::Server {
+                            connection,
+                            event: RemoteMessage::Warning(Warning::UnintelligableContent(e)),
+                        },
+                    })
+                }
+                ServerMessage::Udp(msg) => {
+                    let result = rkyv::access(&msg);
+
+                    f(match result {
+                        Ok(archive) => NetEvent::Server {
+                            connection,
+                            event: RemoteMessage::Udp(archive),
+                        },
+                        Err(e) => NetEvent::Server {
+                            connection,
+                            event: RemoteMessage::Warning(Warning::UnintelligableContent(e)),
+                        },
+                    })
+                }
+            },
+            Event::Client(message) => match message {
+                ClientMessage::Error(e) => f(NetEvent::Error(NetworkingError::Client(e))),
+                ClientMessage::Warning(w) => f(NetEvent::Client {
+                    event: RemoteMessage::Warning(w),
+                }),
+                ClientMessage::Connected => f(NetEvent::Client {
+                    event: RemoteMessage::Connected,
+                }),
+                ClientMessage::Disconnected(reason) => f(NetEvent::Client {
+                    event: RemoteMessage::Disconnected(reason),
+                }),
+                ClientMessage::Tcp(msg) => {
+                    let result = rkyv::access(&msg);
+
+                    f(match result {
+                        Ok(archive) => NetEvent::Client {
+                            event: RemoteMessage::Tcp(archive),
+                        },
+                        Err(e) => NetEvent::Client {
+                            event: RemoteMessage::Warning(Warning::UnintelligableContent(e)),
+                        },
+                    })
+                }
+                ClientMessage::Udp(msg) => {
+                    let result = rkyv::access(&msg);
+
+                    f(match result {
+                        Ok(archive) => NetEvent::Client {
+                            event: RemoteMessage::Udp(archive),
+                        },
+                        Err(e) => NetEvent::Client {
+                            event: RemoteMessage::Warning(Warning::UnintelligableContent(e)),
+                        },
+                    })
+                }
+            },
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum NetworkingError {
+    /// An IO error from the system.
+    #[error("{0}")]
+    Io(std::io::Error),
+
+    #[error("{0}")]
+    Client(ClientError),
+}
 
 /// Settings for the networking system of let-engine.
-pub struct Networking {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NetworkingSettings {
     /// The number of auth request retries before giving up the connection
     /// and failing to connect as client.
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// 10
-    auth_retries: AtomicUsize,
-    /// The time between retries.
-    ///
-    /// ## Default configuration
-    ///
-    /// 2 seconds
-    auth_retry_wait: AtomicCell<Duration>,
-    /// The time between ping requests.
-    ///
-    /// ## Default configuration
-    ///
-    /// 5 seconds
-    ping_wait: AtomicCell<Duration>,
-    /// The maximum allowed ping before sending warnings.
-    ///
-    /// ## Default configuration
-    ///
-    /// 10 seconds
-    max_ping: AtomicCell<Duration>,
-    /// Maximum amount of concurrent connections allowed before warning
-    ///
-    /// # Default configuration
-    ///
-    /// 20
-    max_connections: AtomicUsize,
-    /// The minimum duration between multiple packets allowed before warning
-    ///
-    /// ## Default configuration
-    ///
-    /// Duration::default()
-    rate_limit: AtomicCell<Duration>,
-    /// Max package size limit for the built in TCP protocol in bytes
-    ///
-    /// ## Default configuration
-    ///
-    /// 100000000 bytes
-    tcp_size_limit: AtomicUsize,
-    /// Max package size limit for the built in UDP protocol in bytes
-    ///
-    /// ## Default configuration
-    ///
-    /// u16::MAX bytes
-    udp_size_limit: AtomicUsize,
-}
-
-impl Networking {
-    pub fn new() -> Self {
-        Self {
-            auth_retries: 10.into(),
-            auth_retry_wait: AtomicCell::new(Duration::from_secs(2)),
-            ping_wait: AtomicCell::new(Duration::from_secs(5)),
-            max_ping: AtomicCell::new(Duration::from_secs(10)),
-            rate_limit: AtomicCell::new(Duration::default()),
-            max_connections: 20.into(),
-            tcp_size_limit: 100_000_000.into(),
-            udp_size_limit: (u16::MAX as usize).into(),
-        }
-    }
-
-    /// The number of auth request retries before giving up the connection
-    /// and failing to connect as client.
-    ///
-    /// ## Default configuration
-    ///
-    /// 10
-    pub fn auth_retries(&self) -> usize {
-        self.auth_retries.load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    pub fn set_auth_retries(&self, duration: usize) {
-        self.auth_retries
-            .store(duration, std::sync::atomic::Ordering::Release)
-    }
+    /// `5`
+    pub auth_retries: usize,
 
     /// The time between retries.
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// 2 seconds
-    pub fn auth_retry_wait(&self) -> Duration {
-        self.auth_retry_wait.load()
-    }
-
-    pub fn set_auth_retry_wait(&self, duration: Duration) {
-        self.auth_retry_wait.store(duration)
-    }
+    /// `2 seconds`
+    pub auth_retry_wait: Duration,
 
     /// The time between ping requests.
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// 5 seconds
-    pub fn ping_wait(&self) -> Duration {
-        self.ping_wait.load()
-    }
-
-    pub fn set_ping_wait(&self, duration: Duration) {
-        self.ping_wait.store(duration)
-    }
+    /// `5 seconds`
+    pub ping_wait: Duration,
 
     /// The maximum allowed ping before sending warnings.
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// Duration::MAX
-    pub fn max_ping(&self) -> Duration {
-        self.max_ping.load()
-    }
-
-    pub fn set_max_ping(&self, duration: Duration) {
-        self.max_ping.store(duration)
-    }
+    /// `5 seconds`
+    pub max_ping: Duration,
 
     /// Maximum amount of concurrent connections allowed before warning
     ///
-    /// # Default configuration
+    /// # Default
     ///
-    /// 20
-    pub fn max_connections(&self) -> usize {
-        self.max_connections
-            .load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    pub fn set_max_connections(&self, max: usize) {
-        self.max_connections
-            .store(max, std::sync::atomic::Ordering::Release)
-    }
+    /// `20`
+    pub max_connections: usize,
 
     /// The minimum duration between multiple packets allowed before warning
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// Duration::default()
-    pub fn rate_limit(&self) -> Duration {
-        self.rate_limit.load()
-    }
-
-    pub fn set_rate_limit(&self, duration: Duration) {
-        self.rate_limit.store(duration)
-    }
+    /// `10 milliseconds`
+    pub rate_limit: Duration,
 
     /// Max package size limit for the built in TCP protocol in bytes
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// 100000000 bytes
-    pub fn tcp_size_limit(&self) -> usize {
-        self.tcp_size_limit
-            .load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    pub fn set_tcp_size_limit(&self, limit: usize) {
-        self.tcp_size_limit
-            .store(limit, std::sync::atomic::Ordering::Release)
-    }
+    /// `1048576` bytes or 1MiB
+    pub tcp_max_size: usize,
 
     /// Max package size limit for the built in UDP protocol in bytes
     ///
-    /// ## Default configuration
+    /// ## Default
     ///
-    /// u16::MAX bytes
-    pub fn udp_size_limit(&self) -> usize {
-        self.udp_size_limit
-            .load(std::sync::atomic::Ordering::Acquire)
-    }
-
-    pub fn set_udp_size_limit(&self, limit: usize) {
-        self.udp_size_limit
-            .store(limit, std::sync::atomic::Ordering::Release)
-    }
+    /// `1200` bytes
+    pub udp_max_size: usize,
 }
 
-// TODO FIXME FIX FIX
-// impl<G, B> Engine<G, B>
-// where
-//     G: Game<B>,
-//     B: Backends,
-// {
-//     /// Hosts a server in this engine struct with the given ip and port to accept users and send/receive messages.
-//     pub fn new_server(&mut self, addr: std::net::SocketAddr) -> Result<GameServer<B::Networking>> {
-//         let server = GameServer::<B::Networking>::new(addr, self.context.networking.clone())?;
-//         self.server = Some(server.clone());
-//         Ok(server)
-//     }
-
-//     /// Hosts a server in this engine struct with the given port to accept clients from the same device and send/receive messages.
-//     pub fn new_local_server(&mut self, port: u16) -> Result<GameServer<B::Networking>> {
-//         let addr = std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 0, 0, 1), port);
-//         let server =
-//             GameServer::<B::Networking>::new(addr.into(), self.context.networking.clone())?;
-//         self.server = Some(server.clone());
-//         Ok(server)
-//     }
-
-//     /// Hosts a server in this engine struct with the given port to accept users from anywhere and send/receive messages.
-//     ///
-//     /// Allows users from the local network to join the game using the given port and allows users from around the world to join
-//     /// if this port is forwarded in your network.
-//     pub fn new_public_server(&mut self, port: u16) -> Result<GameServer<B::Networking>> {
-//         let addr = local_ip_address::local_ip()?;
-//         let addr = std::net::SocketAddr::new(addr.into(), port);
-//         let server = GameServer::<B::Networking>::new(addr, self.context.networking.clone())?;
-//         self.server = Some(server.clone());
-//         Ok(server)
-//     }
-
-//     /// Creates a client that you can connect to the given server address with it's `connect` function.
-//     ///
-//     /// Pipes the remote messages created by that client to the games `net_event` function.
-//     pub fn new_client(&mut self, addr: std::net::SocketAddr) -> Result<GameClient<B::Networking>> {
-//         let client = GameClient::<B::Networking>::new(addr, self.context.networking.clone())?;
-//         self.client = Some(client.clone());
-//         Ok(client)
-//     }
-// }
-
-impl Default for Networking {
+impl Default for NetworkingSettings {
     fn default() -> Self {
-        Self::new()
+        Self {
+            auth_retries: 5,
+            auth_retry_wait: Duration::from_secs(2),
+            ping_wait: Duration::from_secs(5),
+            max_ping: Duration::from_secs(5),
+            rate_limit: Duration::from_millis(10),
+            max_connections: 20,
+            tcp_max_size: 1048576,
+            udp_max_size: 1200,
+        }
     }
 }
 
 /// Messages received by a remote connection.
 #[derive(Debug)]
-pub enum RemoteMessage<Msg> {
+pub enum RemoteMessage<'a, Msg> {
     /// The client has connected to the server successfully.
     Connected,
+
     /// The remote has sent a message using TCP.
-    Tcp(Msg),
+    Tcp(&'a Msg),
+
     /// The remote has sent a message using UDP.
-    Udp(Msg),
+    Udp(&'a Msg),
+
     /// The remote has sent non conformant packets.
-    Warning(Misbehaviour),
+    Warning(Warning),
+
     /// The client has been disconnected from the server.
     Disconnected(Disconnected),
 }
 
 /// Misbehaviour recorded by the remote peer.
 #[derive(Debug)]
-pub enum Misbehaviour {
+pub enum Warning {
     /// The rate at which the packets are sent is faster than the configured limit.
     RateLimitHit,
+
     /// The header of the message shows a size bigger than the configured limit.
     MessageTooBig,
+
     /// There was a problem reading and deserializing the received data.
-    UnintelligableContent(bincode::Error),
+    UnintelligableContent(rkyv::rancor::Error),
+
     /// The ping limit as set in the networking settings was hit.
     PingTooHigh,
-}
 
-type Messages<Msg> = (
-    Sender<(Connection, RemoteMessage<Msg>)>,
-    Receiver<(Connection, RemoteMessage<Msg>)>,
-);
-
-/// The identification of a connection containing both TCP and UDP connection addresses for one user.
-///
-/// The IP of both is the same, but the port is different.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Hash)]
-pub struct Connection {
-    tcp_addr: SocketAddr,
-    udp_addr: SocketAddr,
-}
-
-impl Eq for Connection {}
-
-impl Connection {
-    fn new(tcp_addr: SocketAddr, udp_port: u16) -> Self {
-        Self {
-            tcp_addr,
-            udp_addr: SocketAddr::new(tcp_addr.ip(), udp_port),
-        }
-    }
-
-    /// Returns the TCP address of this user.
-    pub fn tcp_addr(&self) -> SocketAddr {
-        self.tcp_addr
-    }
-
-    /// Returns the UDP address of this user.
-    pub fn udp_addr(&self) -> SocketAddr {
-        self.udp_addr
-    }
+    /// There was a problem connecting, which caused a retry.
+    Retry(usize),
 }
 
 /// The connection to the peer has been stopped.
 ///
 /// The reason for the disconnect is
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Disconnected {
     /// The peer has gracefully shut down the connection
+    #[error("Remote Shutdown")]
     RemoteShutdown,
+
     /// An unexpected termination of the connection has occured.
+    #[error("Connection Aborted")]
     ConnectionAborted,
+
     /// The connection has been forcibly closed by the remote.
     ///
     /// The remote could be rebooting, shutting down or the application could have crashed.
+    #[error("Connection Reset")]
     ConnectionReset,
+
     /// The peer has been disconnected for misbehaving and sending packets
     /// not according to the system.
+    #[error("Peer Misbehaving")]
     MisbehavingPeer,
+
     /// An unexplainable error has occured.
+    #[error("{0}")]
     Other(io::Error),
-}
-
-impl std::fmt::Display for Disconnected {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let data = match self {
-            Disconnected::RemoteShutdown => "Remote shutdown",
-            Disconnected::ConnectionAborted => "Connection aborted",
-            Disconnected::ConnectionReset => "Connection reset",
-            Disconnected::MisbehavingPeer => "Peer misbehaving",
-            Disconnected::Other(e) => &format!("{e}"),
-        };
-
-        f.write_str(data)
-    }
 }
 
 impl From<io::Error> for Disconnected {
@@ -390,6 +395,64 @@ impl From<io::Error> for Disconnected {
     }
 }
 
+/// The identification of a connection containing both TCP and UDP connection addresses for one user.
+///
+/// The IP of both is the same, but the port is different.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Hash)]
+pub struct Connection {
+    ip: IpAddr,
+    tcp_port: u16,
+    udp_port: u16,
+}
+
+impl Connection {
+    fn from_tcp_udp_addr(tcp_addr: SocketAddr, udp_addr: SocketAddr) -> Self {
+        Self {
+            ip: tcp_addr.ip(),
+            tcp_port: tcp_addr.port(),
+            udp_port: udp_addr.port(),
+        }
+    }
+
+    /// Returns the IP address of this connection.
+    pub fn ip_addr(&self) -> IpAddr {
+        self.ip
+    }
+
+    /// Returns the TCP port of this connection.
+    pub fn tcp_port(&self) -> u16 {
+        self.tcp_port
+    }
+
+    /// Returns the UDP port of this connection.
+    pub fn udp_port(&self) -> u16 {
+        self.udp_port
+    }
+
+    /// Returns the TCP address of this connection.
+    pub fn tcp_addr(&self) -> SocketAddr {
+        SocketAddr::new(self.ip, self.tcp_port)
+    }
+
+    /// Returns the UDP address of this connection.
+    pub fn udp_addr(&self) -> SocketAddr {
+        SocketAddr::new(self.ip, self.udp_port)
+    }
+
+    pub fn contains_addr(&self, addr: &SocketAddr) -> bool {
+        self.ip == addr.ip() && (self.tcp_port == addr.port() || self.udp_port == addr.port())
+    }
+}
+
+use rkyv::{
+    api::high::{to_bytes_in_with_alloc, HighSerializer, HighValidator},
+    bytecheck::CheckBytes,
+    rancor::{self, Source},
+    ser::allocator::{Arena, ArenaHandle},
+    util::AlignedVec,
+    Archive, Serialize,
+};
+
 /// Serialize the given data to a streamable message format.
 ///
 /// ## Message format
@@ -397,18 +460,20 @@ impl From<io::Error> for Disconnected {
 /// - Length prefixed with a u32
 ///
 /// \[u32data_len\](u8data)
-fn serialize_tcp(message: &impl Serialize) -> bincode::Result<Vec<u8>> {
-    let serialized_data = bincode::serialize(message)?;
+fn serialize_tcp_into<T, E>(message: &T, arena: &mut Arena) -> AlignedVec
+where
+    T: for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, E>>,
+    E: Source,
+{
+    let mut data = AlignedVec::new();
+    data.extend_from_slice(&[0; 4]);
+    let mut data = to_bytes_in_with_alloc(message, data, arena.acquire()).unwrap();
 
-    let data_len = serialized_data.len();
+    let len = data.len() - 4;
 
-    let mut data: Vec<u8> = Vec::with_capacity(data_len + 4);
+    data[0..4].copy_from_slice(&(len as u32).to_le_bytes());
 
-    data.extend_from_slice(&(data_len as u32).to_le_bytes());
-
-    data.extend(serialized_data);
-
-    Ok(data)
+    data
 }
 
 /// Serialize the given data to a streamable message format.
@@ -418,19 +483,21 @@ fn serialize_tcp(message: &impl Serialize) -> bincode::Result<Vec<u8>> {
 /// - Indexed and data length prefixed
 ///
 /// \[u32order_number\]\[u32data_len\])(u8data)
-fn serialize_udp(order_number: u32, message: &impl Serialize) -> bincode::Result<Vec<u8>> {
-    let serialized_data = bincode::serialize(message)?;
+///
+/// Order number has to be added by yourself
+fn serialize_udp_into<E: Source>(
+    message: &impl for<'a> Serialize<HighSerializer<AlignedVec, ArenaHandle<'a>, E>>,
+    arena: &mut Arena,
+) -> AlignedVec {
+    let mut data = AlignedVec::with_capacity(1024);
+    data.extend_from_slice(&[0; 8]);
 
-    let data_len = serialized_data.len();
-    let mut data: Vec<u8> = Vec::with_capacity(data_len + 8);
+    let mut data = to_bytes_in_with_alloc(message, data, arena.acquire()).unwrap();
 
-    data.extend_from_slice(&order_number.to_le_bytes());
+    let data_len = data.len() - 8;
+    data[4..8].copy_from_slice(&(data_len as u32).to_le_bytes());
 
-    data.extend_from_slice(&(data_len as u32).to_le_bytes());
-
-    data.extend(serialized_data);
-
-    Ok(data)
+    data
 }
 
 struct BufferingMessage {
@@ -450,12 +517,16 @@ impl BufferingMessage {
         }
     }
 
-    pub fn completed(&mut self, buf: &[u8]) -> Option<&Vec<u8>> {
+    pub fn completed(&mut self, buf: &[u8]) -> bool {
         let bytes_to_copy = buf.len().min(self.bytes_left);
         self.buf.extend_from_slice(&buf[..bytes_to_copy]);
         self.bytes_left -= bytes_to_copy;
         self.timestamp = SystemTime::now();
-        (self.bytes_left == 0).then_some(&self.buf)
+        self.bytes_left == 0
+    }
+
+    pub fn consume(self) -> Vec<u8> {
+        self.buf
     }
 
     pub fn outdated(&self) -> bool {

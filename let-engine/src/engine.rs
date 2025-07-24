@@ -1,33 +1,45 @@
-use crate::backend::DefaultBackends;
-use crate::input::Input;
-use crate::prelude::EngineSettings;
-use crate::tick_system::TickSystem;
-#[cfg(feature = "client")]
-use anyhow::Result;
 use atomic_float::AtomicF64;
-use glam::{dvec2, uvec2, vec2};
-use let_engine_core::backend::audio::{self, AudioInterface};
-use let_engine_core::backend::graphics::GraphicsBackend;
-use let_engine_core::backend::Backends;
-use let_engine_core::objects::scenes::Scene;
+use crossbeam::channel::bounded;
+
+use let_engine_core::{
+    backend::{
+        audio::{self, AudioInterface},
+        graphics::GraphicsBackend,
+        networking::{NetEvent, NetworkingBackend},
+        Backends,
+    },
+    objects::scenes::Scene,
+};
+
 use parking_lot::{Condvar, Mutex};
-use winit::application::ApplicationHandler;
-use winit::event::MouseScrollDelta;
 
-use crate::{events, settings, tick_system};
-
+use crate::{
+    backend::DefaultBackends,
+    settings,
+    tick_system::{self, TickSystem},
+};
 #[cfg(feature = "client")]
-use self::events::ScrollDelta;
-#[cfg(feature = "client")]
-use crate::window::Window;
+use {
+    self::events::ScrollDelta,
+    crate::window::Window,
+    crate::{events, input::Input, prelude::EngineSettings},
+    anyhow::Result,
+    glam::{dvec2, uvec2, vec2},
+    std::cell::OnceCell,
+    winit::application::ApplicationHandler,
+    winit::event::MouseScrollDelta,
+};
 
-use std::cell::OnceCell;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 use std::{
     sync::{atomic::Ordering, Arc},
     time::Duration,
 };
+
+type Connection<B> = <B as NetworkingBackend>::Connection;
+type ClientMessage<'a, B> = <B as NetworkingBackend>::ClientEvent<'a>;
+type ServerMessage<'a, B> = <B as NetworkingBackend>::ServerEvent<'a>;
 
 #[cfg_attr(
     all(feature = "client"),
@@ -36,16 +48,9 @@ Represents the game application with essential methods for a game's lifetime.
 # Usage
 ```
 use let_engine::prelude::*;
-struct Game {
-    exit: bool,
-}
-impl let_engine::Game<()> for Game {
-    fn exit(&self) -> bool {
-       // exits the program in case self.exit is true
-       self.exit
-    }
-
-    async fn update(&mut self) {
+struct Game;
+impl let_engine::Game<DefaultBackends> for Game {
+    fn update(&mut self) {
         // runs every frame or every engine loop update.
         //...
     }
@@ -55,15 +60,16 @@ impl let_engine::Game<()> for Game {
 )]
 #[allow(unused_variables)]
 pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
-    /// Runs right after the `start` function was called for the Engine.
-    fn start(&mut self, context: &EngineContext<B>) {}
-
     /// Runs every frame.
     #[cfg(feature = "client")]
     fn update(&mut self, context: &EngineContext<B>) {}
 
     /// Runs based on the configured tick settings of the engine.
     fn tick(&mut self, context: &EngineContext<B>) {}
+
+    /// Runs when the window is ready.
+    #[cfg(feature = "client")]
+    fn window_ready(&mut self, context: &EngineContext<B>) {}
 
     /// Events captured in the window.
     #[cfg(feature = "client")]
@@ -76,14 +82,17 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     // #[cfg(all(feature = "client", feature = "egui"))]
     // fn egui(&mut self, engine_context: &EngineContext<B>, egui_context: ) {}
 
-    // /// A network event coming from the server or client, receiving a user specified message format.
-    // fn net_event(
-    //     &mut self,
-    //     context: &EngineContext<B>,
-    //     connection: networking::Connection,
-    //     message: RemoteMessage<<B::Networking as NetworkingBackend>::Msg>,
-    // ) {
-    // }
+    /// A network event received by the server.
+    fn server_event(
+        &mut self,
+        context: &EngineContext<B>,
+        connection: Connection<B::Networking>,
+        message: ServerMessage<B::Networking>,
+    ) {
+    }
+
+    /// A network event received by the client.
+    fn client_event(&mut self, context: &EngineContext<B>, message: ClientMessage<B::Networking>) {}
 
     /// Runs last after the game has been stopped using the context's stop method.
     fn end(&mut self, context: &EngineContext<B>) {}
@@ -101,161 +110,122 @@ where
     context: EngineContext<B>,
 
     #[cfg(feature = "client")]
-    event_loop: Option<winit::event_loop::EventLoop<()>>,
-
-    #[cfg(feature = "client")]
     graphics_backend: B::Graphics,
-
-    // server: Option<GameServer<B::Networking>>,
-    // client: Option<GameClient<B::Networking>>,
-    game: Option<Arc<Mutex<G>>>,
-
+    #[cfg(feature = "client")]
     settings: EngineSettings<B>,
+
+    game: Arc<Mutex<G>>,
 }
 
-use let_engine_core::EngineError;
+pub use let_engine_core::EngineError;
 
 impl<G: Game<B>, B: Backends + 'static> Engine<G, B>
 where
-    <B::Kira as audio::Backend>::Settings: Default,
-    <B::Kira as audio::Backend>::Error: std::fmt::Debug,
+    <B::Kira as audio::AudioBackend>::Settings: Default,
+    <B::Kira as audio::AudioBackend>::Error: std::fmt::Debug,
 {
-    /// Initializes the game engine with the given settings ready to be launched using the `start` method.
-    ///
-    /// This function can only be called one time. Attempting to make a second one of those will return an error.
-    pub fn new(settings: impl Into<settings::EngineSettings<B>>) -> Result<Self, EngineError<B>> {
+    /// Starts the game engine with the given game.
+    pub fn start(
+        game: impl FnOnce(&EngineContext<B>) -> G,
+        settings: impl Into<settings::EngineSettings<B>>,
+    ) -> Result<(), EngineError<B>> {
         let settings: settings::EngineSettings<B> = settings.into();
 
         #[cfg(feature = "client")]
         let event_loop = winit::event_loop::EventLoop::new().unwrap();
 
+        // Graphics backend
         #[cfg(feature = "client")]
         let graphics_backend = B::Graphics::new(&settings.graphics, &event_loop)
             .map_err(EngineError::GraphicsBackend)?;
 
-        #[cfg(feature = "client")]
+        // Audio backend
         let audio_interface =
             AudioInterface::new(&settings.audio).map_err(EngineError::AudioBackend)?;
 
+        // Networking backend
+        let (net_send, net_recv) = bounded(1);
+        let (game_send, game_recv) = bounded(1);
+
+        let networking_settings = settings.networking.clone();
+        std::thread::Builder::new()
+            .name("let-engine-networking-backend".to_string())
+            .spawn(move || {
+                let mut networking_backend = match B::Networking::new(&networking_settings) {
+                    Ok(n) => {
+                        net_send
+                            .send(Ok((
+                                n.server_interface().clone(),
+                                n.client_interface().clone(),
+                            )))
+                            .unwrap();
+                        n
+                    }
+                    Err(e) => {
+                        net_send.send(Err(e)).unwrap();
+                        return;
+                    }
+                };
+                let (game, context): (Arc<Mutex<G>>, EngineContext<B>) = game_recv.recv().unwrap();
+
+                loop {
+                    networking_backend
+                        .receive(|message| {
+                            let mut game = game.lock();
+                            match message {
+                                NetEvent::Server { connection, event } => {
+                                    game.server_event(&context, connection, event)
+                                }
+                                NetEvent::Client { event } => game.client_event(&context, event),
+                                NetEvent::Error(e) => todo!("handle error: {e}"),
+                            };
+                        })
+                        .unwrap();
+                }
+            })
+            .unwrap();
+
+        let result = net_recv.recv().unwrap();
+
+        let (server, client) = result.map_err(EngineError::NetworkingBackend)?;
+
         let context = EngineContext::new(
+            #[cfg(feature = "client")]
             graphics_backend.interface().clone(),
             audio_interface,
             settings.tick_system.clone(),
+            server,
+            client,
         );
 
-        Ok(Self {
-            context,
-            #[cfg(feature = "client")]
-            graphics_backend,
-            // #[cfg(feature = "client")]
-            // audio_backend,
-            #[cfg(feature = "client")]
-            event_loop: Some(event_loop),
-            // server: None,
-            // client: None,
-            game: None,
-            settings,
-        })
-    }
+        let game = Arc::new(Mutex::new(game(&context)));
 
-    /// Server side start function running all the methods of the given game object as documented in the [trait](Game).
-    #[cfg(not(feature = "client"))]
-    pub fn start(mut self, game: impl FnOnce(&EngineContext<B>) -> G) {
-        let game = Arc::new(smol::lock::Mutex::new(game(&self.context)));
+        game_send.send((game.clone(), context.clone())).unwrap();
 
-        game.lock().await.start(&self.context);
+        #[cfg(not(feature = "client"))]
+        {
+            tick_system::run(context.clone(), game.clone());
+            game.lock().end(&context);
+            use let_engine_core::backend::networking::{ClientInterface, ServerInterface};
+            let _ = context.server.stop();
+            let _ = context.client.disconnect();
+        }
 
-        let game_clone = game.clone();
-        let context_clone = self.context.clone();
-        smol::spawn(async move {
-            let game = game_clone;
-            let context = context_clone;
-            tick_system::run(context, game).await;
-        })
-        .detach();
-
-        // loop: check exit and break, if networking is active future both at the same time and a timer future.
-        // if the timeout is reached roll the loop again
-
-        loop {
-            if self.context.exiting() {
-                break;
-            }
-
-            use futures::future::{select, Either};
-            use smol::Timer;
-
-            let server = self.server.as_ref().map(|s| s.messages.1.clone());
-            let client = self.client.as_ref().map(|c| c.messages.1.clone());
-
-            let result = match (server, client) {
-                (Some(server), None) => {
-                    match select(
-                        Box::pin(server.recv()),
-                        Timer::after(Duration::from_millis(50)),
-                    )
-                    .await
-                    {
-                        Either::Left((left, _)) => left,
-                        Either::Right(_) => {
-                            continue;
-                        }
-                    }
-                }
-                (None, Some(client)) => {
-                    match select(
-                        Box::pin(client.recv()),
-                        Timer::after(Duration::from_millis(50)),
-                    )
-                    .await
-                    {
-                        Either::Left((left, _)) => left,
-                        Either::Right(_) => {
-                            continue;
-                        }
-                    }
-                }
-                (Some(server), Some(client)) => {
-                    match select(
-                        Box::pin(smol::future::race(server.recv(), client.recv())),
-                        Timer::after(Duration::from_millis(50)),
-                    )
-                    .await
-                    {
-                        Either::Left((left, _)) => left,
-                        Either::Right(_) => {
-                            continue;
-                        }
-                    }
-                }
-                (None, None) => {
-                    Timer::after(Duration::from_millis(50)).await;
-                    continue;
-                }
+        #[cfg(feature = "client")]
+        {
+            let mut engine = Self {
+                context,
+                #[cfg(feature = "client")]
+                graphics_backend,
+                #[cfg(feature = "client")]
+                settings,
+                game,
             };
 
-            if let Ok((connection, message)) = result {
-                game.lock()
-                    .await
-                    .net_event(&self.context, connection, message);
-            }
+            event_loop.run_app(&mut engine).unwrap();
         }
 
-        // Gracefully shutdown both server and client if open.
-        if let Some(server) = self.server {
-            let _ = server.stop().await;
-        }
-        if let Some(client) = self.client {
-            let _ = client.disconnect().await;
-        }
-    }
-
-    #[cfg(feature = "client")]
-    pub fn start(&mut self, game: impl FnOnce(&EngineContext<B>) -> G) {
-        self.game = Some(Arc::new(Mutex::new(game(&self.context))));
-        let event_loop = std::mem::take(&mut self.event_loop).unwrap();
-
-        event_loop.run_app(self).unwrap();
+        Ok(())
     }
 }
 
@@ -267,9 +237,7 @@ where
     B: Backends + 'static,
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let Some(game) = self.game.clone() else {
-            return;
-        };
+        let game = self.game.clone();
 
         let window: Arc<winit::window::Window> = event_loop
             .create_window(self.settings.window.clone().into())
@@ -284,15 +252,18 @@ where
         self.graphics_backend
             .init_window(&window, &self.context.scene);
 
-        game.lock().start(&self.context);
+        game.lock().window_ready(&self.context);
 
-        let game_clone = Arc::clone(&game);
         let context_clone = self.context.clone();
-        std::thread::spawn(|| {
-            let game = game_clone;
-            let context = context_clone;
-            tick_system::run(context, game);
-        });
+
+        // Start backend threads
+        std::thread::Builder::new()
+            .name("let-engine-tick-system".to_string())
+            .spawn(move || {
+                let context = context_clone;
+                tick_system::run(context, game);
+            })
+            .unwrap();
     }
 
     fn window_event(
@@ -302,10 +273,6 @@ where
         event: winit::event::WindowEvent,
     ) {
         use winit::event::WindowEvent;
-
-        let Some(game) = self.game.clone() else {
-            return;
-        };
 
         self.context.update(&event);
 
@@ -328,7 +295,7 @@ where
             WindowEvent::HoveredFileCancelled => events::WindowEvent::HoveredFileCancelled,
             WindowEvent::Focused(focused) => events::WindowEvent::Focused(focused),
             WindowEvent::KeyboardInput { event, .. } => {
-                game.lock().input(
+                self.game.lock().input(
                     &self.context,
                     events::InputEvent::KeyboardInput {
                         input: events::KeyboardInput {
@@ -344,12 +311,14 @@ where
                 return;
             }
             WindowEvent::ModifiersChanged(_) => {
-                game.lock()
+                self.game
+                    .lock()
                     .input(&self.context, events::InputEvent::ModifiersChanged);
                 return;
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                game.lock()
+                self.game
+                    .lock()
                     .input(&self.context, events::InputEvent::MouseInput(button, state));
                 return;
             }
@@ -362,9 +331,9 @@ where
             WindowEvent::RedrawRequested => {
                 let window = self.context.window().unwrap();
 
-                game.lock().update(&self.context);
+                self.game.lock().update(&self.context);
                 self.graphics_backend
-                    .update(|| {
+                    .draw(|| {
                         window.pre_present_notify();
                     })
                     .unwrap(); // TODO: Error handling events
@@ -375,39 +344,13 @@ where
             _ => return,
         };
 
-        game.lock().window(&self.context, window_event);
+        self.game.lock().window(&self.context, window_event);
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.context.exiting() {
-            // if let Some(server) = &mut self.server {
-            //     server.stop().await.unwrap();
-            // }
             event_loop.exit();
         }
-
-        // {
-        //     if let Some(server) = &mut self.server {
-        //         smol::block_on(async {
-        //             let messages = server.receive_messages().await;
-        //             for message in messages {
-        //                 game.lock()
-        //                     .await
-        //                     .net_event(&self.context, message.0, message.1);
-        //             }
-        //         });
-        //     }
-        //     if let Some(client) = &mut self.client {
-        //         smol::block_on(async {
-        //             let messages = client.receive_messages().await;
-        //             for message in messages {
-        //                 game.lock()
-        //                     .await
-        //                     .net_event(&self.context, message.0, message.1);
-        //             }
-        //         });
-        //     }
-        // }
 
         if let Some(window) = self.context.window() {
             window.request_redraw();
@@ -415,23 +358,12 @@ where
     }
 
     fn exiting(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        let Some(game) = self.game.as_mut() else {
-            return;
-        };
-        // {
-        //     // Gracefully shutdown both server and client if open.
-        //     if let Some(server) = &mut self.server {
-        //         smol::block_on(async {
-        //             let _ = server.stop().await;
-        //         });
-        //     }
-        //     if let Some(client) = &mut self.client {
-        //         smol::block_on(async {
-        //             let _ = client.disconnect().await;
-        //         });
-        //     }
-        // }
-        game.lock().end(&self.context);
+        self.game.lock().end(&self.context);
+
+        // TODO: handle error
+        use let_engine_core::backend::networking::{ClientInterface, ServerInterface};
+        let _ = self.context.server.stop();
+        let _ = self.context.client.disconnect();
     }
 
     fn device_event(
@@ -441,18 +373,15 @@ where
         event: winit::event::DeviceEvent,
     ) {
         use winit::event::DeviceEvent;
-        let Some(game) = self.game.as_mut() else {
-            return;
-        };
         match event {
             DeviceEvent::MouseMotion { delta } => {
-                game.lock().input(
+                self.game.lock().input(
                     &self.context,
                     events::InputEvent::MouseMotion(glam::vec2(delta.0 as f32, delta.1 as f32)),
                 );
             }
             DeviceEvent::MouseWheel { delta } => {
-                game.lock().input(
+                self.game.lock().input(
                     &self.context,
                     events::InputEvent::MouseWheel(match delta {
                         MouseScrollDelta::LineDelta(x, y) => {
@@ -478,15 +407,17 @@ where
 {
     exit: Arc<AtomicBool>,
     pub time: Arc<Time>,
-    pub input: Arc<Input>,
     pub scene: Arc<Scene<<B::Graphics as GraphicsBackend>::LoadedTypes>>,
     pub(super) tick_system: Arc<TickSystem>,
+    #[cfg(feature = "client")]
+    pub input: Arc<Input>,
+    #[cfg(feature = "client")]
     pub(super) window: OnceCell<Window>,
-
+    #[cfg(feature = "client")]
     pub graphics: <B::Graphics as GraphicsBackend>::Interface,
     pub audio: AudioInterface<B::Kira>,
-    // pub networking: Arc<networking::Networking>,
-    // pub networking: <<B as Backends<Msg>>::Networking as Backend>::Interface,
+    pub server: <B::Networking as NetworkingBackend>::ServerInterface,
+    pub client: <B::Networking as NetworkingBackend>::ClientInterface,
 }
 
 unsafe impl<B: Backends> Send for EngineContext<B> {}
@@ -501,38 +432,56 @@ where
         Self {
             exit: self.exit.clone(),
             time: self.time.clone(),
-            input: self.input.clone(),
             scene: self.scene.clone(),
             tick_system: self.tick_system.clone(),
+            #[cfg(feature = "client")]
+            input: self.input.clone(),
+            #[cfg(feature = "client")]
             window: self.window.clone(),
+            #[cfg(feature = "client")]
             graphics: self.graphics.clone(),
             audio: self.audio.clone(),
+            server: self.server.clone(),
+            client: self.client.clone(),
         }
     }
 }
 
 impl<B: Backends> EngineContext<B> {
     fn new(
-        graphics: <B::Graphics as GraphicsBackend>::Interface,
+        #[cfg(feature = "client")] graphics: <B::Graphics as GraphicsBackend>::Interface,
         audio: AudioInterface<B::Kira>,
         tick_system: tick_system::TickSettings,
+        server: <B::Networking as NetworkingBackend>::ServerInterface,
+        client: <B::Networking as NetworkingBackend>::ClientInterface,
     ) -> Self {
         let scene = Arc::new(Scene::new());
+        let exit: Arc<AtomicBool> = Arc::new(false.into());
+
+        {
+            let exit = exit.clone();
+            let _ = ctrlc::set_handler(move || exit.store(true, Ordering::Release));
+        }
 
         Self {
-            exit: Arc::new(false.into()),
+            exit,
             time: Time::default().into(),
-            input: Input::default().into(),
             scene,
             tick_system: Arc::new(TickSystem::new(tick_system)),
+            #[cfg(feature = "client")]
+            input: Input::default().into(),
+            #[cfg(feature = "client")]
             window: OnceCell::new(),
+            #[cfg(feature = "client")]
             graphics,
             audio,
-            // networking,
+            server,
+            client,
         }
     }
 
     /// Returns the window in case it is initialized.
+    #[cfg(feature = "client")]
     pub fn window(&self) -> Option<&Window> {
         self.window.get()
     }
@@ -547,6 +496,7 @@ impl<B: Backends> EngineContext<B> {
         self.exit.load(Ordering::Relaxed)
     }
 
+    #[cfg(feature = "client")]
     fn update(&self, window_event: &winit::event::WindowEvent) {
         if let Some(window) = self.window() {
             self.input
@@ -653,8 +603,6 @@ mod tests {
 
     #[test]
     fn start_engine() -> anyhow::Result<()> {
-        let engine = Engine::new(EngineSettings::default())?;
-
         struct Game {
             number: u32,
             exit: bool,
@@ -669,10 +617,7 @@ mod tests {
         }
 
         impl crate::Game for Game {
-            fn exit(&self) -> bool {
-                self.exit
-            }
-            async fn tick(&mut self) {
+            fn tick(&mut self, _context: &EngineContext) {
                 self.number += 1;
                 if self.number > 62 {
                     self.exit = true;
@@ -680,7 +625,8 @@ mod tests {
             }
         }
 
-        engine.start(Game::new());
+        Engine::start(|_| Game::new(), EngineSettings::default())?;
+
         Ok(())
     }
 }

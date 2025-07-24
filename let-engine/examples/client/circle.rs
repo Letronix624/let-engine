@@ -3,23 +3,14 @@
 //! # Controls
 //! - Scroll: change number of vertices
 
-#[cfg(feature = "client")]
 use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
-#[cfg(feature = "client")]
 use let_engine::prelude::*;
 use let_engine_core::circle;
 
-#[cfg(not(feature = "client"))]
-fn main() {
-    eprintln!("This example requires you to have the `client` feature enabled.");
-}
-
 const MAX_DEGREE: usize = 1000;
 
-#[cfg(feature = "client")]
 fn main() {
     // Log messages
-
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .init()
@@ -30,29 +21,26 @@ fn main() {
     let window_builder = WindowBuilder::new()
         .inner_size(uvec2(1280, 720))
         .title(env!("CARGO_CRATE_NAME"));
-    // Then you start the engine allowing you to load resources and layers.
-    let mut engine =
-        Engine::<Game>::new(EngineSettings::default().window(window_builder).graphics(
-            graphics::Graphics {
+
+    // Now we run the engine
+    Engine::<Game>::start(
+        Game::new,
+        EngineSettings::default()
+            .window(window_builder)
+            .graphics(graphics::Graphics {
                 present_mode: graphics::PresentMode::Fifo,
                 ..Default::default()
-            },
-        ))
-        .unwrap();
-
-    // Here it initializes the game struct to be used with the engine run method,
-    // runs the game engine and makes a window.
-    engine.start(Game::new);
+            }),
+    )
+    .unwrap();
 }
 
 /// Makes a game struct containing
-#[cfg(feature = "client")]
 struct Game {
     model: GpuModel<Vec2>,
     degree: u32,
 }
 
-#[cfg(feature = "client")]
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: &EngineContext) -> Self {
@@ -111,7 +99,6 @@ impl Game {
 }
 
 /// Implement the Game trait into the Game struct.
-#[cfg(feature = "client")]
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
     fn window(&mut self, context: &EngineContext, event: WindowEvent) {

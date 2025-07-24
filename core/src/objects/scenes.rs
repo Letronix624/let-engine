@@ -91,7 +91,7 @@ impl<T: Loaded> Scene<T> {
 
 /// A layer struct holding it's own object hierarchy, camera and physics iteration.
 #[derive(Debug)]
-pub struct Layer<T: Loaded> {
+pub struct Layer<T: Loaded = ()> {
     pub(crate) objects: Mutex<Vec<NObject<T>>>,
     pub(crate) objects_map: Mutex<ObjectsMap<T>>,
     #[cfg(feature = "physics")]

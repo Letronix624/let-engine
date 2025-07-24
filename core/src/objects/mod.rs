@@ -19,7 +19,7 @@ use anyhow::{anyhow, Error, Result};
 
 use derive_builder::Builder;
 
-use crate::{resources::data::Data, HashMap, Mutex};
+use crate::{HashMap, Mutex};
 use std::sync::{Arc, Weak};
 
 use glam::{vec2, Mat4, Quat, Vec2};
@@ -32,8 +32,6 @@ type WeakObject<T> = Weak<Mutex<Node<T>>>;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-
-impl Data for Transform {}
 
 /// Holds position size and rotation of an object.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -313,7 +311,7 @@ pub struct NewObject<T: Loaded> {
 }
 
 /// An initialized object that gets rendered on the screen.
-pub struct Object<T: Loaded> {
+pub struct Object<T: Loaded = ()> {
     pub transform: Transform,
     parent_transform: Transform,
     pub appearance: Appearance<T>,
@@ -385,6 +383,7 @@ impl<T: Loaded> NewObject<T> {
     }
 
     /// Initializes the object into a layer with an optional parent object.
+    #[allow(unused_mut)]
     pub fn init_with_optional_parent(
         mut self,
         layer: &Arc<Layer<T>>,

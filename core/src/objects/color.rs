@@ -5,8 +5,6 @@ use glam::{vec3, vec4, Vec3, Vec4};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::resources::data::Data;
-
 /// Representation of a color in form of 4 `f32`'s for R, G, B and A.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default, Clone, Copy, Debug, PartialEq, bytemuck::AnyBitPattern, Vertex)]
@@ -15,8 +13,6 @@ pub struct Color {
     #[format(Rgba32Float)]
     rgba: [f32; 4],
 }
-
-impl Data for Color {}
 
 /// Declaration
 impl Color {

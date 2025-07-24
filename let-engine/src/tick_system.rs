@@ -1,6 +1,6 @@
 use std::{
-    sync::{atomic::AtomicBool, Arc},
-    time::{Duration, SystemTime},
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use crossbeam::atomic::AtomicCell;
@@ -11,7 +11,6 @@ use parking_lot::Mutex;
 use crate::{EngineContext, Game};
 
 pub(crate) struct TickSystem {
-    stop: AtomicBool,
     settings: Mutex<TickSettings>,
     report: AtomicCell<Tick>,
     tick_pause_lock: (parking_lot::Mutex<bool>, parking_lot::Condvar),
@@ -20,7 +19,6 @@ pub(crate) struct TickSystem {
 impl TickSystem {
     pub(crate) fn new(settings: TickSettings) -> Self {
         Self {
-            stop: false.into(),
             settings: Mutex::new(settings),
             report: AtomicCell::new(Tick::default()),
             tick_pause_lock: (parking_lot::Mutex::new(false), parking_lot::Condvar::new()),
@@ -40,9 +38,10 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
             .tick_pause_lock
             .1
             .wait_while(&mut interface.tick_pause_lock.0.lock(), |x| *x);
+        #[allow(unused_mut)]
         let mut settings = interface.settings.lock();
         // capture tick start time.
-        let start_time = SystemTime::now();
+        let start_time = Instant::now();
 
         // Run the logic
         game.lock().tick(&context);
@@ -59,7 +58,7 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
         };
 
         // record the elapsed time.
-        let elapsed_time = start_time.elapsed().unwrap_or_default();
+        let elapsed_time = start_time.elapsed();
 
         // Lock the thread in case the time scale is 0.
         if context.time.scale() == 0.0 {
@@ -95,7 +94,7 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
 
         index += 1;
 
-        if interface.stop.load(std::sync::atomic::Ordering::Acquire) {
+        if context.exiting() {
             break;
         }
     }
@@ -106,7 +105,7 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
 pub struct TickSettings {
     /// The target duration to wait after every tick.
     ///
-    /// ## Default configuration:
+    /// ## Default
     ///
     /// - 1 / 62 seconds
     ///
@@ -115,7 +114,7 @@ pub struct TickSettings {
     pub tick_wait: Duration,
     /// The waiting behaviour of this tick system.
     ///
-    /// ## Default configuration:
+    /// ## Default
     ///
     /// `TimeStep::Variable`
     ///
@@ -124,7 +123,7 @@ pub struct TickSettings {
     pub timestep_mode: TimeStep,
     /// If true this tick system will also iterate all the physics systems in the scene and update them.
     ///
-    /// ## Default configuration:
+    /// ## Default
     ///
     /// `true`
     #[builder(default = "true")]
@@ -132,14 +131,14 @@ pub struct TickSettings {
     pub update_physics: bool,
     /// If this is true the tick system will be paused.
     ///
-    /// ## Default configuration:
+    /// ## Default
     ///
     /// `false`
     #[builder(default)]
     pub paused: bool,
     /// If this is true the tick systems tick rate will be influenced by the time scale.
     ///
-    /// ## Default configuration:
+    /// ## Default
     ///
     /// `true`
     #[builder(default = "true")]

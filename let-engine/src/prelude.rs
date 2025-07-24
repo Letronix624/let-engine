@@ -19,7 +19,7 @@ pub use tick_system::*;
 pub use let_engine_core::{camera::*, objects::*};
 
 pub use crate::*;
-pub use let_engine_core::{circle, model};
+pub use let_engine_core::{backend as core_backend, circle, model};
 
 // Client structs
 #[cfg(feature = "client")]
@@ -31,7 +31,6 @@ mod client {
 #[cfg(feature = "client")]
 pub use client::*;
 
-#[cfg(feature = "client")]
 pub use let_engine_core::backend::audio::*;
 
 // Physics structs

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use glam::{Quat, Vec3};
 pub use kira::{
-    backend::{Backend, DefaultBackend as DefaultAudioBackend},
+    backend::{mock::MockBackend, Backend as AudioBackend, DefaultBackend as DefaultAudioBackend},
     Capacities, PlaySoundError,
 };
 use kira::{
@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use thiserror::Error;
 
 #[derive(Error)]
+#[error("{0}")]
 pub struct AudioBackendError<B: std::fmt::Debug>(B);
 
 impl<B: std::fmt::Debug> std::fmt::Debug for AudioBackendError<B> {
@@ -22,11 +23,11 @@ impl<B: std::fmt::Debug> std::fmt::Debug for AudioBackendError<B> {
     }
 }
 
-pub struct AudioInterface<B: Backend> {
+pub struct AudioInterface<B: AudioBackend> {
     manager: Arc<Mutex<AudioManager<B>>>,
 }
 
-impl<B: Backend> Clone for AudioInterface<B> {
+impl<B: AudioBackend> Clone for AudioInterface<B> {
     fn clone(&self) -> Self {
         Self {
             manager: self.manager.clone(),
@@ -34,7 +35,7 @@ impl<B: Backend> Clone for AudioInterface<B> {
     }
 }
 
-impl<B: Backend> AudioInterface<B>
+impl<B: AudioBackend> AudioInterface<B>
 where
     B::Settings: Default,
     B::Error: std::fmt::Debug,

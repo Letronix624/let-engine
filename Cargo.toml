@@ -62,4 +62,5 @@ lz4 = "1.28"
 smol = "2.0"
 futures = "0.3"
 bytemuck = "1.21"
+rkyv = "0.8"
 

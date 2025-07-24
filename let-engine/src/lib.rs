@@ -16,7 +16,7 @@ pub use asset_system;
 pub use engine::*;
 pub mod prelude;
 
-pub use glam::{vec2, Vec2};
+pub use glam;
 
 #[cfg(feature = "client")]
 pub use let_engine_core::resources;

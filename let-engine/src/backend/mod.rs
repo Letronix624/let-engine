@@ -2,6 +2,8 @@ use let_engine_core::backend;
 
 #[cfg(feature = "default_graphics_backend")]
 pub mod graphics;
+#[cfg(feature = "default_networking_backend")]
+pub mod networking;
 
 /// The backends used by default.
 ///
@@ -15,6 +17,7 @@ impl backend::Backends for DefaultBackends {
     #[cfg(not(feature = "default_graphics_backend"))]
     type Graphics = ();
 
-    #[cfg(feature = "client")]
     type Kira = let_engine_core::backend::audio::DefaultAudioBackend;
+
+    type Networking = ();
 }

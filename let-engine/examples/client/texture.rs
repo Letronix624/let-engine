@@ -2,24 +2,15 @@
 //!
 //! Press space to bitshift random pixels to make an interesting effect.
 
-#[cfg(feature = "client")]
 use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
 use image::ImageBuffer;
 use let_engine::prelude::graphics::texture::GpuTexture;
-#[cfg(feature = "client")]
 use let_engine::prelude::*;
-
-#[cfg(not(feature = "client"))]
-fn main() {
-    eprintln!("This example requires you to have the `client` feature enabled.");
-}
 
 static RES: UVec2 = uvec2(1122, 821);
 
-#[cfg(feature = "client")]
 fn main() {
     // Log messages
-
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .init()
@@ -30,28 +21,24 @@ fn main() {
     let window_builder = WindowBuilder::new()
         .inner_size(RES)
         .title(env!("CARGO_CRATE_NAME"));
-    // Then you start the engine allowing you to load resources and layers.
-    let mut engine =
-        Engine::<Game>::new(EngineSettings::default().window(window_builder).graphics(
-            graphics::Graphics {
+
+    Engine::<Game>::start(
+        Game::new,
+        EngineSettings::default()
+            .window(window_builder)
+            .graphics(graphics::Graphics {
                 present_mode: graphics::PresentMode::Fifo,
                 ..Default::default()
-            },
-        ))
-        .unwrap();
-
-    // Here it initializes the game struct to be used with the engine run method,
-    // runs the game engine and makes a window.
-    engine.start(Game::new);
+            }),
+    )
+    .unwrap();
 }
 
 /// Makes a game struct containing
-#[cfg(feature = "client")]
 struct Game {
     texture: GpuTexture,
 }
 
-#[cfg(feature = "client")]
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: &EngineContext) -> Self {
@@ -78,7 +65,7 @@ impl Game {
         .unwrap();
 
         let texture = Texture::from_bytes(
-            include_bytes!("example-texture.png").to_vec(),
+            include_bytes!("../assets/example-texture.png").to_vec(),
             ImageFormat::Png,
             TextureSettingsBuilder::default()
                 .format(Format::Rgba8Unorm)
@@ -133,7 +120,6 @@ impl Game {
 }
 
 /// Implement the Game trait into the Game struct.
-#[cfg(feature = "client")]
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
     fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {

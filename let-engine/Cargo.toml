@@ -17,21 +17,25 @@ license = { workspace = true }
 default-target = "x86_64-unknown-linux-gnu"
 
 [dependencies]
+foldhash = { workspace = true }
 parking_lot = { workspace = true }
 anyhow = { workspace = true }
-bincode = { workspace = true }
 thiserror = { workspace = true }
 derive_builder = { workspace = true }
 crossbeam = { workspace = true }
 smol = { workspace = true }
 futures = { workspace = true }
+serde = { workspace = true }
+rkyv = { workspace = true }
 atomic_float = "1.1"
 spin_sleep = "1.2"
 rand = "0.9"
-serde = { workspace = true }
-foldhash = { workspace = true }
 log = "0.4"
-bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
+ctrlc = "3.4.7"
+
+[dependencies.bytemuck]
+workspace = true
+features = ["derive", "min_const_generics"]
 
 [dependencies.local-ip-address]
 version = "0.6"
@@ -89,17 +93,38 @@ simple_logger = "5.0"
 let-engine-widgets = { path = "../widgets" }
 image = { workspace = true }
 
+[[example]]
+name = "circle"
+path = "examples/client/circle.rs"
+required-features = ["client"]
+
+[[example]]
+name = "shapes"
+path = "examples/client/shapes.rs"
+required-features = ["client"]
+
+[[example]]
+name = "texture"
+path = "examples/client/texture.rs"
+required-features = ["client"]
+
+[[example]]
+name = "pong"
+path = "examples/client/pong.rs"
+required-features = ["client", "physics"]
+
 [features]
 default = [
   "client",
   "physics",
   "default_graphics_backend",
+  "default_networking_backend",
 ]
 
 # egui = ["dep:egui_winit_vulkano", "client"]
-client = ["dep:vulkano", "dep:winit", "dep:image", "let-engine-core/audio-backend"]
-default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph"]
-default_networking_backend = ["dep:local-ip-address"]
+client = ["dep:winit", "dep:image"]
+default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client"]
+default_networking_backend = ["dep:local-ip-address", "glam/rkyv", "glam/bytecheck"]
 vulkan_debug = ["default_graphics_backend"]
 physics = ["dep:rapier2d", "let-engine-core/physics"]
 asset_system = ["dep:asset-system"]
@@ -114,4 +139,3 @@ bzip2 = ["asset-system/bzip2"]
 zstd = ["asset-system/zstd"]
 lzma = ["asset-system/lzma"]
 lz4 = ["asset-system/lz4"]
-

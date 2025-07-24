@@ -158,6 +158,18 @@ pub struct Appearance<T: Loaded> {
     // instance: Option<T::Buffer>,
 }
 
+impl Default for Appearance<()> {
+    fn default() -> Self {
+        Self {
+            descriptors: BTreeMap::new(),
+            transform: Transform::default(),
+            material: (),
+            model: (),
+            visible: false,
+        }
+    }
+}
+
 impl<T: Loaded> Clone for Appearance<T> {
     fn clone(&self) -> Self {
         Self {

@@ -1,20 +1,11 @@
 //! 3 Shapes, triangle, square and circle.
 
-#[cfg(feature = "client")]
 use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
-#[cfg(feature = "client")]
 use let_engine::prelude::*;
 use let_engine_core::circle;
 
-#[cfg(not(feature = "client"))]
-fn main() {
-    eprintln!("This example requires you to have the `client` feature enabled.");
-}
-
-#[cfg(feature = "client")]
 fn main() {
     // Log messages
-
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .init()
@@ -24,20 +15,20 @@ fn main() {
         .inner_size(uvec2(1500, 535))
         .resizable(false)
         .title(env!("CARGO_CRATE_NAME"));
-    let mut engine =
-        Engine::<Game>::new(EngineSettings::default().window(window_builder).graphics(
-            graphics::Graphics {
+
+    Engine::<Game>::start(
+        Game::new,
+        EngineSettings::default()
+            .window(window_builder)
+            .graphics(graphics::Graphics {
                 present_mode: graphics::PresentMode::Fifo,
                 ..Default::default()
-            },
-        ))
-        .unwrap();
-
-    engine.start(Game::new);
+            }),
+    )
+    .unwrap();
 }
 
 /// Makes a game struct containing
-#[cfg(feature = "client")]
 struct Game {
     color_buffer: GpuBuffer<Color>,
     view_cycle: usize,
@@ -47,7 +38,6 @@ struct Game {
     circle: Object<VulkanTypes>,
 }
 
-#[cfg(feature = "client")]
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: &EngineContext) -> Self {
@@ -142,7 +132,6 @@ impl Game {
 }
 
 /// Implement the Game trait into the Game struct.
-#[cfg(feature = "client")]
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
     fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {

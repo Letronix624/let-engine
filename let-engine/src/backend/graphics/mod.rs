@@ -124,7 +124,7 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         &self.interface
     }
 
-    fn update(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error> {
+    fn draw(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error> {
         if let Some(draw) = self.draw.get_mut() {
             draw.redraw_event(pre_present_notify).map_err(|e| e.into())
         } else {

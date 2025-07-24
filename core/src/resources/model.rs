@@ -134,7 +134,7 @@ impl<V: Vertex> Model<V> {
 ///
 /// # Usage
 ///
-/// ## Default models using vertex type [`Vert`](let_engine_core::resources::data::Vert)
+/// ## Default models using vertex type [`Vert`](let_engine::resources::data::Vert)
 ///
 /// - `model!()` → Creates an empty fixed dummy [`Model`] with max vertex size 1.
 /// - `model!(triangle)` → Creates a simple 2D triangle using 3 vertices and no indices.
@@ -174,113 +174,105 @@ impl<V: Vertex> Model<V> {
 /// - If `max_vertices` or `max_indices` are provided, they define the buffer size constraints.
 /// - If `BufferAccess` is omitted, it defaults to `Fixed`.
 ///
-/// [`Model`]: struct@let_engine_core::resources::model::Model
-/// [`BufferAccess`]: enum@let_engine_core::resources::buffer::BufferAccess
+/// [`Model`]: struct@let_engine::resources::model::Model
+/// [`BufferAccess`]: enum@let_engine::resources::buffer::BufferAccess
 #[macro_export]
 macro_rules! model {
     // default
     () => {
-        let_engine_core::resources::model::Model::default()
+        let_engine::resources::model::Model::default()
     };
 
     // triangle
     (triangle) => {
-        let_engine_core::resources::model::Model::triangle()
+        let_engine::resources::model::Model::triangle()
     };
 
     // square
     (square) => {
-        let_engine_core::resources::model::Model::square()
+        let_engine::resources::model::Model::square()
     };
 
     // only vertices
     ($vertices:expr) => {
-        let_engine_core::resources::model::Model::new(
+        let_engine::resources::model::Model::new(
             $vertices,
-            let_engine_core::resources::buffer::BufferAccess::default(),
+            let_engine::resources::buffer::BufferAccess::default(),
         )
     };
 
     // vertices and indices
     ($vertices:expr, $indices:expr) => {
-        let_engine_core::resources::model::Model::new_indexed(
+        let_engine::resources::model::Model::new_indexed(
             $vertices,
             $indices,
-            let_engine_core::resources::buffer::BufferAccess::default(),
+            let_engine::resources::buffer::BufferAccess::default(),
         )
     };
 
     // vertices and max vertices
     ($vertices:expr, $max_vertices:expr) => {
-        let_engine_core::resources::model::Model::new_maxed(
+        let_engine::resources::model::Model::new_maxed(
             $vertices,
             $max_vertices,
-            let_engine_core::resources::buffer::BufferAccess::default(),
+            let_engine::resources::buffer::BufferAccess::default(),
         )
     };
 
     // only max vertices
     ($max_vertices:expr) => {
-        let_engine_core::resources::model::Model::new_maxed(
+        let_engine::resources::model::Model::new_maxed(
             Vec::new(),
             $max_vertices,
-            let_engine_core::resources::buffer::BufferAccess::default(),
+            let_engine::resources::buffer::BufferAccess::default(),
         )
     };
 
     // vertices, indices, max vertices and max indices
     ($vertices:expr, $indices:expr, $max_vertices:expr, $max_indices:expr) => {
-        let_engine_core::resources::model::Model::new_indexed_maxed(
+        let_engine::resources::model::Model::new_indexed_maxed(
             $vertices,
             $indices,
             $max_vertices,
             $max_indices,
-            let_engine_core::resources::buffer::BufferAccess::default(),
+            let_engine::resources::buffer::BufferAccess::default(),
         )
     };
 
     // max vertices and max indices
     ($max_vertices:expr, $max_indices:expr) => {
-        let_engine_core::resources::model::Model::new_indexed_maxed(
+        let_engine::resources::model::Model::new_indexed_maxed(
             Vec::new(),
             Vec::new(),
             $max_vertices,
             $max_indices,
-            let_engine_core::resources::buffer::BufferAccess::default(),
+            let_engine::resources::buffer::BufferAccess::default(),
         )
     };
 
     // vertices and buffer access
     ($vertices:expr, $buffer_access:expr) => {
-        let_engine_core::resources::model::Model::new($vertices, $buffer_access)
+        let_engine::resources::model::Model::new($vertices, $buffer_access)
     };
 
     // vertices, indices and buffer access
     ($vertices:expr, $indices:expr, $buffer_access:expr) => {
-        let_engine_core::resources::model::Model::new_indexed($vertices, $indices, $buffer_access)
+        let_engine::resources::model::Model::new_indexed($vertices, $indices, $buffer_access)
     };
 
     // vertices, max vertices and buffer access
     ($vertices:expr, $max_vertices:expr, $buffer_access:expr) => {
-        let_engine_core::resources::model::Model::new_maxed(
-            $vertices,
-            $max_vertices,
-            $buffer_access,
-        )
+        let_engine::resources::model::Model::new_maxed($vertices, $max_vertices, $buffer_access)
     };
 
     // max vertices and buffer access
     ($max_vertices:expr, $buffer_access:expr) => {
-        let_engine_core::resources::model::Model::new_maxed(
-            Vec::new(),
-            $max_vertices,
-            $buffer_access,
-        )
+        let_engine::resources::model::Model::new_maxed(Vec::new(), $max_vertices, $buffer_access)
     };
 
     // vertices, indices, max vertices, max indices and buffer access
     ($vertices:expr, $indices:expr, $max_vertices:expr, $max_indices:expr, $buffer_access:expr) => {
-        let_engine_core::resources::model::Model::new_indexed_maxed(
+        let_engine::resources::model::Model::new_indexed_maxed(
             $vertices,
             $indices,
             $max_vertices,
@@ -291,7 +283,7 @@ macro_rules! model {
 
     // max vertices, max indices and buffer access
     ($max_vertices:expr, $max_indices:expr, $buffer_access:expr) => {
-        let_engine_core::resources::model::Model::new_indexed_maxed(
+        let_engine::resources::model::Model::new_indexed_maxed(
             Vec::new(),
             Vec::new(),
             $max_vertices,
@@ -577,7 +569,7 @@ const SQUARE_2D: [Vec2; 6] = [
 
 /// A macro that makes it easy to create circles.
 ///
-/// Returns [Data](let_engine_core::resources::data::Data) with vertices and indices.
+/// Returns [Data](let_engine::resources::data::Data) with vertices and indices.
 ///
 /// ### $corners
 /// Using this with a `u32` makes a circle fan with as many corners as given.
@@ -614,7 +606,7 @@ macro_rules! circle {
     };
     // Full circle fan
     ($corners:expr, $access:expr) => {{
-        use let_engine_core::{glam::vec2, resources::model::Model};
+        use let_engine::{glam::vec2, resources::model::Model};
 
         let corners: u32 = $corners;
 
@@ -647,7 +639,7 @@ macro_rules! circle {
     };
     // Pie circle
     ($corners:expr, $percent:expr, $access:expr) => {{
-        use let_engine_core::{
+        use let_engine::{
             glam::{vec2, Vec2},
             resources::model::Model,
         };
