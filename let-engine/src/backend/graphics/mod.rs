@@ -1,9 +1,14 @@
 //! Default graphics backend made with `Vulkano`
 
-use std::{cell::OnceCell, collections::BTreeMap, sync::Arc};
+use std::{
+    cell::OnceCell,
+    collections::BTreeMap,
+    sync::{Arc, OnceLock},
+};
 
 use anyhow::{anyhow, Context, Result};
-use buffer::{DrawableBuffer, GpuBuffer};
+use buffer::{BufferId, GpuBuffer};
+use concurrent_slotmap::{hyaline::Guard, Key};
 use crossbeam::channel::{bounded, Receiver, Sender};
 use draw::Draw;
 use glam::UVec2;
@@ -18,10 +23,12 @@ use let_engine_core::{
         Format,
     },
 };
-use material::{eq_vertex_input_state, GpuMaterial, ShaderError, VulkanGraphicsShaders};
-use model::{DrawableModel, GpuModel};
+use material::{
+    eq_vertex_input_state, GpuMaterial, MaterialId, ShaderError, VulkanGraphicsShaders,
+};
+use model::{GpuModel, ModelId};
 use parking_lot::RwLock;
-use texture::{image_view_type_to_vulkano, GpuTexture};
+use texture::{image_view_type_to_vulkano, GpuTexture, TextureId};
 use thiserror::Error;
 use vulkan::{Vulkan, VK};
 use vulkano::{
@@ -50,7 +57,8 @@ mod vulkan;
 #[derive(Debug)]
 pub struct DefaultGraphicsBackend {
     draw: OnceCell<Draw>,
-    interface: GraphicsInterface,
+    settings_receiver: Receiver<Graphics>,
+    interfacer: GraphicsInterfacer,
 }
 
 #[derive(Debug, Error)]
@@ -84,23 +92,37 @@ impl GraphicsBackend for DefaultGraphicsBackend {
     type Error = DefaultGraphicsBackendError;
 
     type Settings = Graphics;
-    type Interface = GraphicsInterface;
+    type Interface = GraphicsInterfacer;
 
     type LoadedTypes = VulkanTypes;
 
-    fn new(settings: &Self::Settings, handle: impl HasDisplayHandle) -> Result<Self, Self::Error> {
+    fn new(
+        settings: &Self::Settings,
+        handle: impl HasDisplayHandle,
+    ) -> Result<(Self, Self::Interface), Self::Error> {
         // Initialize backend in case it is not already initialized.
         if VK.get().is_none() {
             let vulkan = Vulkan::init(&handle, settings)?;
             let _ = VK.set(vulkan);
         }
+        let settings = Arc::new(RwLock::new(*settings));
 
-        let interface = GraphicsInterface::new(*settings);
+        let settings_channels = bounded(3);
 
-        Ok(Self {
-            draw: OnceCell::new(),
-            interface,
-        })
+        let interfacer = GraphicsInterfacer {
+            settings,
+            settings_sender: settings_channels.0,
+            available_present_modes: OnceLock::new(),
+        };
+
+        Ok((
+            Self {
+                draw: OnceCell::new(),
+                settings_receiver: settings_channels.1,
+                interfacer: interfacer.clone(),
+            },
+            interfacer,
+        ))
     }
 
     fn init_window(
@@ -112,21 +134,28 @@ impl GraphicsBackend for DefaultGraphicsBackend {
                 + Send
                 + Sync,
         >,
-        scene: &Arc<Scene<Self::LoadedTypes>>,
     ) {
         // TODO: Remove unwraps
-        let draw = Draw::new(self.interface.clone(), window, scene.clone()).unwrap();
+        let settings = *self.interfacer.settings.read();
+        let draw = Draw::new(
+            settings,
+            self.settings_receiver.clone(),
+            &self.interfacer.available_present_modes,
+            window,
+        )
+        .unwrap();
 
         let _ = self.draw.set(draw);
     }
 
-    fn interface(&self) -> &GraphicsInterface {
-        &self.interface
-    }
-
-    fn draw(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), Self::Error> {
+    fn draw(
+        &mut self,
+        scene: &Scene<Self::LoadedTypes>,
+        pre_present_notify: impl FnOnce(),
+    ) -> Result<(), Self::Error> {
         if let Some(draw) = self.draw.get_mut() {
-            draw.redraw_event(pre_present_notify).map_err(|e| e.into())
+            draw.redraw_event(scene, pre_present_notify)
+                .map_err(|e| e.into())
         } else {
             Ok(())
         }
@@ -144,154 +173,28 @@ pub struct VulkanTypes;
 
 impl Loaded for VulkanTypes {
     type Material = GpuMaterial;
+    type MaterialId = MaterialId;
+
     type Buffer<B: Data> = GpuBuffer<B>;
-    type DrawableBuffer = DrawableBuffer;
+    type BufferId<B: Data> = BufferId<B>;
+
+    #[inline]
+    fn buffer_id_u8<B: Data>(buffer: Self::BufferId<B>) -> Self::BufferId<u8> {
+        unsafe { std::mem::transmute(buffer) }
+    }
+
     type Model<V: Vertex> = GpuModel<V>;
-    type DrawableModel = DrawableModel;
+    type ModelId<V: Vertex> = ModelId<V>;
+
+    #[inline]
+    unsafe fn model_id_u8<V: Vertex>(model: Self::ModelId<V>) -> Self::ModelId<u8> {
+        unsafe { std::mem::transmute(model) }
+    }
+
     type Texture = GpuTexture;
+    type TextureId = TextureId;
 
     type AppearanceCreationError = AppearanceCreationError;
-
-    fn initialize_appearance(
-        material: &GpuMaterial,
-        model: &DrawableModel,
-        descriptors: &BTreeMap<Location, Descriptor<VulkanTypes>>,
-    ) -> Result<(), AppearanceCreationError> {
-        let requirements = &material.graphics_shaders().requirements;
-
-        if requirements.len() != descriptors.len() {
-            let missing_descriptors: Vec<Location> = requirements
-                .keys()
-                .filter(|key| !descriptors.contains_key(key))
-                .copied()
-                .collect();
-            if !missing_descriptors.is_empty() {
-                return Err(AppearanceCreationError::MissingDescriptors(
-                    missing_descriptors,
-                ));
-            }
-
-            let excess_descriptors: Vec<Location> = descriptors
-                .keys()
-                .filter(|key| !requirements.contains_key(key))
-                .copied()
-                .collect();
-
-            return Err(AppearanceCreationError::ExcessDescriptors(
-                excess_descriptors,
-            ));
-        }
-
-        // Vertex
-        let entry_point = &material.graphics_shaders().vertex;
-        let vertex_input_state =
-            vertex_buffer_description_to_vulkano(model.vertex_buffer_description().clone())
-                .definition(entry_point)
-                .unwrap(); // TODO
-
-        if !eq_vertex_input_state(&vertex_input_state, &material.vertex_input_state) {
-            return Err(AppearanceCreationError::WrongVertexType);
-        }
-
-        // Descriptors
-
-        for (location, requirement) in requirements {
-            let buffer = descriptors.get(location).unwrap();
-
-            match buffer {
-                Descriptor::Texture(texture) => {
-                    let types = &requirement.descriptor_types;
-                    let texture_type = texture.descriptor_type();
-                    if !types.contains(&texture_type) {
-                        return Err(AppearanceCreationError::WrongDescriptorType {
-                            location: *location,
-                            allowed_types: types.clone(),
-                            provided_type: texture_type,
-                        });
-                    }
-
-                    let texture_format = format_to_vulkano(&texture.settings().format);
-
-                    if let Some(format) = requirement.image_format {
-                        if format != texture_format {
-                            return Err(AppearanceCreationError::WrongTextureFormat {
-                                location: *location,
-                                expected_format: format,
-                                provided_format: texture_format,
-                            });
-                        }
-                    }
-
-                    if requirement.image_multisampled {
-                        return Err(AppearanceCreationError::NoMultisampleSupport);
-                    }
-
-                    if let Some(numeric_type) = requirement.image_scalar_type {
-                        let texture_numeric_type = texture_format
-                            .numeric_format_color()
-                            .or(texture_format.numeric_format_depth())
-                            .or(texture_format.numeric_format_stencil())
-                            .unwrap()
-                            .numeric_type();
-
-                        if numeric_type != texture_numeric_type {
-                            return Err(AppearanceCreationError::WrongNumericType {
-                                location: *location,
-                                expected_type: numeric_type,
-                                provided_type: texture_numeric_type,
-                            });
-                        }
-                    }
-
-                    if let Some(view_type) = requirement.image_view_type {
-                        let texture_view_type = image_view_type_to_vulkano(texture.dimensions());
-
-                        if view_type != texture_view_type {
-                            return Err(AppearanceCreationError::WrongViewType {
-                                location: *location,
-                                expected_type: view_type,
-                                provided_type: texture_view_type,
-                            });
-                        }
-                    }
-                }
-
-                Descriptor::Buffer(buffer) => {
-                    let types = &requirement.descriptor_types;
-                    let buffer_type = buffer.descriptor_type();
-                    if !types.contains(&buffer_type) {
-                        return Err(AppearanceCreationError::WrongDescriptorType {
-                            location: *location,
-                            allowed_types: types.clone(),
-                            provided_type: buffer_type,
-                        });
-                    }
-                }
-
-                Descriptor::Mvp => {
-                    let types = &requirement.descriptor_types;
-                    if !types.contains(&DescriptorType::UniformBuffer) {
-                        return Err(AppearanceCreationError::WrongDescriptorType {
-                            location: *location,
-                            allowed_types: types.clone(),
-                            provided_type: DescriptorType::UniformBuffer,
-                        });
-                    }
-                }
-            }
-        }
-
-        // TODO: Cache descriptor sets
-
-        Ok(())
-    }
-    fn draw_buffer<B: Data>(buffer: Self::Buffer<B>) -> Self::DrawableBuffer {
-        DrawableBuffer::from_buffer(buffer)
-    }
-
-    fn draw_model<V: Vertex>(model: Self::Model<V>) -> Self::DrawableModel {
-        DrawableModel::from_model(model)
-    }
 }
 
 /// Errors that can occur when attempting to create an `Apperance` instance due to mismatches
@@ -371,66 +274,350 @@ pub enum AppearanceCreationError {
         expected_type: ImageViewType,
         provided_type: ImageViewType,
     },
+
+    /// Occurs when the material ID of the appearance is not valid.
+    #[error("The provided material ID is not valid.")]
+    InvalidMaterialId,
+
+    /// Occurs when the model ID of the appearance is not valid.
+    #[error("The provided model ID is not valid.")]
+    InvalidModelId,
+
+    /// Occurs when the buffer ID of a descriptor in the appearance is not valid.
+    #[error("The provided buffer ID is not valid.")]
+    InvalidBufferId,
+
+    /// Occurs when the texture ID of a descriptor in the appearance is not valid.
+    #[error("The provided texture ID is not valid.")]
+    InvalidTextureId,
 }
 
 #[derive(Debug, Clone)]
-pub struct GraphicsInterface {
+pub struct GraphicsInterfacer {
     settings: Arc<RwLock<Graphics>>,
-    settings_channels: (Sender<Graphics>, Receiver<Graphics>),
+    settings_sender: Sender<Graphics>,
 
     // Gets written to in swapchain.rs
-    available_present_modes: Arc<RwLock<Vec<PresentMode>>>,
+    available_present_modes: OnceLock<Vec<PresentMode>>,
 }
 
-impl let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes> for GraphicsInterface {
+impl let_engine_core::backend::graphics::GraphicsInterfacer<VulkanTypes> for GraphicsInterfacer {
+    type Interface<'a> = GraphicsInterface<'a>;
+
+    fn interface<'a>(&'a self) -> Self::Interface<'a> {
+        let vulkan = VK.get().unwrap();
+        GraphicsInterface {
+            settings: &self.settings,
+            settings_sender: &self.settings_sender,
+            present_modes: self.available_present_modes.get().map(|v| &**v),
+            material_guard: vulkan.materials.pin(),
+            buffer_guard: vulkan.buffers.pin(),
+            model_guard: vulkan.models.pin(),
+            texture_guard: vulkan.textures.pin(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct GraphicsInterface<'a> {
+    settings: &'a RwLock<Graphics>,
+    settings_sender: &'a Sender<Graphics>,
+    present_modes: Option<&'a [PresentMode]>,
+
+    material_guard: Guard<'a>,
+    buffer_guard: Guard<'a>,
+    model_guard: Guard<'a>,
+    texture_guard: Guard<'a>,
+}
+
+impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
+    for GraphicsInterface<'a>
+{
     fn load_material<V: let_engine_core::resources::model::Vertex>(
         &self,
         material: &let_engine_core::resources::material::Material,
-    ) -> Result<GpuMaterial> {
-        let shaders =
-            unsafe { VulkanGraphicsShaders::from_bytes(material.graphics_shaders.clone())? };
+    ) -> Result<MaterialId> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+        let shaders = unsafe {
+            VulkanGraphicsShaders::from_bytes(material.graphics_shaders.clone(), vulkan)?
+        };
 
-        GpuMaterial::new::<V>(material.settings.clone(), shaders).context("hello")
+        let material = GpuMaterial::new::<V>(material.settings.clone(), shaders)
+            .expect("failed to load material");
+
+        Ok(vulkan.materials.insert(material, &self.material_guard))
     }
 
     fn load_buffer<B: Data>(
         &self,
         buffer: &let_engine_core::resources::buffer::Buffer<B>,
-    ) -> Result<GpuBuffer<B>> {
-        GpuBuffer::new(buffer).context("failed to load buffer")
+    ) -> Result<BufferId<B>> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+
+        let buffer = GpuBuffer::new(buffer, vulkan).context("failed to load buffer")?;
+        let buffer = unsafe { std::mem::transmute::<GpuBuffer<B>, GpuBuffer<u8>>(buffer) };
+
+        Ok(BufferId::from_id(
+            vulkan.buffers.insert(buffer, &self.buffer_guard),
+        ))
     }
 
     fn load_model<V: let_engine_core::resources::model::Vertex>(
         &self,
         model: &let_engine_core::resources::model::Model<V>,
-    ) -> Result<GpuModel<V>> {
-        GpuModel::new(model).context("failed to load model")
+    ) -> Result<ModelId<V>> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+
+        let model = GpuModel::new(model).context("failed to load model")?;
+        let model = unsafe { std::mem::transmute::<GpuModel<V>, GpuModel<u8>>(model) };
+
+        Ok(ModelId::from_id(
+            vulkan.models.insert(model, &self.model_guard),
+        ))
     }
 
     fn load_texture(
         &self,
         texture: &let_engine_core::resources::texture::Texture,
-    ) -> Result<GpuTexture> {
-        GpuTexture::new(texture).context("failed to load texture")
+    ) -> Result<TextureId> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+
+        let texture = GpuTexture::new(texture).context("failed to load texture")?;
+
+        Ok(vulkan.textures.insert(texture, &self.texture_guard))
+    }
+
+    fn material(
+        &self,
+        id: <VulkanTypes as Loaded>::MaterialId,
+    ) -> Option<&<VulkanTypes as Loaded>::Material> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.materials.get(id, &self.material_guard)
+    }
+
+    fn buffer<B: Data>(&self, id: BufferId<B>) -> Option<&GpuBuffer<B>> {
+        let vulkan = VK.get().unwrap();
+
+        // SAFETY: transmute is safe here, because the generic is not present in the byte representation and drop logic.
+        unsafe { std::mem::transmute(vulkan.buffers.get(id.as_id(), &self.buffer_guard)) }
+    }
+
+    fn model<V: Vertex>(&self, id: ModelId<V>) -> Option<&<VulkanTypes as Loaded>::Model<V>> {
+        let vulkan = VK.get().unwrap();
+
+        // SAFETY: transmute is safe here, because the generic is not present in the byte representation and drop logic.
+        //         The vertex type might mismatch to the original format, but this is only possible if the user used unsafe
+        //         logic to reinterpret the vertex type of an ID to a non-compatible type, which is totally on them.
+        unsafe { std::mem::transmute(vulkan.models.get(id.as_id(), &self.model_guard)) }
+    }
+
+    fn texture(&self, id: TextureId) -> Option<&<VulkanTypes as Loaded>::Texture> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.textures.get(id, &self.texture_guard)
+    }
+
+    fn remove_material(&self, id: <VulkanTypes as Loaded>::MaterialId) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.materials.remove(id, &self.material_guard);
+
+        Ok(())
+    }
+
+    fn remove_buffer<B: Data>(&self, id: BufferId<B>) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.buffers.remove(id.as_id(), &self.buffer_guard);
+        // vulkan.remove_resource(vulkan::Resource::Buffer { id, access_types: AccessType });
+
+        Ok(())
+    }
+
+    fn remove_model<V: Vertex>(&self, id: ModelId<V>) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.models.remove(id.as_id(), &self.model_guard);
+
+        Ok(())
+    }
+
+    fn remove_texture(&self, id: <VulkanTypes as Loaded>::TextureId) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.textures.remove(id, &self.texture_guard);
+
+        Ok(())
+    }
+
+    fn validate_appearance(
+        &self,
+        material_id: MaterialId,
+        model_id: ModelId<u8>,
+        descriptors: &BTreeMap<Location, Descriptor<VulkanTypes>>,
+    ) -> Result<(), AppearanceCreationError> {
+        let vulkan = VK.get().context("Vulkan uninitialized").unwrap();
+
+        let material_guard = vulkan.materials.pin();
+        let material = vulkan
+            .materials
+            .get(material_id, &material_guard)
+            .ok_or(AppearanceCreationError::InvalidMaterialId)?;
+        let model_guard = vulkan.models.pin();
+        let model = vulkan
+            .models
+            .get(model_id.as_id(), &model_guard)
+            .ok_or(AppearanceCreationError::InvalidModelId)?;
+        let texture_guard = vulkan.textures.pin();
+        let buffer_guard = vulkan.buffers.pin();
+
+        let requirements = &material.graphics_shaders().requirements;
+
+        if requirements.len() != descriptors.len() {
+            let missing_descriptors: Vec<Location> = requirements
+                .keys()
+                .filter(|key| !descriptors.contains_key(key))
+                .copied()
+                .collect();
+            if !missing_descriptors.is_empty() {
+                return Err(AppearanceCreationError::MissingDescriptors(
+                    missing_descriptors,
+                ));
+            }
+
+            let excess_descriptors: Vec<Location> = descriptors
+                .keys()
+                .filter(|key| !requirements.contains_key(key))
+                .copied()
+                .collect();
+
+            return Err(AppearanceCreationError::ExcessDescriptors(
+                excess_descriptors,
+            ));
+        }
+
+        // Vertex
+        let entry_point = &material.graphics_shaders().vertex;
+        let vertex_input_state =
+            vertex_buffer_description_to_vulkano(model.vertex_buffer_description().clone())
+                .definition(entry_point)
+                .unwrap(); // TODO
+
+        if !eq_vertex_input_state(&vertex_input_state, &material.vertex_input_state) {
+            return Err(AppearanceCreationError::WrongVertexType);
+        }
+
+        // Descriptors
+
+        for (location, requirement) in requirements {
+            let buffer = descriptors.get(location).unwrap();
+
+            match buffer {
+                Descriptor::Texture(texture_id) => {
+                    let texture = vulkan
+                        .textures
+                        .get(*texture_id, &texture_guard)
+                        .ok_or(AppearanceCreationError::InvalidTextureId)?;
+                    let types = &requirement.descriptor_types;
+                    let texture_type = texture.descriptor_type();
+                    if !types.contains(&texture_type) {
+                        return Err(AppearanceCreationError::WrongDescriptorType {
+                            location: *location,
+                            allowed_types: types.clone(),
+                            provided_type: texture_type,
+                        });
+                    }
+
+                    let texture_format = format_to_vulkano(&texture.settings().format);
+
+                    if let Some(format) = requirement.image_format {
+                        if format != texture_format {
+                            return Err(AppearanceCreationError::WrongTextureFormat {
+                                location: *location,
+                                expected_format: format,
+                                provided_format: texture_format,
+                            });
+                        }
+                    }
+
+                    if requirement.image_multisampled {
+                        return Err(AppearanceCreationError::NoMultisampleSupport);
+                    }
+
+                    if let Some(numeric_type) = requirement.image_scalar_type {
+                        let texture_numeric_type = texture_format
+                            .numeric_format_color()
+                            .or(texture_format.numeric_format_depth())
+                            .or(texture_format.numeric_format_stencil())
+                            .unwrap()
+                            .numeric_type();
+
+                        if numeric_type != texture_numeric_type {
+                            return Err(AppearanceCreationError::WrongNumericType {
+                                location: *location,
+                                expected_type: numeric_type,
+                                provided_type: texture_numeric_type,
+                            });
+                        }
+                    }
+
+                    if let Some(view_type) = requirement.image_view_type {
+                        let texture_view_type = image_view_type_to_vulkano(texture.dimensions());
+
+                        if view_type != texture_view_type {
+                            return Err(AppearanceCreationError::WrongViewType {
+                                location: *location,
+                                expected_type: view_type,
+                                provided_type: texture_view_type,
+                            });
+                        }
+                    }
+                }
+
+                Descriptor::Buffer(buffer_id) => {
+                    let buffer = vulkan
+                        .buffers
+                        .get(buffer_id.as_id(), &buffer_guard)
+                        .ok_or(AppearanceCreationError::InvalidBufferId)?;
+                    let types = &requirement.descriptor_types;
+                    let buffer_type = buffer.descriptor_type();
+                    if !types.contains(&buffer_type) {
+                        return Err(AppearanceCreationError::WrongDescriptorType {
+                            location: *location,
+                            allowed_types: types.clone(),
+                            provided_type: buffer_type,
+                        });
+                    }
+                }
+
+                Descriptor::Mvp => {
+                    let types = &requirement.descriptor_types;
+                    if !types.contains(&DescriptorType::UniformBuffer) {
+                        return Err(AppearanceCreationError::WrongDescriptorType {
+                            location: *location,
+                            allowed_types: types.clone(),
+                            provided_type: DescriptorType::UniformBuffer,
+                        });
+                    }
+                }
+            }
+        }
+
+        // TODO: Cache descriptor sets
+
+        Ok(())
     }
 }
 
-impl GraphicsInterface {
-    fn new(settings: Graphics) -> Self {
-        Self {
-            settings: Arc::new(RwLock::new(settings)),
-            settings_channels: bounded(3),
-            available_present_modes: Arc::new(RwLock::new(vec![])),
-        }
-    }
-
+impl<'a> GraphicsInterface<'a> {
     /// Returns the settings of the graphics backend.
     pub fn settings(&self) -> Graphics {
         *self.settings.read()
     }
 
     fn send_settings(&self, settings: Graphics) {
-        let _ = self.settings_channels.0.try_send(settings);
+        let _ = self.settings_sender.try_send(settings);
     }
 
     /// Sets the settings of this graphics backend
@@ -445,13 +632,19 @@ impl GraphicsInterface {
     }
 
     /// Returns all the present modes this device supports.
-    pub fn supported_present_modes(&self) -> Vec<PresentMode> {
-        self.available_present_modes.read().clone()
+    pub fn supported_present_modes(&self) -> Option<&'a [PresentMode]> {
+        self.present_modes
     }
 
     /// Sets the present mode of the graphics backend. Returns an error in case the present mode is not supported.
     pub fn set_present_mode(&self, present_mode: PresentMode) -> Result<()> {
-        if self.available_present_modes.read().contains(&present_mode) {
+        if self
+            .present_modes
+            .ok_or(anyhow!(
+                "Can not set present mode before window initialized."
+            ))?
+            .contains(&present_mode)
+        {
             let mut settings = self.settings.write();
             settings.present_mode = present_mode;
             self.send_settings(*settings);
@@ -655,6 +848,7 @@ pub enum PresentMode {
     ///
     /// This present mode may not be available on every device.
     Immediate,
+
     /// This present mode has a waiting slot for the next image to be presented after the current one has finished presenting.
     /// This mode also does not block the drawing thread, drawing images, even when they will not get presented.
     ///
@@ -664,6 +858,7 @@ pub enum PresentMode {
     ///
     /// It may also not be available on every device.
     Mailbox,
+
     /// Means first in first out.
     ///
     /// This present mode is also known as "vsync on". It blocks the thread and only draws and presents images if the present buffer is finished drawing to the screen.
@@ -694,6 +889,7 @@ impl From<vulkano::swapchain::PresentMode> for PresentMode {
     }
 }
 
+#[inline]
 pub(crate) fn format_to_vulkano(format: &Format) -> vulkano::format::Format {
     match format {
         Format::Rg4Unorm => vulkano::format::Format::R4G4_UNORM_PACK8,
@@ -777,6 +973,7 @@ pub(crate) fn format_to_vulkano(format: &Format) -> vulkano::format::Format {
     }
 }
 
+#[inline]
 pub(crate) fn vertex_buffer_description_to_vulkano(
     description: VertexBufferDescription,
 ) -> vulkano::pipeline::graphics::vertex_input::VertexBufferDescription {

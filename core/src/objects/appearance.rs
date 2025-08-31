@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    backend::graphics::Loaded,
+    backend::graphics::{GraphicsInterface, Loaded},
     resources::{buffer::Location, data::Data, model::Vertex},
 };
 
@@ -16,12 +16,12 @@ pub struct AppearanceBuilder<T: Loaded> {
     /// The initial material of the appearance.
     ///
     /// This field must be initialized for the build to succeed.
-    pub material: Option<T::Material>,
+    pub material: Option<T::MaterialId>,
 
     /// The initial model of the appearance.
     ///
     /// This field must be initialized for the build to succeed.
-    pub model: Option<T::DrawableModel>,
+    pub model: Option<T::ModelId<u8>>,
 
     /// The buffers and textures and their location in the shaders.
     pub descriptors: BTreeMap<Location, Descriptor<T>>,
@@ -58,7 +58,7 @@ impl<T: Loaded> AppearanceBuilder<T> {
     /// Sets the material and returns self.
     ///
     /// This field must be initialized for the build to succeed.
-    pub fn material(mut self, material: T::Material) -> Self {
+    pub fn material(mut self, material: T::MaterialId) -> Self {
         self.material = Some(material);
         self
     }
@@ -66,8 +66,8 @@ impl<T: Loaded> AppearanceBuilder<T> {
     /// Sets the model and returns self.
     ///
     /// This field must be initialized for the build to succeed.
-    pub fn model<V: Vertex>(mut self, model: T::Model<V>) -> Self {
-        self.model = Some(T::draw_model(model));
+    pub fn model<V: Vertex>(mut self, model: T::ModelId<V>) -> Self {
+        self.model = Some(unsafe { T::model_id_u8(model) });
         self
     }
 
@@ -82,7 +82,10 @@ impl<T: Loaded> AppearanceBuilder<T> {
     }
 
     /// Builds this struct into an `Appearance`.
-    pub fn build(self) -> Result<Appearance<T>, AppearanceBuilderError<T>> {
+    pub fn build(
+        self,
+        interface: &impl GraphicsInterface<T>,
+    ) -> Result<Appearance<T>, AppearanceBuilderError<T>> {
         let Some(material) = self.material else {
             return Err(AppearanceBuilderError::Uninitialized);
         };
@@ -117,7 +120,8 @@ impl<T: Loaded> AppearanceBuilder<T> {
         }
 
         // Validate backend
-        T::initialize_appearance(&material, &model, &self.descriptors)
+        interface
+            .validate_appearance(material, model, &self.descriptors)
             .map_err(AppearanceBuilderError::<T>::InvalidCombination)?;
 
         Ok(Appearance {
@@ -152,10 +156,9 @@ pub struct Appearance<T: Loaded> {
     descriptors: BTreeMap<Location, Descriptor<T>>,
     transform: Transform,
 
-    material: T::Material,
-    model: T::DrawableModel,
+    material: T::MaterialId,
+    model: T::ModelId<u8>,
     visible: bool,
-    // instance: Option<T::Buffer>,
 }
 
 impl Default for Appearance<()> {
@@ -175,9 +178,8 @@ impl<T: Loaded> Clone for Appearance<T> {
         Self {
             visible: self.visible,
             transform: self.transform,
-            material: self.material.clone(),
-            model: self.model.clone(),
-            // instance: self.instance.clone(),
+            material: self.material,
+            model: self.model,
             descriptors: self.descriptors.clone(),
         }
     }
@@ -186,22 +188,22 @@ impl<T: Loaded> Clone for Appearance<T> {
 /// Types a descriptor can be in the Appearance.
 #[derive(Debug, PartialEq)]
 pub enum Descriptor<T: Loaded> {
-    Texture(T::Texture),
-    Buffer(T::DrawableBuffer),
+    Texture(T::TextureId),
+    Buffer(T::BufferId<u8>),
     Mvp,
 }
 
 impl<T: Loaded> Descriptor<T> {
-    pub fn buffer<B: Data>(buffer: T::Buffer<B>) -> Self {
-        Self::Buffer(T::draw_buffer(buffer))
+    pub fn buffer<B: Data>(buffer: T::BufferId<B>) -> Self {
+        Self::Buffer(T::buffer_id_u8(buffer))
     }
 }
 
 impl<T: Loaded> Clone for Descriptor<T> {
     fn clone(&self) -> Self {
         match self {
-            Self::Texture(texture) => Self::Texture(texture.clone()),
-            Self::Buffer(buffer) => Self::Buffer(buffer.clone()),
+            Self::Texture(texture) => Self::Texture(*texture),
+            Self::Buffer(buffer) => Self::Buffer(*buffer),
             Self::Mvp => Self::Mvp,
         }
     }
@@ -216,12 +218,6 @@ use super::Transform;
 /// Just a macro that removes boilerplate getters and setters to be easily added with just one macro.
 macro_rules! getters_and_setters {
     ($field:ident, $title:expr, $type:ty) => {
-        #[doc=concat!("Sets ", $title, " of this appearance and returns self.")]
-        #[inline]
-        pub fn $field(mut self, $field: impl Into<$type>) -> Self {
-            self.$field = $field.into();
-            self
-        }
         paste! {
             #[doc=concat!("Sets ", $title, " of this appearance.")]
             #[inline]
@@ -229,17 +225,15 @@ macro_rules! getters_and_setters {
                 self.$field = $field.into();
             }
         }
-        paste! {
-            #[doc=concat!("Gets ", $title," of this appearance.")]
-            #[inline]
-            pub fn [<get_ $field>](&self) -> &$type {
-                &self.$field
-            }
+        #[doc=concat!("Gets ", $title," of this appearance.")]
+        #[inline]
+        pub fn $field(&self) -> &$type {
+            &self.$field
         }
         paste! {
             #[doc=concat!("Gets a mutable reference to ", $title," of this appearance.")]
             #[inline]
-            pub fn [<get_ $field _mut>](&mut self) -> &mut $type {
+            pub fn [<$field _mut>](&mut self) -> &mut $type {
                 &mut self.$field
             }
         }
@@ -247,39 +241,22 @@ macro_rules! getters_and_setters {
 }
 
 impl<T: Loaded> Appearance<T> {
-    // /// Creates a new default Appearance with the given Material and Model.
-    // pub fn new(material: T::Material, model: T::Model) -> Self {
-    //     Self {
-    //         visible: true,
-    //         transform: Transform::default(),
-    //         mvp_config: MvpConfig::default(),
-    //         material,
-    //         model,
-    //         // instance: None,
-    //         buffers: HashMap::default(),
-    //     }
-    // }
-
-    // pub fn new_instanced(
-    //     material: T::Material,
-    //     model: T::Model,
-    //     instance: Option<T::Buffer>,
-    // ) -> Self {
-    //     Self {
-    //         visible: true,
-    //         transform: Transform::default(),
-    //         mvp_config: MVPConfig::default(),
-    //         material,
-    //         model,
-    //         instance,
-    //         buffers: HashMap::default(),
-    //     }
-    // }
-
     getters_and_setters!(visible, "the visibility", bool);
     getters_and_setters!(transform, "the transform", Transform);
-    getters_and_setters!(model, "the model", T::DrawableModel);
-    getters_and_setters!(material, "the material", T::Material);
+
+    /// Returns a reference to the matrial ID of this appearance.
+    #[inline]
+    pub fn material_id(&self) -> T::MaterialId {
+        self.material
+    }
+
+    /// # Safety
+    /// Returned model type of u8 is not compatible with the original vertex type
+    /// in case it was different.
+    #[inline]
+    pub unsafe fn model_id(&self) -> T::ModelId<u8> {
+        self.model
+    }
 
     /// Returns a reference to the HashMap of descriptors in this appearance.
     #[inline]
@@ -289,18 +266,13 @@ impl<T: Loaded> Appearance<T> {
 
     /// Returns a reference to a descriptor at specified location in case it exists.
     #[inline]
-    pub fn get_descriptor(&self, location: &Location) -> Option<&Descriptor<T>> {
+    pub fn descriptor(&self, location: &Location) -> Option<&Descriptor<T>> {
         self.descriptors.get(location)
     }
 
     /// Returns a mutable reference to a descriptor at specified location in case it exists.
     #[inline]
-    pub fn get_descriptor_mut(&mut self, location: &Location) -> Option<&mut Descriptor<T>> {
+    pub fn descriptor_mut(&mut self, location: &Location) -> Option<&mut Descriptor<T>> {
         self.descriptors.get_mut(location)
     }
-
-    // /// Returns true if this object is instanced.
-    // pub fn is_instanced(&self) -> bool {
-    //     self.instance.is_some()
-    // }
 }

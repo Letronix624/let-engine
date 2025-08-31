@@ -1,7 +1,13 @@
 use anyhow::Result;
+use concurrent_slotmap::Key;
 use crossbeam::channel::Receiver;
 use foldhash::HashSet;
-use std::{any::Any, collections::BTreeMap, num::NonZero, sync::Arc};
+use std::{
+    any::Any,
+    collections::BTreeMap,
+    num::NonZero,
+    sync::{Arc, OnceLock},
+};
 use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
     descriptor_set::{sys::RawDescriptorSet, DescriptorSet, WriteDescriptorSet},
@@ -45,9 +51,9 @@ use glam::{f32::Mat4, UVec2};
 use crate::backend::graphics::vulkan::NewResource;
 
 use super::{
-    material::GpuMaterial,
+    material::MaterialId,
     vulkan::{swapchain::create_swapchain, topology_to_vulkan, Resource, Vulkan, VK},
-    Graphics, GraphicsInterface, VulkanError, VulkanTypes,
+    Graphics, PresentMode, VulkanError, VulkanTypes,
 };
 
 /// Responsible for drawing on the surface.
@@ -58,12 +64,12 @@ pub struct Draw {
 
     recreate_swapchain: bool,
 
-    settings_channel: Receiver<Graphics>,
+    settings_receiver: Receiver<Graphics>,
     settings: Graphics,
     dimensions: UVec2,
     image_format: Format,
 
-    task_graph: ExecutableTaskGraph<Self>,
+    task_graph: ExecutableTaskGraph<DrawWorld>,
     draw_node_id: NodeId,
     resource_accesses: HashSet<Resource>,
 
@@ -72,22 +78,21 @@ pub struct Draw {
     view_proj_region: Region,
     view_proj_alignment: DeviceAlignment,
     view_proj_buffer_id: Id<Buffer>,
-
-    scene: Arc<Scene<VulkanTypes>>,
 }
 
 impl Draw {
     pub fn new(
-        interface: GraphicsInterface,
+        settings: Graphics,
+        settings_receiver: Receiver<Graphics>,
+        present_modes: &OnceLock<Vec<PresentMode>>,
         window: &Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
-        scene: Arc<Scene<VulkanTypes>>,
     ) -> Result<Self> {
         let vulkan = VK.get().unwrap();
 
         let surface = Surface::from_window(&vulkan.instance, window)?;
 
         let (swapchain_id, dimensions, image_format) =
-            create_swapchain(&vulkan.device, surface, &interface, vulkan)?;
+            create_swapchain(&vulkan.device, surface, present_modes, vulkan)?;
 
         let recreate_swapchain = false;
 
@@ -99,9 +104,6 @@ impl Draw {
         };
 
         let drawing_queue = vulkan.queues.general().clone();
-
-        let settings = interface.settings();
-        let settings_channel = interface.settings_channels.1.clone();
 
         let (view_proj_region, view_proj_alignment, view_proj_buffer_id) =
             Self::create_view_proj_buffer(vulkan);
@@ -125,7 +127,7 @@ impl Draw {
                 vulkano_taskgraph::QueueFamilyType::Graphics,
                 DrawTask {
                     swapchain_id: virtual_swapchain_id,
-                    settings: interface.settings(),
+                    settings,
                 },
             )
             .framebuffer(framebuffer_id)
@@ -162,11 +164,10 @@ impl Draw {
             draw_node_id,
             resource_accesses: HashSet::default(),
             settings,
-            settings_channel,
+            settings_receiver,
             view_proj_region,
             view_proj_alignment,
             view_proj_buffer_id,
-            scene,
         })
     }
 
@@ -304,8 +305,12 @@ impl Draw {
     }
 
     /// Redraws the scene.
-    pub fn redraw_event(&mut self, pre_present_notify: impl FnOnce()) -> Result<(), VulkanError> {
-        if let Ok(settings) = self.settings_channel.try_recv() {
+    pub fn redraw_event(
+        &mut self,
+        scene: &Scene<VulkanTypes>,
+        pre_present_notify: impl FnOnce(),
+    ) -> Result<(), VulkanError> {
+        if let Ok(settings) = self.settings_receiver.try_recv() {
             self.settings = settings;
         }
 
@@ -340,9 +345,13 @@ impl Draw {
         let flight = vulkan.graphics_flight().unwrap();
         flight.wait(None).unwrap();
 
+        // SAFETY: Creating the `DrawWorld` should only be done here and must drop by the end of this method, so after the task executed
         match unsafe {
-            self.task_graph
-                .execute(resource_map, self, pre_present_notify)
+            self.task_graph.execute(
+                resource_map,
+                &DrawWorld::new(self, scene),
+                pre_present_notify,
+            )
         } {
             Ok(()) => Ok(()),
             Err(vulkano_taskgraph::graph::ExecuteError::Swapchain {
@@ -362,9 +371,12 @@ impl Draw {
     /// Creates and caches a graphics pipeline according to the given material.
     fn cache_pipeline(
         &self,
-        material: &GpuMaterial,
+        material_id: MaterialId,
         vulkan: &Vulkan,
     ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
+        let guard = vulkan.materials.pin();
+        let material = vulkan.materials.get(material_id, &guard).unwrap();
+
         let shaders = material.graphics_shaders();
         let settings = material.settings();
 
@@ -414,7 +426,7 @@ impl Draw {
 
         let mut cache = vulkan.pipeline_cache.lock();
 
-        cache.insert(material.clone(), pipeline.clone());
+        cache.insert(material_id, pipeline.clone());
 
         Ok(pipeline)
     }
@@ -424,13 +436,13 @@ impl Draw {
     /// If this material is not found, it will be created and added to the cache.
     pub fn get_or_init_pipeline(
         &self,
-        material: &GpuMaterial,
+        material_id: MaterialId,
         vulkan: &Vulkan,
     ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
-        if let Some(pipeline) = vulkan.get_pipeline(material) {
+        if let Some(pipeline) = vulkan.get_pipeline(material_id) {
             Ok(pipeline)
         } else {
-            self.cache_pipeline(material, vulkan)
+            self.cache_pipeline(material_id, vulkan)
         }
     }
 }
@@ -440,8 +452,21 @@ struct DrawTask {
     settings: Graphics,
 }
 
+// This is nothing but a hack arount the Rust and Vulkano limitation of one single world.
+// It is not possible to pass 2 references, so I do it the dirty way: store two references under one.
+struct DrawWorld {
+    draw: *const Draw,
+    scene: *const Scene<VulkanTypes>,
+}
+
+impl DrawWorld {
+    unsafe fn new(draw: &Draw, scene: &Scene<VulkanTypes>) -> Self {
+        Self { draw, scene }
+    }
+}
+
 impl Task for DrawTask {
-    type World = Draw;
+    type World = DrawWorld;
 
     fn clear_values(
         &self,
@@ -464,20 +489,23 @@ impl Task for DrawTask {
     ) -> vulkano_taskgraph::TaskResult {
         let vulkan = VK.get().unwrap();
 
+        let scene = &*world.scene;
+        let draw = &*world.draw;
+
         let views: Vec<Arc<LayerView<VulkanTypes>>> = {
-            let view = world.scene.views().lock();
+            let view = scene.views().lock();
             view.iter().cloned().collect()
         };
-        cbf.set_viewport(0, std::slice::from_ref(&world.viewport))?;
+        cbf.set_viewport(0, std::slice::from_ref(&draw.viewport))?;
 
-        let mut suballocator = BumpAllocator::new(world.view_proj_region);
+        let mut suballocator = BumpAllocator::new(draw.view_proj_region);
 
         let camera_allocations = views.iter().map(|_| {
             let suballocation = suballocator
                 .allocate(
                     DeviceLayout::new_sized::<[Mat4; 2]>(),
                     vulkano::memory::allocator::AllocationType::Linear,
-                    world.view_proj_alignment,
+                    draw.view_proj_alignment,
                 )
                 .expect("You can not create more than 256 cameras."); // TODO: Resize
             let start = suballocation.offset;
@@ -493,7 +521,7 @@ impl Task for DrawTask {
 
             // Clear layer views with less references than 3.
             if Arc::strong_count(view) <= 2 {
-                world.scene.update();
+                scene.update();
                 continue;
             }
             // Skip disabled layer view
@@ -508,7 +536,7 @@ impl Task for DrawTask {
 
             // Write camera matrices into buffer regions
             let write: &mut [Mat4; 2] =
-                tcx.write_buffer(world.view_proj_buffer_id, start..start + range)?;
+                tcx.write_buffer(draw.view_proj_buffer_id, start..start + range)?;
 
             write[0] = view.camera().make_view_matrix();
             write[1] = view.make_projection_matrix();
@@ -526,17 +554,21 @@ impl Task for DrawTask {
                 Node::order_position(&mut order, &object);
             }
 
+            let texture_guard = vulkan.textures.pin();
+            let buffer_guard = vulkan.buffers.pin();
+            let model_guard = vulkan.models.pin();
+
             /* Draw Objects */
 
             for object in order {
                 let appearance = &object.appearance;
 
                 // Skip objects marked as invisible.
-                if !*appearance.get_visible() {
+                if !*appearance.visible() {
                     continue;
                 };
 
-                let material = appearance.get_material();
+                let material_id = appearance.material_id();
 
                 /* Default MVP Matrix Creation */
 
@@ -544,7 +576,7 @@ impl Task for DrawTask {
 
                 /* TEMP Descriptor Creation TEMP */
 
-                let Ok(graphics_pipeline) = world.get_or_init_pipeline(material, vulkan) else {
+                let Ok(graphics_pipeline) = draw.get_or_init_pipeline(material_id, vulkan) else {
                     log::error!("Failed to create pipeline for object.");
                     continue;
                 };
@@ -570,7 +602,9 @@ impl Task for DrawTask {
 
                         for (binding, descriptor) in set {
                             match descriptor {
-                                Descriptor::Texture(texture) => {
+                                Descriptor::Texture(texture_id) => {
+                                    let texture =
+                                        vulkan.textures.get(*texture_id, &texture_guard).unwrap();
                                     let view = texture.image_view().clone();
 
                                     let sampler =
@@ -581,8 +615,12 @@ impl Task for DrawTask {
                                         binding, view, sampler,
                                     ));
                                 }
-                                Descriptor::Buffer(buffer) => {
-                                    let buffer = tcx.buffer(buffer.buffer())?;
+                                Descriptor::Buffer(buffer_id) => {
+                                    let buffer = vulkan
+                                        .buffers
+                                        .get(buffer_id.as_id(), &buffer_guard)
+                                        .unwrap();
+                                    let buffer = tcx.buffer(buffer.buffer_id)?;
 
                                     let subbuffer =
                                         vulkano::buffer::Subbuffer::new(buffer.buffer().clone());
@@ -590,7 +628,7 @@ impl Task for DrawTask {
                                     writes.push(WriteDescriptorSet::buffer(binding, subbuffer));
                                 }
                                 Descriptor::Mvp => {
-                                    let buffer = tcx.buffer(world.view_proj_buffer_id)?;
+                                    let buffer = tcx.buffer(draw.view_proj_buffer_id)?;
                                     let subbuffer =
                                         vulkano::buffer::Subbuffer::new(buffer.buffer().clone());
 
@@ -619,7 +657,10 @@ impl Task for DrawTask {
                 }
 
                 // Bind everything to the command buffer.
-                let model = appearance.get_model();
+                let model = vulkan
+                    .models
+                    .get(appearance.model_id().as_id(), &model_guard)
+                    .unwrap();
 
                 cbf.bind_pipeline_graphics(&graphics_pipeline)?;
                 cbf.as_raw()
@@ -638,14 +679,14 @@ impl Task for DrawTask {
                 cbf.push_constants(graphics_pipeline.layout(), 0, &model_matrix)?;
                 cbf.bind_vertex_buffers(
                     0,
-                    std::slice::from_ref(model.vertex_buffer_id()),
+                    std::slice::from_ref(&model.vertex_buffer_id()),
                     &[0],
                     &[],
                     &[],
                 )?;
 
                 // Draw object
-                if let Some(index_subbuffer) = model.index_buffer_id().copied() {
+                if let Some(index_subbuffer) = model.index_buffer_id() {
                     unsafe {
                         cbf.bind_index_buffer(
                             index_subbuffer,

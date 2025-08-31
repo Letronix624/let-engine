@@ -2,9 +2,9 @@
 //!
 //! Press space to bitshift random pixels to make an interesting effect.
 
-use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
+use graphics::VulkanTypes;
 use image::ImageBuffer;
-use let_engine::prelude::graphics::texture::GpuTexture;
+use let_engine::prelude::graphics::texture::TextureId;
 use let_engine::prelude::*;
 
 static RES: UVec2 = uvec2(1122, 821);
@@ -36,12 +36,12 @@ fn main() {
 
 /// Makes a game struct containing
 struct Game {
-    texture: GpuTexture,
+    texture: TextureId,
 }
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(context: &EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Self {
         // First we get the root layer where the scene will be simulated on.
         let root_layer = context.scene.root_layer().clone();
 
@@ -52,17 +52,19 @@ impl Game {
         root_view.set_scaling(CameraScaling::Expand);
 
         // A square model with textured vertices.
-        let model = GpuModel::new(&Model::new_indexed(
-            vec![
-                tvert(1.0, 1.0, 1.0, 1.0),
-                tvert(1.0, -1.0, 1.0, -1.0),
-                tvert(-1.0, 1.0, -1.0, 1.0),
-                tvert(-1.0, -1.0, -1.0, -1.0),
-            ],
-            vec![0, 1, 2, 2, 1, 3],
-            BufferAccess::Fixed,
-        ))
-        .unwrap();
+        let model = context
+            .graphics
+            .load_model(&Model::new_indexed(
+                vec![
+                    tvert(1.0, 1.0, 1.0, 1.0),
+                    tvert(1.0, -1.0, 1.0, -1.0),
+                    tvert(-1.0, 1.0, -1.0, 1.0),
+                    tvert(-1.0, -1.0, -1.0, -1.0),
+                ],
+                vec![0, 1, 2, 2, 1, 3],
+                BufferAccess::Fixed,
+            ))
+            .unwrap();
 
         let texture = Texture::from_bytes(
             include_bytes!("../assets/example-texture.png").to_vec(),
@@ -77,16 +79,21 @@ impl Game {
         .unwrap();
 
         // Load the texture to the GPU
-        let gpu_texture = GpuTexture::new(&texture).unwrap();
+        let gpu_texture = context.graphics.load_texture(&texture).unwrap();
 
-        let default_material = GpuMaterial::new_default_textured().unwrap();
+        let default_material = context
+            .graphics
+            .load_material::<Vec2>(&Material::default_textured())
+            .unwrap();
 
-        let color_buffer = GpuBuffer::new(&Buffer::from_data(
-            buffer::BufferUsage::Uniform,
-            BufferAccess::Fixed,
-            Color::WHITE,
-        ))
-        .unwrap();
+        let color_buffer = context
+            .graphics
+            .load_buffer(&Buffer::from_data(
+                buffer::BufferUsage::Uniform,
+                BufferAccess::Fixed,
+                Color::WHITE,
+            ))
+            .unwrap();
 
         let dim = texture.dimensions().extent();
 
@@ -96,16 +103,10 @@ impl Game {
             .transform(Transform::with_size(vec2(dim[0] as f32, dim[1] as f32)))
             .descriptors(&[
                 (Location::new(0, 0), Descriptor::Mvp),
-                (
-                    Location::new(1, 0),
-                    Descriptor::buffer(color_buffer.clone()),
-                ),
-                (
-                    Location::new(2, 0),
-                    Descriptor::Texture(gpu_texture.clone()),
-                ),
+                (Location::new(1, 0), Descriptor::buffer(color_buffer)),
+                (Location::new(2, 0), Descriptor::Texture(gpu_texture)),
             ])
-            .build()
+            .build(&context.graphics)
             .unwrap();
 
         let object = NewObject::new(appearance);
@@ -122,13 +123,13 @@ impl Game {
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: events::WindowEvent) {
         if let WindowEvent::CloseRequested = event {
             context.exit();
         }
     }
 
-    fn input(&mut self, context: &EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: EngineContext, event: events::InputEvent) {
         if let InputEvent::KeyboardInput { input } = event {
             if let ElementState::Pressed = input.state {
                 match input.key {
@@ -138,8 +139,9 @@ impl let_engine::Game for Game {
                     }
                     // Edit texture when space is pressed.
                     Key::Named(NamedKey::Space) => {
+                        let texture = context.graphics.texture(self.texture).unwrap();
                         // Write data to the texture
-                        self.texture
+                        texture
                             .write_data(|data| {
                                 let mut buffer: ImageBuffer<image::Rgba<u8>, &mut [u8]> =
                                     ImageBuffer::from_raw(RES.x, RES.y, data).unwrap();

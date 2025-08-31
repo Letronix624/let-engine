@@ -11,12 +11,7 @@ use audio::{
     gen_square_wave,
     sound::static_sound::{StaticSoundData, StaticSoundSettings},
 };
-use graphics::{
-    buffer::GpuBuffer,
-    material::{GpuMaterial, VulkanGraphicsShaders},
-    model::GpuModel,
-    VulkanTypes,
-};
+use graphics::VulkanTypes;
 
 use let_engine::prelude::*;
 use let_engine_core::backend::audio::{AudioInterface, DefaultAudioBackend};
@@ -74,7 +69,7 @@ struct Game {
     right_score_label: Label<VulkanTypes>,
 }
 impl Game {
-    pub fn new(context: &EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Self {
         // First we get the root layer where the scene will be simulated on.
         let root_layer = context.scene.root_layer();
         // We also create a ui layer, the place where the text and middle line will be.
@@ -88,7 +83,7 @@ impl Game {
         // the same size no matter how the window is scaled. Size of the transform is zoom here.
         let _ui_view = ui_layer
             .new_view(
-                &context.scene,
+                context.scene,
                 Transform::default(),
                 RESOLUTION,
                 CameraScaling::Expand,
@@ -101,16 +96,18 @@ impl Game {
             root_layer,
             (Key::Character("w".into()), Key::Character("s".into())),
             -0.95,
+            &context.graphics,
         );
         // The right paddle controlled with J and K. Weird controls, but 60% keyboard friendly
         let right_paddle = Paddle::new(
             root_layer,
             (Key::Character("k".into()), Key::Character("j".into())),
             0.95,
+            &context.graphics,
         );
 
         // Spawns a ball in the middle.
-        let ball = Ball::new(root_layer, root_view);
+        let ball = Ball::new(root_layer, root_view, &context.graphics);
 
         let mut labelifier = Labelifier::new(&context.graphics).unwrap();
 
@@ -137,9 +134,14 @@ impl Game {
         .unwrap();
 
         // initialize this one to the ui
-        NewObject::new(left_score_label.appearance().build().unwrap())
-            .init(&ui_layer)
-            .unwrap();
+        NewObject::new(
+            left_score_label
+                .appearance()
+                .build(&context.graphics)
+                .unwrap(),
+        )
+        .init(&ui_layer)
+        .unwrap();
 
         // Making a default label for the right side.
         let right_score_label = Label::new(
@@ -158,12 +160,17 @@ impl Game {
         )
         .unwrap();
 
-        NewObject::new(right_score_label.appearance().build().unwrap())
-            .init(&ui_layer)
-            .unwrap();
+        NewObject::new(
+            right_score_label
+                .appearance()
+                .build(&context.graphics)
+                .unwrap(),
+        )
+        .init(&ui_layer)
+        .unwrap();
 
         // Submit label creation task in the end.
-        labelifier.update().unwrap();
+        labelifier.update(&context.graphics).unwrap();
 
         /* Line in the middle */
 
@@ -175,7 +182,7 @@ impl Game {
             vec2(0.0, RESOLUTION.y as f32 * -0.8),
         ];
 
-        let middle_model = GpuModel::new(&model!(vertices)).unwrap();
+        let middle_model = context.graphics.load_model(&model!(vertices)).unwrap();
 
         // A description of how the line should look like.
         let line_material_settings = MaterialSettingsBuilder::default()
@@ -184,19 +191,23 @@ impl Game {
             .build()
             .unwrap();
 
-        let line_material = GpuMaterial::new::<Vec2>(
-            line_material_settings,
-            VulkanGraphicsShaders::new_default().unwrap(),
-        )
-        .unwrap();
+        let line_material = context
+            .graphics
+            .load_material::<Vec2>(&Material::new(
+                line_material_settings,
+                GraphicsShaders::new_default(),
+            ))
+            .unwrap();
 
         // The buffer is a Fixed Uniform here, because it's small and will never change.
-        let middle_line_color = GpuBuffer::new(&Buffer::from_data(
-            BufferUsage::Uniform,
-            BufferAccess::Fixed,
-            Color::WHITE,
-        ))
-        .unwrap();
+        let middle_line_color = context
+            .graphics
+            .load_buffer(&Buffer::from_data(
+                BufferUsage::Uniform,
+                BufferAccess::Fixed,
+                Color::WHITE,
+            ))
+            .unwrap();
 
         let middle_line_appearance = AppearanceBuilder::default()
             .material(line_material)
@@ -205,7 +216,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(middle_line_color)),
             ])
-            .build()
+            .build(&context.graphics)
             .unwrap();
 
         // Add the line to the ui layer
@@ -228,13 +239,13 @@ impl Game {
 }
 
 impl let_engine::Game for Game {
-    fn update(&mut self, context: &EngineContext) {
+    fn update(&mut self, context: EngineContext) {
         // run the update functions of the paddles.
-        self.left_paddle.update(context);
-        self.right_paddle.update(context);
+        self.left_paddle.update(&context);
+        self.right_paddle.update(&context);
 
         // If anyone has won after the ball has updated, modify the score counter
-        if self.ball.update(&context.time, &context.audio) {
+        if self.ball.update(context.time, context.audio) {
             // Update score labels
             self.left_score_label
                 .update_text(format!("{}", self.ball.wins[0]))
@@ -244,18 +255,18 @@ impl let_engine::Game for Game {
                 .unwrap();
 
             // Update the labelifier each frame to make the score update.
-            self.labelifier.update().unwrap();
+            self.labelifier.update(&context.graphics).unwrap();
         };
     }
 
     // Exit when the X button is pressed.
-    fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: events::WindowEvent) {
         if let WindowEvent::CloseRequested = event {
             context.exit();
         }
     }
 
-    fn input(&mut self, context: &EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: EngineContext, event: events::InputEvent) {
         if let InputEvent::KeyboardInput { input } = event {
             if input.state == ElementState::Pressed {
                 match input.key {
@@ -292,20 +303,28 @@ struct Paddle {
 }
 
 impl Paddle {
-    pub fn new(layer: &Arc<Layer<VulkanTypes>>, controls: (Key, Key), x: f32) -> Self {
+    pub fn new(
+        layer: &Arc<Layer<VulkanTypes>>,
+        controls: (Key, Key),
+        x: f32,
+        graphics: &graphics::GraphicsInterface,
+    ) -> Self {
         // Next we describe the appearance of the paddle.
 
         // Here we make the pedal square and give it a default material
-        let model = GpuModel::new(&model!(square)).unwrap();
-        let material = GpuMaterial::new_default().unwrap();
+        let model = graphics.load_model(&model!(square)).unwrap();
+        let material = graphics
+            .load_material::<Vec2>(&Material::new_default())
+            .unwrap();
 
         // Make the paddle white
-        let buffer = GpuBuffer::new(&Buffer::from_data(
-            BufferUsage::Uniform,
-            BufferAccess::Fixed,
-            Color::WHITE,
-        ))
-        .unwrap();
+        let buffer = graphics
+            .load_buffer(&Buffer::from_data(
+                BufferUsage::Uniform,
+                BufferAccess::Fixed,
+                Color::WHITE,
+            ))
+            .unwrap();
 
         let appearance = AppearanceBuilder::default()
             .model(model)
@@ -314,7 +333,7 @@ impl Paddle {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(buffer)),
             ])
-            .build()
+            .build(graphics)
             .unwrap();
 
         let height = 0.05;
@@ -380,19 +399,26 @@ struct Ball {
 
 /// Ball logic.
 impl Ball {
-    pub fn new(layer: &Arc<Layer<VulkanTypes>>, view: &Arc<LayerView<VulkanTypes>>) -> Self {
+    pub fn new(
+        layer: &Arc<Layer<VulkanTypes>>,
+        view: &Arc<LayerView<VulkanTypes>>,
+        graphics: &graphics::GraphicsInterface,
+    ) -> Self {
         let lifetime = SystemTime::now();
 
-        let model = GpuModel::new(&model!(square)).unwrap();
-        let material = GpuMaterial::new_default().unwrap();
+        let model = graphics.load_model(&model!(square)).unwrap();
+        let material = graphics
+            .load_material::<Vec2>(&Material::new_default())
+            .unwrap();
 
         // Make the ball white
-        let buffer = GpuBuffer::new(&Buffer::from_data(
-            BufferUsage::Uniform,
-            BufferAccess::Fixed,
-            Color::WHITE,
-        ))
-        .unwrap();
+        let buffer = graphics
+            .load_buffer(&Buffer::from_data(
+                BufferUsage::Uniform,
+                BufferAccess::Fixed,
+                Color::WHITE,
+            ))
+            .unwrap();
 
         let appearance = AppearanceBuilder::default()
             .model(model)
@@ -401,7 +427,7 @@ impl Ball {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(buffer)),
             ])
-            .build()
+            .build(graphics)
             .unwrap();
 
         let mut object = NewObject::new(appearance);

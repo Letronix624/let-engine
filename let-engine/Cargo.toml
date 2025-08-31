@@ -32,6 +32,7 @@ spin_sleep = "1.2"
 rand = "0.9"
 log = "0.4"
 ctrlc = "3.4.7"
+concurrent-slotmap = "0.2.0-alpha.1"
 
 [dependencies.bytemuck]
 workspace = true
@@ -83,9 +84,6 @@ optional = true
 [dependencies.let-engine-core]
 version = "0.11.0"
 path = "../core"
-
-[build-dependencies]
-shaderc = "0.9"
 
 [dev-dependencies]
 # egui_demo_lib = "0.31"

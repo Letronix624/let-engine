@@ -2,7 +2,7 @@ use shaderc::{CompileOptions, Compiler};
 use std::{ffi::OsString, fs, path::PathBuf};
 
 fn main() {
-    println!("cargo::rerun-if-changed=src/backend/graphics/shaders/");
+    println!("cargo::rerun-if-changed=src/resources/shaders/");
 
     let compiler = Compiler::new().unwrap();
     let mut options = CompileOptions::new().unwrap();
@@ -14,7 +14,7 @@ fn main() {
     let mut fragment_shaders: Vec<(OsString, String)> = vec![];
 
     // Go through every shader in the shaders folder
-    for file in fs::read_dir("src/backend/graphics/shaders").unwrap() {
+    for file in fs::read_dir("src/resources/shaders").unwrap() {
         let file_name = file.as_ref().unwrap().file_name();
         if let Some(ending) = file_name.to_str().unwrap().rsplit_once('.') {
             match ending.1 {

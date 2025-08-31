@@ -5,7 +5,7 @@ use foldhash::{HashMap, HashMapExt};
 use glam::{vec2, Vec2, Vec3, Vec4};
 pub use let_engine_core::{circle, model};
 
-use super::buffer::BufferAccess;
+use super::{buffer::BufferAccess, Format};
 
 /// Vertex and optional index data for the appearance and shape of objects.
 /// Has 3 simple presets.
@@ -396,7 +396,7 @@ impl<V: Vertex> Model<V> {
     }
 }
 
-pub trait LoadedModel<V: Vertex>: Clone + Send + Sync {
+pub trait LoadedModel<V: Vertex>: Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     fn read_vertices<R: FnOnce(&[V])>(&self, f: R) -> Result<(), Self::Error>;
@@ -458,56 +458,43 @@ pub unsafe trait Vertex: AnyBitPattern + Sized + Send + Sync {
     fn description() -> VertexBufferDescription;
 }
 
-unsafe impl Vertex for Vec2 {
-    fn description() -> VertexBufferDescription {
-        let mut members = HashMap::with_capacity(1);
+use paste::paste;
+macro_rules! impl_vertex {
+    ($ty:ty, $format:expr) => {
+        unsafe impl Vertex for $ty {
+            fn description() -> VertexBufferDescription {
+                let mut members = HashMap::with_capacity(1);
 
-        members.insert(
-            "position".to_string(),
-            VertexMemberInfo {
-                offset: 0,
-                format: super::Format::Rg32Float,
-                num_elements: 1,
-                stride: 8,
-            },
-        );
-        VertexBufferDescription { members, stride: 8 }
-    }
+                paste! {
+                    let stride = std::mem::size_of::<[<$ty>]>() as u32;
+
+                    members.insert(
+                        "position".to_string(),
+                        VertexMemberInfo {
+                            offset: 0,
+                            format: Format::$format,
+                            num_elements: 1,
+                            stride,
+                        },
+                    );
+                }
+
+                VertexBufferDescription { members, stride }
+            }
+        }
+    };
 }
 
-unsafe impl Vertex for Vec3 {
-    fn description() -> VertexBufferDescription {
-        let mut members = HashMap::with_capacity(1);
+use glam::{I8Vec4, U8Vec4};
+impl_vertex!(u8, R8Uint);
+impl_vertex!(i8, R8Sint);
+impl_vertex!(U8Vec4, Rgba8Uint);
+impl_vertex!(I8Vec4, Rgba8Sint);
 
-        members.insert(
-            "position".to_string(),
-            VertexMemberInfo {
-                offset: 0,
-                format: super::Format::Rgb32Float,
-                num_elements: 1,
-                stride: 8,
-            },
-        );
-        VertexBufferDescription { members, stride: 8 }
-    }
-}
-
-unsafe impl Vertex for Vec4 {
-    fn description() -> VertexBufferDescription {
-        let mut members = HashMap::with_capacity(1);
-
-        members.insert(
-            "position".to_string(),
-            VertexMemberInfo {
-                offset: 0,
-                format: super::Format::Rgba32Float,
-                num_elements: 1,
-                stride: 8,
-            },
-        );
-        VertexBufferDescription { members, stride: 8 }
-    }
-}
+impl_vertex!(f32, R32Float);
+impl_vertex!(Vec2, Rg32Float);
+impl_vertex!(Vec3, Rgb32Float);
+impl_vertex!(Vec4, Rgba32Float);
 
 /// Describes the contents of a VertexBuffer.
 #[derive(Clone, Debug)]
@@ -525,7 +512,7 @@ pub struct VertexMemberInfo {
     pub offset: u32,
 
     /// The attribute format of the member. Implicitly provides the number of components.
-    pub format: super::Format,
+    pub format: Format,
 
     /// The number of consecutive array elements or matrix columns using `format`.
     /// The corresponding number of locations might differ depending on the size of the format.

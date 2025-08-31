@@ -58,7 +58,7 @@ impl<T: Data> std::ops::DerefMut for Buffer<T> {
     }
 }
 
-pub trait LoadedBuffer<B: Data>: Clone + Send + Sync {
+pub trait LoadedBuffer<B: Data>: Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     fn data<F>(&self, f: F) -> Result<(), Self::Error>

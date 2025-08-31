@@ -214,7 +214,7 @@ impl<T: Loaded> VisualObject<T> {
 
     /// Creates a model matrix for the given object.
     pub fn make_model_matrix(&self) -> Mat4 {
-        let transform = self.appearance.get_transform().combine(self.transform);
+        let transform = self.appearance.transform().combine(self.transform);
 
         Mat4::from_scale_rotation_translation(
             transform.size.extend(0.0),
@@ -229,14 +229,14 @@ impl<T: Loaded> Node<T> {
     pub fn order_position(order: &mut Vec<VisualObject<T>>, objects: &Self) {
         for child in objects.children.iter() {
             let child = child.lock();
-            if !child.object.appearance.get_visible() {
+            if !child.object.appearance.visible() {
                 continue;
             }
             let object = VisualObject::combined(&child.object, &objects.object);
             order.push(object.clone());
             for child in child.children.iter() {
                 let child = child.lock();
-                if !child.object.appearance.get_visible() {
+                if !child.object.appearance.visible() {
                     continue;
                 }
                 order.push(VisualObject {

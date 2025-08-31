@@ -3,8 +3,8 @@
 //! # Controls
 //! - Scroll: change number of vertices
 
-use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
-use let_engine::prelude::*;
+use graphics::VulkanTypes;
+use let_engine::prelude::{graphics::model::ModelId, *};
 use let_engine_core::circle;
 
 const MAX_DEGREE: usize = 1000;
@@ -37,13 +37,13 @@ fn main() {
 
 /// Makes a game struct containing
 struct Game {
-    model: GpuModel<Vec2>,
+    model: ModelId<Vec2>,
     degree: u32,
 }
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(context: &EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Self {
         // First we get the root layer where the scene will be simulated on.
         let root_layer = context.scene.root_layer().clone();
 
@@ -64,25 +64,30 @@ impl Game {
         circle_model.set_max_indices(MAX_DEGREE * 3);
 
         // Load circle model to the GPU.
-        let circle_model = GpuModel::new(&circle_model).unwrap();
+        let circle_model = context.graphics.load_model(&circle_model).unwrap();
 
-        let default_material = GpuMaterial::new_default().unwrap();
+        let default_material = context
+            .graphics
+            .load_material::<Vec2>(&Material::new_default())
+            .unwrap();
 
-        let color_buffer = GpuBuffer::new(&Buffer::from_data(
-            buffer::BufferUsage::Uniform,
-            BufferAccess::Fixed,
-            Color::from_rgb(1.0, 0.3, 0.5),
-        ))
-        .unwrap();
+        let color_buffer = context
+            .graphics
+            .load_buffer(&Buffer::from_data(
+                buffer::BufferUsage::Uniform,
+                BufferAccess::Fixed,
+                Color::from_rgb(1.0, 0.3, 0.5),
+            ))
+            .unwrap();
 
         let circle_appearance = AppearanceBuilder::<VulkanTypes>::default()
-            .model(circle_model.clone())
+            .model(circle_model)
             .material(default_material)
             .descriptors(&[
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(color_buffer)),
             ])
-            .build()
+            .build(&context.graphics)
             .unwrap();
 
         // Makes the circle in the middle.
@@ -101,7 +106,7 @@ impl Game {
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: &EngineContext, event: WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => context.exit(),
             WindowEvent::MouseWheel(ScrollDelta::LineDelta(delta)) => {
@@ -117,14 +122,16 @@ impl let_engine::Game for Game {
 
                 let new_model = circle!(self.degree);
 
-                self.model.write_model(&new_model).unwrap();
+                let model = context.graphics.model(self.model).unwrap();
+
+                model.write_model(&new_model).unwrap();
             }
             _ => (),
         }
     }
 
     // Exit when the escape key is pressed.
-    fn input(&mut self, context: &EngineContext, event: InputEvent) {
+    fn input(&mut self, context: EngineContext, event: InputEvent) {
         if let InputEvent::KeyboardInput { input } = event {
             if let ElementState::Pressed = input.state {
                 if let Key::Named(NamedKey::Escape) = input.key {

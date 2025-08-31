@@ -19,6 +19,36 @@ impl Material {
             graphics_shaders,
         }
     }
+
+    /// Creates simple default shaders, which only draw the object.
+    ///
+    /// # Layout
+    ///
+    /// vertex type: [`Vec2`]
+    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
+    /// set 1, binding 0: [`Color`](crate::prelude::Color)
+    pub fn new_default() -> Self {
+        Self {
+            settings: MaterialSettings::default(),
+            graphics_shaders: GraphicsShaders::new_default(),
+        }
+    }
+
+    /// Creates simple default texture shaders, which only draw the object with a texture.
+    /// The texture can be tinted using the color provided in set 2.
+    ///
+    /// # Layout
+    ///
+    /// vertex type: [`TVert`](crate::prelude::TVert)
+    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
+    /// set 1, binding 0: `(Color, u32)`
+    /// set 2, binding 0: Texture
+    pub fn default_textured() -> Self {
+        Self {
+            settings: MaterialSettings::default(),
+            graphics_shaders: GraphicsShaders::default_textured(),
+        }
+    }
 }
 
 /// Represents different ways in which an object is drawn using its vertices and indices.
@@ -123,6 +153,15 @@ impl GraphicsShaders {
         }
     }
 
+    pub fn new_default() -> Self {
+        Self::new(
+            include_bytes!(concat!(env!("OUT_DIR"), "/default.vert")).to_vec(),
+            "main".to_string(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/default.frag")).to_vec(),
+            "main".to_string(),
+        )
+    }
+
     pub fn new_no_fragment(vertex_bytes: Vec<u8>, vertex_entry_point: String) -> Self {
         Self {
             vertex_bytes,
@@ -130,5 +169,14 @@ impl GraphicsShaders {
             fragment_bytes: None,
             fragment_entry_point: None,
         }
+    }
+
+    pub fn default_textured() -> Self {
+        Self::new(
+            include_bytes!(concat!(env!("OUT_DIR"), "/textured.vert")).to_vec(),
+            "main".to_string(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/textured.frag")).to_vec(),
+            "main".to_string(),
+        )
     }
 }

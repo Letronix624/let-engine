@@ -1,5 +1,6 @@
 //! Texture related options.
 
+use concurrent_slotmap::{Key, SlotId};
 use let_engine_core::resources::{
     buffer::BufferAccess,
     texture::{AddressMode, Filter, LoadedTexture, Sampler, Texture, TextureSettings, ViewTypeDim},
@@ -36,6 +37,21 @@ pub struct GpuTexture {
     staging: Option<Id<Buffer>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TextureId(SlotId);
+
+impl Key for TextureId {
+    #[inline]
+    fn from_id(id: SlotId) -> Self {
+        Self(id)
+    }
+
+    #[inline]
+    fn as_id(self) -> SlotId {
+        self.0
+    }
+}
+
 impl PartialEq for GpuTexture {
     fn eq(&self, other: &Self) -> bool {
         self.image_id == other.image_id
@@ -47,7 +63,7 @@ impl PartialEq for GpuTexture {
 }
 
 impl GpuTexture {
-    pub fn new(texture: &Texture) -> Result<Self, GpuTextureError> {
+    pub(crate) fn new(texture: &Texture) -> Result<Self, GpuTextureError> {
         let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
 
         let settings = texture.settings();
@@ -135,7 +151,7 @@ impl GpuTexture {
     /// Creates a new image that can only be accessed on the GPU.
     ///
     /// `settings.access_pattern` will always be `Fixed`
-    pub fn new_gpu_only(
+    pub(crate) fn new_gpu_only(
         dimensions: ViewTypeDim,
         mut settings: TextureSettings,
     ) -> Result<Self, GpuTextureError> {

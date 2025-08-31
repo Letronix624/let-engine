@@ -32,12 +32,6 @@ impl<T: Loaded> std::fmt::Debug for Scene<T> {
 
 impl<T: Loaded> Default for Scene<T> {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T: Loaded> Scene<T> {
-    pub fn new() -> Self {
         let (root_layer, root_view) = Layer::new_root();
         Self {
             root_layer,
@@ -47,7 +41,9 @@ impl<T: Loaded> Scene<T> {
             physics_pipeline: Default::default(),
         }
     }
+}
 
+impl<T: Loaded> Scene<T> {
     /// Returns the root layer of the scene.
     pub fn root_layer(&self) -> &Arc<Layer<T>> {
         &self.root_layer

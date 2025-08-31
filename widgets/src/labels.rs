@@ -147,10 +147,10 @@ pub struct Label<T: Loaded + 'static> {
     pub font: Font,
     pub transform: Transform,
     sender: Sender<Self>,
-    model: T::Model<TVert>,
-    buffer: T::Buffer<Color>,
-    material: T::Material,
-    texture: T::Texture,
+    material_id: T::MaterialId,
+    buffer_id: T::BufferId<Color>,
+    model_id: T::ModelId<TVert>,
+    texture_id: T::TextureId,
     pub text: String,
 
     buffer_changed: bool,
@@ -179,10 +179,10 @@ impl<T: Loaded + 'static> Label<T> {
         );
 
         let label = Self {
-            model: graphics_interface.load_model(&model)?,
-            buffer: graphics_interface.load_buffer(&buffer)?,
-            material: labelifier.material.clone(),
-            texture: labelifier.texture.clone(),
+            model_id: graphics_interface.load_model(&model)?,
+            buffer_id: graphics_interface.load_buffer(&buffer)?,
+            material_id: labelifier.material_id,
+            texture_id: labelifier.texture_id,
             font: create_info.font,
             transform: create_info.transform,
             text: create_info.text,
@@ -215,15 +215,12 @@ impl<T: Loaded + 'static> Label<T> {
         transform.size *= self.extent.as_vec2();
         AppearanceBuilder::default()
             .transform(transform)
-            .model(self.model.clone())
-            .material(self.material.clone())
+            .model(self.model_id)
+            .material(self.material_id)
             .descriptors(&[
                 (Location::new(0, 0), Descriptor::Mvp),
-                (Location::new(1, 0), Descriptor::buffer(self.buffer.clone())),
-                (
-                    Location::new(2, 0),
-                    Descriptor::Texture(self.texture.clone()),
-                ),
+                (Location::new(1, 0), Descriptor::buffer(self.buffer_id)),
+                (Location::new(2, 0), Descriptor::Texture(self.texture_id)),
             ])
     }
 }
@@ -345,9 +342,9 @@ struct TextVertex {
 
 /// A label maker holding
 pub struct Labelifier<T: Loaded + 'static> {
-    material: T::Material,
+    material_id: T::MaterialId,
 
-    texture: T::Texture,
+    texture_id: T::TextureId,
 
     /// glyph brush font cache,
     glyph_brush: GlyphBrush<TextVertex, usize, FontArc, foldhash::fast::RandomState>,
@@ -396,8 +393,8 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let (sender, receiver) = unbounded();
 
         Ok(Self {
-            material,
-            texture,
+            material_id: material,
+            texture_id: texture,
             glyph_brush,
             sender,
             receiver,
@@ -413,7 +410,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let dims = self.glyph_brush.texture_dimensions();
         let new_texture = Texture::new_empty(dims.into(), TEXTURE_SETTINGS.to_owned())?;
 
-        self.texture = interface.load_texture(&new_texture)?;
+        self.texture_id = interface.load_texture(&new_texture)?;
 
         Ok(())
     }
@@ -442,6 +439,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
     fn update_models(
         mut queued: Vec<DrawTask<T>>,
         brush_action: BrushAction<TextVertex>,
+        interface: &impl GraphicsInterface<T>,
     ) -> Result<()> {
         let BrushAction::Draw(text_vertices) = brush_action else {
             return Ok(());
@@ -453,7 +451,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
         }
 
         for DrawTask { label, vertices } in queued.into_iter() {
-            let model = &label.model;
+            let model = interface.model(label.model_id).unwrap();
 
             // write new vertex buffer
             if vertices.is_empty() {
@@ -469,14 +467,16 @@ impl<T: Loaded + 'static> Labelifier<T> {
     /// Updates the texture and model of every single label queued to be updated.
     ///
     /// Should be called every frame.
-    pub fn update(&mut self) -> Result<()> {
+    pub fn update(&mut self, interface: &impl GraphicsInterface<T>) -> Result<()> {
         let mut queue = vec![];
         while let Ok(label) = self.receiver.try_recv() {
             let id = queue.len();
             self.glyph_brush.queue(label.create_section(id));
 
             if label.buffer_changed {
-                label.buffer.write_data(|color| *color = label.text_color)?;
+                let buffer = interface.buffer(label.buffer_id).unwrap();
+
+                buffer.write_data(|color| *color = label.text_color)?;
             }
 
             queue.push(DrawTask {
@@ -492,14 +492,15 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let brush_action: glyph_brush::BrushAction<TextVertex> = loop {
             let result = self.glyph_brush.process_queued(
                 |rect, src_data| {
+                    let texture = interface.texture(self.texture_id).unwrap();
                     let ViewTypeDim::D2 {
                         x: texture_width, ..
-                    } = self.texture.dimensions()
+                    } = texture.dimensions()
                     else {
                         return;
                     };
 
-                    self.texture
+                    texture
                         .write_data(|texture| {
                             let width = (rect.max[0] - rect.min[0]) as usize;
                             let height = (rect.max[1] - rect.min[1]) as usize;
@@ -534,19 +535,19 @@ impl<T: Loaded + 'static> Labelifier<T> {
             }
         };
 
-        Self::update_models(queue, brush_action)?;
+        Self::update_models(queue, brush_action, interface)?;
 
         Ok(())
     }
 
     /// Returns the global material of all labels.
-    pub fn material(&self) -> &T::Material {
-        &self.material
+    pub fn material_id(&self) -> &T::MaterialId {
+        &self.material_id
     }
 
     /// Returns the global shared texture of all labels.
-    pub fn texture(&self) -> &T::Texture {
-        &self.texture
+    pub fn texture_id(&self) -> &T::TextureId {
+        &self.texture_id
     }
 }
 

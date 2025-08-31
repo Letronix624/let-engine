@@ -1,6 +1,6 @@
 mod instance;
-pub mod shaders;
 use anyhow::Result;
+use concurrent_slotmap::{SlotId, SlotMap};
 use crossbeam::channel::{Receiver, Sender};
 use foldhash::HashMap;
 pub use instance::Queues;
@@ -31,7 +31,13 @@ use vulkano::{
 
 use std::sync::{Arc, OnceLock};
 
-use super::{material::GpuMaterial, DefaultGraphicsBackendError, Graphics};
+use super::{
+    buffer::GpuBuffer,
+    material::{GpuMaterial, MaterialId},
+    model::GpuModel,
+    texture::{GpuTexture, TextureId},
+    DefaultGraphicsBackendError, Graphics,
+};
 
 pub static VK: OnceLock<Vulkan> = OnceLock::new();
 
@@ -49,7 +55,12 @@ pub struct Vulkan {
 
     pub access_queue: (Sender<NewResource>, Receiver<NewResource>),
     pub vulkan_pipeline_cache: Arc<PipelineCache>,
-    pub pipeline_cache: Mutex<HashMap<GpuMaterial, Arc<GraphicsPipeline>>>,
+    pub pipeline_cache: Mutex<HashMap<MaterialId, Arc<GraphicsPipeline>>>,
+
+    pub materials: SlotMap<MaterialId, GpuMaterial>,
+    pub buffers: SlotMap<SlotId, GpuBuffer<u8>>,
+    pub models: SlotMap<SlotId, GpuModel<u8>>,
+    pub textures: SlotMap<TextureId, GpuTexture>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -126,6 +137,11 @@ impl Vulkan {
             access_queue,
             vulkan_pipeline_cache,
             pipeline_cache,
+
+            materials: SlotMap::with_key(255),
+            buffers: SlotMap::new(255),
+            models: SlotMap::new(255),
+            textures: SlotMap::with_key(255),
         })
     }
 
@@ -151,8 +167,8 @@ impl Vulkan {
         self.resources.flight(self.transfer_flight)
     }
 
-    pub fn get_pipeline(&self, material: &GpuMaterial) -> Option<Arc<GraphicsPipeline>> {
-        self.pipeline_cache.lock().get(material).cloned()
+    pub fn get_pipeline(&self, material: MaterialId) -> Option<Arc<GraphicsPipeline>> {
+        self.pipeline_cache.lock().get(&material).cloned()
     }
 }
 

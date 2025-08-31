@@ -1,36 +1,26 @@
 //! Material related settings that determine the way the scene gets rendered.
 
 use anyhow::{Error, Result};
+use concurrent_slotmap::{Key, SlotId};
 use foldhash::HashMap;
-use glam::Vec2;
 use let_engine_core::resources::{
     buffer::Location,
     material::{GraphicsShaders, MaterialSettings},
     model::Vertex,
 };
 
-use std::{
-    hash::BuildHasher,
-    sync::{Arc, OnceLock},
-};
+use std::sync::Arc;
 use thiserror::Error;
 
 use vulkano::{
-    pipeline::graphics::vertex_input::{VertexDefinition, VertexInputRate, VertexInputState},
+    pipeline::graphics::vertex_input::{VertexDefinition, VertexInputState},
     shader::{
         spirv::bytes_to_words, DescriptorBindingRequirements, EntryPoint, ShaderModule,
         ShaderModuleCreateInfo,
     },
 };
 
-use super::{
-    vertex_buffer_description_to_vulkano,
-    vulkan::{
-        shaders::{basic_shaders, default_shaders, default_textured_shaders},
-        VK,
-    },
-    VulkanError,
-};
+use super::{vertex_buffer_description_to_vulkano, vulkan::Vulkan, VulkanError};
 
 /// A material holding the way an object should be drawn.
 #[derive(Clone)]
@@ -39,6 +29,21 @@ pub struct GpuMaterial {
     shaders: VulkanGraphicsShaders,
 
     pub(crate) vertex_input_state: VertexInputState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MaterialId(SlotId);
+
+impl Key for MaterialId {
+    #[inline]
+    fn from_id(id: SlotId) -> Self {
+        Self(id)
+    }
+
+    #[inline]
+    fn as_id(self) -> SlotId {
+        self.0
+    }
 }
 
 /// Errors that occur from material management.
@@ -59,17 +64,6 @@ pub enum GpuMaterialError {
     InvalidSettings(String, String),
 }
 
-impl PartialEq for GpuMaterial {
-    fn eq(&self, other: &Self) -> bool {
-        let vertex_input =
-            eq_vertex_input_state(&self.vertex_input_state, &other.vertex_input_state);
-
-        self.settings == other.settings && self.shaders.hash == other.shaders.hash && vertex_input
-    }
-}
-
-impl Eq for GpuMaterial {}
-
 impl std::fmt::Debug for GpuMaterial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Material")
@@ -79,46 +73,12 @@ impl std::fmt::Debug for GpuMaterial {
     }
 }
 
-impl std::hash::Hash for GpuMaterial {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.settings.hash(state);
-
-        state.write_u64(self.shaders.hash);
-
-        let bindings = self.vertex_input_state.bindings.iter();
-        let attributes = self.vertex_input_state.attributes.iter();
-
-        for (k, v) in bindings {
-            state.write_u32(*k);
-
-            state.write_u32(v.stride);
-            match v.input_rate {
-                VertexInputRate::Vertex => {
-                    state.write_u8(0);
-                }
-                VertexInputRate::Instance { divisor } => {
-                    state.write_u8(1);
-                    state.write_u32(divisor);
-                }
-            }
-        }
-
-        for (k, v) in attributes {
-            state.write_u32(*k);
-
-            state.write_u32(v.binding);
-            state.write_u32(v.offset);
-            v.format.hash(state);
-        }
-    }
-}
-
 /// # Creation
 ///
 /// Right now it produces an error when the shaders do not have a main function.
 impl GpuMaterial {
     /// Creates a new material using the given shaders, settings and write operations.
-    pub fn new<V: Vertex>(
+    pub(crate) fn new<V: Vertex>(
         settings: MaterialSettings,
         shaders: VulkanGraphicsShaders,
     ) -> Result<Self, GpuMaterialError> {
@@ -141,42 +101,13 @@ impl GpuMaterial {
         })
     }
 
-    /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding (0, 0), a [`Vec4`] color vector at (0, 1) and uses [`Vec2`] as the vertex type.
-    pub fn new_default() -> Result<Self, GpuMaterialError> {
-        Self::new::<Vec2>(
-            MaterialSettings::default(),
-            VulkanGraphicsShaders::new_default().map_err(GpuMaterialError::Shader)?,
-        )
-    }
-
-    /// Creates a new default material containing a simple shader that just applies the MVP matrix at binding (0, 0),
-    /// a [`Vec4`] color at (0, 1) and a texture at (0, 2) and uses [`TVert`] as the vertex type.
-    ///
-    /// In the shader the fragment color simply gets set to the texture at that coordinate multiplied by the color.
-    pub fn new_default_textured() -> Result<Self, GpuMaterialError> {
-        Self::new::<let_engine_core::resources::data::TVert>(
-            MaterialSettings::default(),
-            VulkanGraphicsShaders::new_default_textured().map_err(GpuMaterialError::Shader)?,
-        )
-    }
-
-    /// Creates a new material containing a very basic shader that simply displays the model in white without any descriptors.
-    ///
-    /// Uses [`Vec2`] as the vertex type.
-    pub fn new_basic() -> Result<Self, GpuMaterialError> {
-        Self::new::<Vec2>(
-            MaterialSettings::default(),
-            VulkanGraphicsShaders::new_basic().map_err(GpuMaterialError::Shader)?,
-        )
-    }
-
     /// Returns the material settings of this type.
     pub fn settings(&self) -> &MaterialSettings {
         &self.settings
     }
 
     /// Returns the graphics shaders of this material.
-    pub fn graphics_shaders(&self) -> &VulkanGraphicsShaders {
+    pub(crate) fn graphics_shaders(&self) -> &VulkanGraphicsShaders {
         &self.shaders
     }
 }
@@ -252,22 +183,11 @@ impl GpuMaterial {
 
 /// Holds compiled shaders in form of ShaderModules to use in a material.
 #[derive(Clone, Debug)]
-pub struct VulkanGraphicsShaders {
-    pub(crate) vertex: EntryPoint,
-    pub(crate) fragment: Option<EntryPoint>,
-    pub(crate) requirements: HashMap<Location, DescriptorBindingRequirements>,
-    pub(crate) hash: u64,
+pub(crate) struct VulkanGraphicsShaders {
+    pub vertex: EntryPoint,
+    pub fragment: Option<EntryPoint>,
+    pub requirements: HashMap<Location, DescriptorBindingRequirements>,
 }
-
-impl PartialEq for VulkanGraphicsShaders {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-    }
-}
-
-static DEFAULT_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
-static DEFAULT_TEXTURED_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
-static BASIC_SHADER: OnceLock<VulkanGraphicsShaders> = OnceLock::new();
 
 impl VulkanGraphicsShaders {
     /// Creates a shader from SpirV bytes.
@@ -275,15 +195,11 @@ impl VulkanGraphicsShaders {
     /// # Safety
     ///
     /// When loading those shaders the engine does not know if they are right.
-    pub unsafe fn from_bytes(shaders: GraphicsShaders) -> Result<Self, ShaderError> {
-        let vulkan = VK.get().ok_or(ShaderError::BackendNotInitialized)?;
-
+    pub unsafe fn from_bytes(
+        shaders: GraphicsShaders,
+        vulkan: &Vulkan,
+    ) -> Result<Self, ShaderError> {
         let device = vulkan.device.clone();
-
-        let hash = *{
-            let hasher = foldhash::fast::RandomState::default();
-            &hasher.hash_one(shaders.clone())
-        };
 
         let vertex_words =
             bytes_to_words(&shaders.vertex_bytes).map_err(|_| ShaderError::InvalidSpirV)?;
@@ -328,58 +244,7 @@ impl VulkanGraphicsShaders {
             vertex,
             fragment,
             requirements,
-            hash,
         })
-    }
-
-    /// Creates simple default shaders, which only draw the object.
-    ///
-    /// # Layout
-    ///
-    /// vertex type: [`Vec2`]
-    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
-    /// set 1, binding 0: [`Color`](crate::prelude::Color)
-    pub fn new_default() -> Result<Self, ShaderError> {
-        let default = DEFAULT_SHADER.get();
-        if let Some(default) = default {
-            Ok(default.clone())
-        } else {
-            let shaders = unsafe { Self::from_bytes(default_shaders()) }?;
-            DEFAULT_SHADER.set(shaders.clone()).unwrap();
-            Ok(shaders)
-        }
-    }
-
-    /// Creates simple default texture shaders, which only draw the object with a texture.
-    /// The texture can be tinted using the color provided in set 2.
-    ///
-    /// # Layout
-    ///
-    /// vertex type: [`TVert`](crate::prelude::TVert)
-    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
-    /// set 1, binding 0: `(Color, u32)`
-    /// set 2, binding 0: Texture
-    pub fn new_default_textured() -> Result<Self, ShaderError> {
-        let default = DEFAULT_TEXTURED_SHADER.get();
-        if let Some(default) = default {
-            Ok(default.clone())
-        } else {
-            let shaders = unsafe { Self::from_bytes(default_textured_shaders()) }?;
-            DEFAULT_TEXTURED_SHADER.set(shaders.clone()).unwrap();
-            Ok(shaders)
-        }
-    }
-
-    /// Creates a basic shader, which does not take any descriptors and only displays the object in white.
-    pub fn new_basic() -> Result<Self, ShaderError> {
-        let basic = BASIC_SHADER.get();
-        if let Some(basic) = basic {
-            Ok(basic.clone())
-        } else {
-            let shaders = unsafe { Self::from_bytes(basic_shaders()) }?;
-            BASIC_SHADER.set(shaders.clone()).unwrap();
-            Ok(shaders)
-        }
     }
 
     /// Returns a single hashmap of locations and descriptor binding requirements for their corresponding bindings.

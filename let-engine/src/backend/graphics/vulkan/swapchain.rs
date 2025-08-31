@@ -1,5 +1,5 @@
 use glam::UVec2;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use vulkano::device::Device;
 use vulkano::format::Format;
 use vulkano::image::ImageUsage;
@@ -7,7 +7,7 @@ use vulkano::swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, Swapchain
 use vulkano_taskgraph::Id;
 use winit::window::Window;
 
-use crate::backend::graphics::{GraphicsInterface, VulkanError};
+use crate::backend::graphics::VulkanError;
 
 use super::Vulkan;
 
@@ -15,7 +15,7 @@ use super::Vulkan;
 pub fn create_swapchain(
     device: &Arc<Device>,
     surface: Arc<Surface>,
-    interface: &GraphicsInterface,
+    present_modes: &OnceLock<Vec<crate::backend::graphics::PresentMode>>,
     vulkan: &Vulkan,
 ) -> Result<(Id<Swapchain>, UVec2, Format), VulkanError> {
     let surface_capabilities = device
@@ -38,40 +38,24 @@ pub fn create_swapchain(
             .into(),
     );
 
-    let present_mode = device
-        .physical_device()
-        .surface_present_modes(&surface, &SurfaceInfo::default())
-        .map_err(|e| VulkanError::from(e.unwrap()))?
-        .into_iter()
-        .min_by_key(|compare| match compare {
-            PresentMode::Mailbox => 0,
-            PresentMode::Immediate => 1,
-            PresentMode::Fifo => 2,
-            _ => 3,
-        })
-        .unwrap(); // This has to at least contain `Fifo`
-
-    // Set the present mode of the game engine to this.
-    interface.settings.write().present_mode = present_mode.into();
-
     // Give available present modes
-    let mut present_modes: Vec<_> = device
+    let mut available_present_modes: Vec<_> = device
         .physical_device()
         .surface_present_modes(&surface, &SurfaceInfo::default())
         .map_err(|e| VulkanError::from(e.unwrap()))?
         .into_iter()
         .map(|x| x.into())
         .collect();
-    present_modes.dedup();
+    available_present_modes.dedup();
 
-    *interface.available_present_modes.write() = present_modes;
+    present_modes.set(available_present_modes).unwrap();
 
     let create_info = SwapchainCreateInfo {
         min_image_count: surface_capabilities.min_image_count,
         image_format,
         image_extent: inner_size.into(),
         image_usage: ImageUsage::COLOR_ATTACHMENT,
-        present_mode,
+        present_mode: PresentMode::Fifo,
         composite_alpha: surface_capabilities
             .supported_composite_alpha
             .into_iter()

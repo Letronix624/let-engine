@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::Result;
+use concurrent_slotmap::{Key, SlotId};
 use glam::Vec2;
 use let_engine_core::resources::{
     buffer::{BufferAccess, PreferOperation},
@@ -70,18 +71,34 @@ impl PartialEq for AccessMethod {
 /// Representation of a GPU loaded model made out of vertices V.
 ///
 /// This structure does not contain any data but only handles to data stored on the GPU.
-#[derive(Clone)]
 pub struct GpuModel<V: Vertex = Vec2> {
     vertex_buffer_id: Id<Buffer>,
     index_buffer_id: Option<Id<Buffer>>,
+    vertex_buffer_description: VertexBufferDescription,
 
     max_vertices: usize,
     max_indices: usize,
-    vertex_len: Arc<AtomicUsize>,
-    index_len: Arc<AtomicUsize>,
+    vertex_len: AtomicUsize,
+    index_len: AtomicUsize,
 
     access_method: AccessMethod,
+
     _phantom: PhantomData<Arc<V>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ModelId<T: Vertex>(SlotId, PhantomData<T>);
+
+impl<T: Vertex> Key for ModelId<T> {
+    #[inline]
+    fn from_id(id: SlotId) -> Self {
+        Self(id, PhantomData)
+    }
+
+    #[inline]
+    fn as_id(self) -> SlotId {
+        self.0
+    }
 }
 
 impl<V: Vertex> PartialEq for GpuModel<V> {
@@ -94,7 +111,7 @@ impl<V: Vertex> PartialEq for GpuModel<V> {
 
 impl<V: Vertex> GpuModel<V> {
     /// Loads the model into the GPU and returns an instance of this Model handle.
-    pub fn new(model: &Model<V>) -> Result<Self, ModelError> {
+    pub(crate) fn new(model: &Model<V>) -> Result<Self, ModelError> {
         if model.is_empty() {
             return Err(ModelError::EmptyModel);
         }
@@ -250,17 +267,18 @@ impl<V: Vertex> GpuModel<V> {
         Ok(Self {
             vertex_buffer_id,
             index_buffer_id,
+            vertex_buffer_description: V::description(),
             max_vertices,
             max_indices,
-            vertex_len: Arc::new(model.vertex_len().into()),
-            index_len: Arc::new(model.index_len().into()),
+            vertex_len: model.vertex_len().into(),
+            index_len: model.index_len().into(),
             access_method,
             _phantom: PhantomData,
         })
     }
 
     /// Creates a new model that is only accessible in the shaders.
-    pub fn new_gpu_only(
+    pub(crate) fn new_gpu_only(
         vertex_size: DeviceSize,
         index_size: DeviceSize,
     ) -> Result<Self, ModelError> {
@@ -317,10 +335,11 @@ impl<V: Vertex> GpuModel<V> {
         Ok(Self {
             vertex_buffer_id,
             index_buffer_id,
+            vertex_buffer_description: V::description(),
             max_vertices: vertex_size as usize,
             max_indices: index_size as usize,
-            vertex_len: Arc::new((vertex_size as usize).into()),
-            index_len: Arc::new((index_size as usize).into()),
+            vertex_len: (vertex_size as usize).into(),
+            index_len: (index_size as usize).into(),
             access_method: AccessMethod::Fixed,
             _phantom: PhantomData,
         })
@@ -606,6 +625,28 @@ impl<V: Vertex> GpuModel<V> {
             .store(new_index_len, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
+    }
+}
+
+impl<V: Vertex> GpuModel<V> {
+    pub(crate) fn vertex_buffer_id(&self) -> Id<Buffer> {
+        self.vertex_buffer_id
+    }
+
+    pub(crate) fn index_buffer_id(&self) -> Option<Id<Buffer>> {
+        self.index_buffer_id
+    }
+
+    pub(crate) fn vertex_len(&self) -> usize {
+        self.vertex_len.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn index_len(&self) -> usize {
+        self.index_len.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub(crate) fn vertex_buffer_description(&self) -> &VertexBufferDescription {
+        &self.vertex_buffer_description
     }
 }
 
@@ -1009,51 +1050,6 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
             .store(new_index_size, std::sync::atomic::Ordering::Relaxed);
 
         Ok(())
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct DrawableModel {
-    vertex_buffer_id: Id<Buffer>,
-    index_buffer_id: Option<Id<Buffer>>,
-    vertex_buffer_description: VertexBufferDescription,
-    vertex_len: Arc<AtomicUsize>,
-    index_len: Arc<AtomicUsize>,
-}
-
-impl DrawableModel {
-    pub fn from_model<V: Vertex>(model: GpuModel<V>) -> Self {
-        Self {
-            vertex_buffer_id: model.vertex_buffer_id,
-            index_buffer_id: model.index_buffer_id,
-            vertex_buffer_description: V::description(),
-            vertex_len: model.vertex_len.clone(),
-            index_len: model.index_len.clone(),
-        }
-    }
-
-    pub(crate) fn vertex_buffer_description(&self) -> &VertexBufferDescription {
-        &self.vertex_buffer_description
-    }
-
-    pub(crate) fn vertex_buffer_id(&self) -> &Id<Buffer> {
-        &self.vertex_buffer_id
-    }
-
-    pub(crate) fn index_buffer_id(&self) -> Option<&Id<Buffer>> {
-        self.index_buffer_id.as_ref()
-    }
-
-    /// Returns the number of vertices this model contains.
-    pub fn vertex_len(&self) -> usize {
-        self.vertex_len.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Returns the number of indices this model contains.
-    ///
-    /// Returns 0 when this model is not indexed.
-    pub fn index_len(&self) -> usize {
-        self.index_len.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

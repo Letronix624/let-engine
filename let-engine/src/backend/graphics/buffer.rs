@@ -3,6 +3,7 @@ use std::{
     sync::{atomic::AtomicU8, Arc},
 };
 
+use concurrent_slotmap::{Key, SlotId};
 use let_engine_core::resources::{
     buffer::{Buffer, BufferAccess, BufferUsage, LoadedBuffer, PreferOperation},
     data::Data,
@@ -21,7 +22,10 @@ use vulkano_taskgraph::{
     Id,
 };
 
-use super::{vulkan::VK, VulkanError};
+use super::{
+    vulkan::{Vulkan, VK},
+    VulkanError,
+};
 
 #[derive(Clone)]
 enum AccessMethod {
@@ -95,20 +99,33 @@ impl From<AccessMethod> for BufferAccess {
 }
 
 /// A GPU loaded representation of a data buffer.
-#[derive(Clone, PartialEq)]
+#[derive(PartialEq)]
 pub struct GpuBuffer<T: Data> {
-    buffer_id: Id<VkBuffer>,
+    pub(crate) buffer_id: Id<VkBuffer>,
     access_method: AccessMethod,
 
     usage: BufferUsage,
     _phantom_data: PhantomData<Arc<T>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BufferId<T: Data>(SlotId, PhantomData<T>);
+
+impl<T: Data> Key for BufferId<T> {
+    #[inline]
+    fn from_id(id: SlotId) -> Self {
+        Self(id, PhantomData)
+    }
+
+    #[inline]
+    fn as_id(self) -> SlotId {
+        self.0
+    }
+}
+
 impl<T: Data> GpuBuffer<T> {
     /// Creates a new buffer.
-    pub fn new(buffer: &Buffer<T>) -> Result<Self, GpuBufferError> {
-        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
-
+    pub(crate) fn new(buffer: &Buffer<T>, vulkan: &Vulkan) -> Result<Self, GpuBufferError> {
         let buffer_usage = *buffer.usage();
         let usage = match buffer_usage {
             BufferUsage::Uniform => VkBufferUsage::UNIFORM_BUFFER,
@@ -322,9 +339,11 @@ impl<T: Data> GpuBuffer<T> {
     }
 
     /// Creates a new buffer which can only be accessed in the shaders.
-    pub fn new_gpu_only(size: DeviceSize, usage: BufferUsage) -> Result<Self, GpuBufferError> {
-        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
-
+    pub(crate) fn new_gpu_only(
+        size: DeviceSize,
+        usage: BufferUsage,
+        vulkan: &Vulkan,
+    ) -> Result<Self, GpuBufferError> {
         let Some(size) = DeviceLayout::new_unsized::<T>(size) else {
             return Err(GpuBufferError::InvalidSize);
         };
@@ -368,25 +387,6 @@ impl<T: Data> GpuBuffer<T> {
             _phantom_data: PhantomData,
         })
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct DrawableBuffer {
-    buffer_id: Id<VkBuffer>,
-    usage: BufferUsage,
-}
-
-impl DrawableBuffer {
-    pub fn from_buffer<B: Data>(buffer: GpuBuffer<B>) -> Self {
-        Self {
-            buffer_id: buffer.buffer_id,
-            usage: buffer.usage,
-        }
-    }
-
-    pub fn buffer(&self) -> Id<VkBuffer> {
-        self.buffer_id
-    }
 
     pub(crate) fn descriptor_type(&self) -> DescriptorType {
         match self.usage {
@@ -398,12 +398,6 @@ impl DrawableBuffer {
 
 #[derive(Debug, Error)]
 pub enum GpuBufferError {
-    /// Returns when attempting to create a buffer,
-    /// but the engine has not been started with [`Engine::start`](crate::Engine::start),
-    /// or the backend has closed down.
-    #[error("Can not create buffer: Engine not initialized.")]
-    BackendNotInitialized,
-
     /// Returns when a buffer is attempted to be created with an invalid size, either too big or too small.
     #[error("Can not create a buffer: out of bounds size.")]
     InvalidSize,
@@ -428,7 +422,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
     where
         F: FnOnce(&B),
     {
-        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
+        let vulkan = VK.get().unwrap();
 
         let queue = vulkan.queues.transfer();
 
@@ -519,7 +513,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
     where
         F: FnOnce(&mut B),
     {
-        let vulkan = VK.get().ok_or(GpuBufferError::BackendNotInitialized)?;
+        let vulkan = VK.get().unwrap();
         match &self.access_method {
             AccessMethod::Fixed => {
                 return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed))

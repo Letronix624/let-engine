@@ -8,7 +8,7 @@ use derive_builder::Builder;
 use let_engine_core::backend::Backends;
 use parking_lot::Mutex;
 
-use crate::{EngineContext, Game};
+use crate::{Game, GameWrapper};
 
 pub(crate) struct TickSystem {
     settings: Mutex<TickSettings>,
@@ -27,29 +27,33 @@ impl TickSystem {
 }
 
 /// Runs the games `tick` function after every iteration.
-pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G>>) {
+pub(super) fn run<G: Game<B>, B: Backends>(game: Arc<GameWrapper<G, B>>) {
     let mut index: usize = 0;
 
-    let interface = context.tick_system.clone();
     loop {
-        // wait if paused
-        context
-            .tick_system
-            .tick_pause_lock
-            .1
-            .wait_while(&mut interface.tick_pause_lock.0.lock(), |x| *x);
         #[allow(unused_mut)]
-        let mut settings = interface.settings.lock();
+        let mut settings: TickSettings = {
+            let interface = &game.backends.tick_system;
+
+            // wait if paused
+            interface
+                .tick_pause_lock
+                .1
+                .wait_while(&mut interface.tick_pause_lock.0.lock(), |x| *x);
+            interface.settings.lock().clone()
+        };
+
         // capture tick start time.
         let start_time = Instant::now();
 
         // Run the logic
-        game.lock().tick(&context);
+        game.tick();
 
         // update the physics in case they are active in the tick settings.
         #[cfg(feature = "physics")]
-        if context
+        if game
             .scene
+            .lock()
             .physics_iteration(settings.update_physics)
             .is_err()
         {
@@ -61,14 +65,14 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
         let elapsed_time = start_time.elapsed();
 
         // Lock the thread in case the time scale is 0.
-        if context.time.scale() == 0.0 {
-            let mut guard = context.time.zero_cvar.0.lock();
-            context.time.zero_cvar.1.wait(&mut guard);
+        if game.time.scale() == 0.0 {
+            let mut guard = game.time.zero_cvar.0.lock();
+            game.time.zero_cvar.1.wait(&mut guard);
         }
 
         let tick_wait = if settings.time_scale_influence {
             // Multiply the waiting duration with the inverse time scale.
-            settings.tick_wait.mul_f64(1.0 / context.time.scale())
+            settings.tick_wait.mul_f64(1.0 / game.time.scale())
         } else {
             settings.tick_wait
         };
@@ -86,7 +90,7 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
         spin_sleep::sleep(waiting_time);
 
         // report tick in case a reporter is active
-        interface.report.store(Tick {
+        game.backends.tick_system.report.store(Tick {
             duration: elapsed_time,
             waiting_time,
             index,
@@ -94,7 +98,7 @@ pub fn run<G: Game<B>, B: Backends>(context: EngineContext<B>, game: Arc<Mutex<G
 
         index += 1;
 
-        if context.exiting() {
+        if game.exit.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
     }

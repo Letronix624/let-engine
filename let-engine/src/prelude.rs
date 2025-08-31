@@ -40,6 +40,7 @@ pub use joints::*;
 pub use physics::*;
 
 pub use backend::DefaultBackends;
+pub use core_backend::graphics::GraphicsInterface;
 
 // Asset system
 #[cfg(feature = "asset_system")]

@@ -45,6 +45,9 @@ workspace = true
 features = ["simd-stable"]
 optional = true
 
+[build-dependencies]
+shaderc = "0.9"
+
 [features]
 physics = ["dep:rapier2d"]
 serde = ["glam/serde", "rapier2d/serde-serialize"]

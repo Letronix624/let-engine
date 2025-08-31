@@ -1,7 +1,7 @@
 //! 3 Shapes, triangle, square and circle.
 
-use graphics::{buffer::GpuBuffer, material::GpuMaterial, model::GpuModel, VulkanTypes};
-use let_engine::prelude::*;
+use graphics::VulkanTypes;
+use let_engine::prelude::{graphics::buffer::BufferId, *};
 use let_engine_core::circle;
 
 fn main() {
@@ -30,7 +30,7 @@ fn main() {
 
 /// Makes a game struct containing
 struct Game {
-    color_buffer: GpuBuffer<Color>,
+    color_buffer: BufferId<Color>,
     view_cycle: usize,
 
     triangle: Object<VulkanTypes>,
@@ -40,7 +40,7 @@ struct Game {
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(context: &EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Self {
         let root_layer = context.scene.root_layer().clone();
 
         let root_view = context.scene.root_view();
@@ -48,19 +48,24 @@ impl Game {
         root_view.set_scaling(CameraScaling::Expand);
 
         // All shapes are going to share the same material and color.
-        let default_material = GpuMaterial::new_default().unwrap();
+        let default_material = context
+            .graphics
+            .load_material::<Vec2>(&Material::new_default())
+            .unwrap();
 
         let builder = AppearanceBuilder::<VulkanTypes>::default().material(default_material);
 
         // Shape 1: Triangle
-        let triangle_model = GpuModel::new(&model!(triangle)).unwrap();
-        let triangle_buffer = GpuBuffer::new(&Buffer::from_data(
-            buffer::BufferUsage::Uniform,
-            // We will only write to this object.
-            BufferAccess::Pinned(PreferOperation::Write),
-            Color::RED,
-        ))
-        .unwrap();
+        let triangle_model = context.graphics.load_model(&model!(triangle)).unwrap();
+        let triangle_buffer = context
+            .graphics
+            .load_buffer(&Buffer::from_data(
+                buffer::BufferUsage::Uniform,
+                // We will only write to this object.
+                BufferAccess::Pinned(PreferOperation::Write),
+                Color::RED,
+            ))
+            .unwrap();
         let triangle_appearance = builder
             .clone()
             .model(triangle_model)
@@ -68,21 +73,23 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(triangle_buffer)),
             ])
-            .build()
+            .build(&context.graphics)
             .unwrap();
         let mut triangle = NewObject::new(triangle_appearance);
         triangle.transform.position = vec2(-2.0, 0.21); // move triangle to the left
         let triangle = triangle.init(&root_layer).unwrap();
 
         // Shape 2: Square
-        let square_model = GpuModel::new(&model!(square)).unwrap();
-        let square_buffer = GpuBuffer::new(&Buffer::from_data(
-            buffer::BufferUsage::Uniform,
-            // We will only write to this object.
-            BufferAccess::Pinned(PreferOperation::Write),
-            Color::GREEN,
-        ))
-        .unwrap();
+        let square_model = context.graphics.load_model(&model!(square)).unwrap();
+        let square_buffer = context
+            .graphics
+            .load_buffer(&Buffer::from_data(
+                buffer::BufferUsage::Uniform,
+                // We will only write to this object.
+                BufferAccess::Pinned(PreferOperation::Write),
+                Color::GREEN,
+            ))
+            .unwrap();
         let square_appearance = builder
             .clone()
             .model(square_model)
@@ -90,31 +97,30 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(square_buffer)),
             ])
-            .build()
+            .build(&context.graphics)
             .unwrap();
         let square = NewObject::new(square_appearance);
         let square = square.init(&root_layer).unwrap();
 
         // Shape 3: Circle
-        let circle_model = GpuModel::new(&circle!(40)).unwrap();
-        let circle_buffer = GpuBuffer::new(&Buffer::from_data(
-            buffer::BufferUsage::Uniform,
-            // We will only write to this object.
-            BufferAccess::Pinned(PreferOperation::Write),
-            Color::BLUE,
-        ))
-        .unwrap();
+        let circle_model = context.graphics.load_model(&circle!(40)).unwrap();
+        let circle_buffer = context
+            .graphics
+            .load_buffer(&Buffer::from_data(
+                buffer::BufferUsage::Uniform,
+                // We will only write to this object.
+                BufferAccess::Pinned(PreferOperation::Write),
+                Color::BLUE,
+            ))
+            .unwrap();
         let circle_appearance = builder
             .clone()
             .model(circle_model)
             .descriptors(&[
                 (Location::new(0, 0), Descriptor::Mvp),
-                (
-                    Location::new(1, 0),
-                    Descriptor::buffer(circle_buffer.clone()),
-                ),
+                (Location::new(1, 0), Descriptor::buffer(circle_buffer)),
             ])
-            .build()
+            .build(&context.graphics)
             .unwrap();
         let mut circle = NewObject::new(circle_appearance);
         circle.transform.position.x = 2.0; // move circle to the right
@@ -134,13 +140,13 @@ impl Game {
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: &EngineContext, event: events::WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: events::WindowEvent) {
         if let WindowEvent::CloseRequested = event {
             context.exit();
         }
     }
 
-    fn input(&mut self, context: &EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: EngineContext, event: events::InputEvent) {
         if let InputEvent::KeyboardInput { input } = event {
             if let ElementState::Pressed = input.state {
                 match input.key {
@@ -182,8 +188,9 @@ impl let_engine::Game for Game {
         }
     }
 
-    fn update(&mut self, context: &EngineContext<DefaultBackends>) {
-        self.color_buffer
+    fn update(&mut self, context: EngineContext) {
+        let buffer = context.graphics.buffer(self.color_buffer).unwrap();
+        buffer
             .write_data(|w| {
                 *w = w.lerp(
                     Color::from_rgb(1.0, 0.3, 0.5),

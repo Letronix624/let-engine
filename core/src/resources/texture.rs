@@ -17,7 +17,7 @@ pub struct Texture {
     settings: TextureSettings,
 }
 
-pub trait LoadedTexture: Clone + Send + Sync {
+pub trait LoadedTexture: Send + Sync {
     type Error: std::error::Error + Send + Sync;
 
     /// Return the data of the image.
