@@ -267,8 +267,7 @@ impl RigidBody {
     }
 
     pub fn set_linvel(&mut self, linvel: Vec2, wake_up: bool) {
-        let vec = mint::Vector2::from(linvel);
-        self.0.set_linvel(vec.into(), wake_up)
+        self.0.set_linvel(linvel.into(), wake_up)
     }
 
     /// The angular velocity of this rigid-body.
@@ -289,14 +288,12 @@ impl RigidBody {
 
     /// If this rigid body is kinematic, sets its future translation after the next timestep integration.
     pub fn set_next_kinematic_translation(&mut self, translation: Vec2) {
-        let vec = mint::Vector2::from(translation);
-        self.0.set_next_kinematic_translation(vec.into())
+        self.0.set_next_kinematic_translation(translation.into())
     }
 
     /// If this rigid body is kinematic, sets its future position after the next timestep integration.
     pub fn set_next_kinematic_position(&mut self, pos: (Vec2, f32)) {
-        let vec = mint::Vector2::from(pos.0);
-        let iso = Isometry2::new(vec.into(), pos.1);
+        let iso = Isometry2::new(pos.0.into(), pos.1);
         self.0.set_next_kinematic_position(iso)
     }
 
@@ -324,7 +321,6 @@ impl RigidBody {
 impl RigidBody {
     /// The velocity of the given world-space point on this rigid-body.
     pub fn velocity_at_point(&self, point: Vec2) -> Vec2 {
-        let point = mint::Point2::from(point);
         let pos = *self.0.velocity_at_point(&point.into());
         (pos.x, pos.y).into()
     }
@@ -336,8 +332,7 @@ impl RigidBody {
 
     /// The potential energy of this body in a gravity field.
     pub fn gravitational_potential_energy(&self, dt: Real, gravity: Vec2) -> Real {
-        let vec = mint::Vector2::from(gravity);
-        self.0.gravitational_potential_energy(dt, vec.into())
+        self.0.gravitational_potential_energy(dt, gravity.into())
     }
 }
 
@@ -357,8 +352,7 @@ impl RigidBody {
     ///
     /// This does nothing on non-dynamic bodies.
     pub fn add_force(&mut self, force: Vec2, wake_up: bool) {
-        let vec = mint::Vector2::from(force);
-        self.0.add_force(vec.into(), wake_up)
+        self.0.add_force(force.into(), wake_up)
     }
 
     /// Adds to this rigid-body a constant torque at its center-of-mass.
@@ -372,8 +366,6 @@ impl RigidBody {
     ///
     /// This does nothing on non-dynamic bodies.
     pub fn add_force_at_point(&mut self, force: Vec2, point: Vec2, wake_up: bool) {
-        let force = mint::Vector2::from(force);
-        let point = mint::Point2::from(point);
         self.0
             .add_force_at_point(force.into(), point.into(), wake_up)
     }
@@ -385,7 +377,6 @@ impl RigidBody {
     /// The impulse is applied right away, changing the linear velocity.
     /// This does nothing on non-dynamic bodies.
     pub fn apply_impulse(&mut self, impulse: Vec2, wake_up: bool) {
-        let impulse = mint::Vector2::from(impulse);
         self.0.apply_impulse(impulse.into(), wake_up)
     }
 
@@ -400,8 +391,6 @@ impl RigidBody {
     /// The impulse is applied right away, changing the linear and/or angular velocities.
     /// This does nothing on non-dynamic bodies.
     pub fn apply_impulse_at_point(&mut self, impulse: Vec2, point: Vec2, wake_up: bool) {
-        let impulse = mint::Vector2::from(impulse);
-        let point = mint::Point2::from(point);
         self.0
             .apply_impulse_at_point(impulse.into(), point.into(), wake_up)
     }
@@ -586,10 +575,9 @@ impl RigidBodyBuilder {
 
     /// Build a new rigid-body with the parameters configured with this builder.
     pub fn build(&self) -> RigidBody {
-        let linvel = mint::Vector2::from(self.linvel);
         let builder = rapier2d::dynamics::RigidBodyBuilder::new(self.body_type)
             .locked_axes(self.mprops_flags)
-            .linvel(linvel.into())
+            .linvel(self.linvel.into())
             .angvel(self.angvel)
             .gravity_scale(self.gravity_scale)
             .linear_damping(self.linear_damping)

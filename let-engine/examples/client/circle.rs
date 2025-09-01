@@ -44,19 +44,19 @@ struct Game {
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: EngineContext) -> Self {
+        {
+            let root_view = context.scene.root_view_mut();
+
+            // next we set the view of the game scene zoomed out and not stretchy.
+            *root_view.camera_mut() = Transform::with_size(Vec2::splat(2.0));
+            root_view.set_scaling(CameraScaling::Circle);
+        }
+
         // First we get the root layer where the scene will be simulated on.
-        let root_layer = context.scene.root_layer().clone();
+        let root_layer = context.scene.root_layer();
 
-        // The view will exist as long as this variable is kept. Dropping this eliminates the view.
-        let root_view = context.scene.root_view();
-
-        // next we set the view of the game scene zoomed out and not stretchy.
-        root_view.set_camera(Transform::with_size(Vec2::splat(2.0)));
-        root_view.set_scaling(CameraScaling::Circle);
-
+        // Create a "circle" model with a default degree (amount of corners) of 15.
         let degree = 15;
-
-        // Create circle model
         let mut circle_model = circle!(degree, BufferAccess::Staged);
 
         // Raise maximum vertices and indices for growable model
@@ -91,10 +91,10 @@ impl Game {
             .unwrap();
 
         // Makes the circle in the middle.
-        let circle = NewObject::new(circle_appearance);
+        let circle = ObjectBuilder::new(circle_appearance);
 
         // Initializes the object to the layer
-        circle.init(&root_layer).unwrap();
+        context.scene.add_object(root_layer.id(), circle).unwrap();
 
         Self {
             model: circle_model,

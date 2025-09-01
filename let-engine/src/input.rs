@@ -1,8 +1,6 @@
 //! The default input system by the engine.
 
-use let_engine_core::{
-    backend::graphics::Loaded, camera::CameraScaling, objects::scenes::LayerView,
-};
+use let_engine_core::{camera::CameraScaling, objects::scenes::LayerView};
 use std::collections::HashSet;
 pub use winit::event::MouseButton;
 use winit::event::{ElementState, WindowEvent};
@@ -100,7 +98,7 @@ impl Input {
     }
 
     /// Returns the cursor position in layer world space.
-    pub fn cursor_to_world<T: Loaded>(&self, view: &LayerView<T>) -> Vec2 {
+    pub fn cursor_to_world(&self, view: &LayerView) -> Vec2 {
         let dims = self.dimensions;
         let dimensions = view.scaling().scale(dims);
         let cp = self.cursor_position;

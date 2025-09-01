@@ -196,6 +196,14 @@ where
             client,
         ));
 
+        {
+            let game = game.clone();
+            ctrlc::set_handler(move || {
+                game.exit.store(true, Relaxed);
+            })
+            .unwrap();
+        }
+
         game_send.send(game.clone()).unwrap();
 
         #[cfg(not(feature = "client"))]
@@ -238,11 +246,7 @@ where
             .into();
 
         let size = window.inner_size();
-        self.game
-            .scene
-            .lock()
-            .root_view()
-            .set_extent(uvec2(size.width, size.height));
+        *self.game.scene.lock().root_view_mut().extent_mut() = uvec2(size.width, size.height);
 
         self.game.window.set(Window::new(window.clone())).unwrap();
 
@@ -279,7 +283,7 @@ where
             WindowEvent::Resized(size) => {
                 let size = uvec2(size.width, size.height);
                 self.graphics_backend.resize_event(size);
-                self.game.scene.lock().root_view().set_extent(size);
+                *self.game.scene.lock().root_view_mut().extent_mut() = size;
                 events::WindowEvent::Resized(size)
             }
             WindowEvent::CloseRequested => events::WindowEvent::CloseRequested,
@@ -429,7 +433,8 @@ where
         server: <B::Networking as NetworkingBackend>::ServerInterface,
         client: <B::Networking as NetworkingBackend>::ClientInterface,
     ) -> Self {
-        let exit = false.into();
+        let exit: AtomicBool = false.into();
+
         let time = Time::default();
         #[cfg(feature = "client")]
         let input = Mutex::new(Input::default());

@@ -209,6 +209,10 @@ impl GpuTexture {
     pub fn settings(&self) -> &TextureSettings {
         &self.settings
     }
+
+    pub(crate) fn image_id(&self) -> Id<Image> {
+        self.image_id
+    }
 }
 
 impl GpuTexture {

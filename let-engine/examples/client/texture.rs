@@ -42,14 +42,10 @@ struct Game {
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: EngineContext) -> Self {
-        // First we get the root layer where the scene will be simulated on.
-        let root_layer = context.scene.root_layer().clone();
-
-        // The view will exist as long as this variable is kept. Dropping this eliminates the view.
-        let root_view = context.scene.root_view();
-
-        // next we set the view of the game scene zoomed out and not stretchy.
-        root_view.set_scaling(CameraScaling::Expand);
+        context
+            .scene
+            .root_view_mut()
+            .set_scaling(CameraScaling::Expand);
 
         // A square model with textured vertices.
         let model = context
@@ -83,7 +79,7 @@ impl Game {
 
         let default_material = context
             .graphics
-            .load_material::<Vec2>(&Material::default_textured())
+            .load_material::<TVert>(&Material::default_textured())
             .unwrap();
 
         let color_buffer = context
@@ -109,10 +105,13 @@ impl Game {
             .build(&context.graphics)
             .unwrap();
 
-        let object = NewObject::new(appearance);
+        let object = ObjectBuilder::new(appearance);
 
         // Initializes the object to the layer
-        object.init(&root_layer).unwrap();
+        context
+            .scene
+            .add_object(context.scene.root_layer_id(), object)
+            .unwrap();
 
         Self {
             texture: gpu_texture,

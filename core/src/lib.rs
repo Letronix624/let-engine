@@ -7,7 +7,6 @@ use backend::audio::{AudioBackend, AudioBackendError};
 use backend::networking::NetworkingBackend;
 use backend::{graphics::GraphicsBackend, Backends};
 
-use foldhash::HashMap;
 use parking_lot::Mutex;
 use thiserror::Error;
 

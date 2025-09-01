@@ -429,7 +429,7 @@ impl Shape {
             shapes
                 .into_iter()
                 .map(|x| {
-                    let pos = mint::Vector2::from(x.0.position);
+                    let pos = x.0.position;
                     let iso = nalgebra::Isometry2::new(pos.into(), x.0.rotation);
 
                     (iso, x.1 .0)
@@ -455,8 +455,6 @@ impl Shape {
 
     /// Initialize a capsule shape from its endpoints and radius.
     pub fn capsule(a: Vec2, b: Vec2, radius: Real) -> Self {
-        let a = mint::Point2::from(a);
-        let b = mint::Point2::from(b);
         Self(SharedShape::capsule(a.into(), b.into(), radius))
     }
 
@@ -472,24 +470,16 @@ impl Shape {
 
     /// Initialize a segment shape from its endpoints.
     pub fn segment(a: Vec2, b: Vec2) -> Self {
-        let a = mint::Point2::from(a);
-        let b = mint::Point2::from(b);
         Self(SharedShape::segment(a.into(), b.into()))
     }
 
     /// Initializes a triangle shape.
     pub fn triangle(a: Vec2, b: Vec2, c: Vec2) -> Self {
-        let a = mint::Point2::from(a);
-        let b = mint::Point2::from(b);
-        let c = mint::Point2::from(c);
         Self(SharedShape::triangle(a.into(), b.into(), c.into()))
     }
 
     /// Initializes a triangle shape with round corners.
     pub fn round_triangle(a: Vec2, b: Vec2, c: Vec2, radius: Real) -> Self {
-        let a = mint::Point2::from(a);
-        let b = mint::Point2::from(b);
-        let c = mint::Point2::from(c);
         Self(SharedShape::round_triangle(
             a.into(),
             b.into(),
@@ -503,42 +493,21 @@ impl Shape {
     /// If no index buffer is provided, the polyline is assumed to describe a line strip.
     pub fn polyline(vertices: Vec<Vec2>, indices: Option<Vec<[u32; 2]>>) -> Self {
         Self(SharedShape::polyline(
-            vertices
-                .into_iter()
-                .map(|x| {
-                    let x = mint::Point2::from(x);
-                    x.into()
-                })
-                .collect(),
+            vertices.into_iter().map(|x| x.into()).collect(),
             indices,
         ))
     }
 
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.
     pub fn trimesh(vertices: Vec<Vec2>, indices: Vec<[u32; 3]>) -> Self {
-        Self(SharedShape::trimesh(
-            vertices
-                .iter()
-                .map(|x| {
-                    let x = mint::Point2::from(*x);
-                    x.into()
-                })
-                .collect(),
-            indices,
-        ))
+        Self(
+            SharedShape::trimesh(vertices.into_iter().map(|x| x.into()).collect(), indices)
+                .unwrap(),
+        )
     }
     /// Initializes a triangle mesh shape defined by its vertex and index buffers.
     pub fn array_trimesh(data: (Vec<Vec2>, Vec<[u32; 3]>)) -> Self {
-        Self(SharedShape::trimesh(
-            data.0
-                .into_iter()
-                .map(|x| {
-                    let x = mint::Point2::from(x);
-                    x.into()
-                })
-                .collect(),
-            data.1,
-        ))
+        Self(SharedShape::trimesh(data.0.into_iter().map(|x| x.into()).collect(), data.1).unwrap())
     }
 
     /// Initializes a compound shape obtained from the decomposition of the given
@@ -648,7 +617,6 @@ impl Shape {
     /// Initializes an heightfield shape defined by its set of height and a scale
     /// factor along each coordinate axis.
     pub fn heightfield(heights: Vec<Real>, scale: Vec2) -> Self {
-        let scale = mint::Vector2::from(scale);
         Self(SharedShape::heightfield(heights.into(), scale.into()))
     }
 

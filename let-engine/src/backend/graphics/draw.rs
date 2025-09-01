@@ -43,7 +43,7 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use let_engine_core::objects::{
     scenes::{LayerView, Scene},
-    Descriptor, Node, VisualObject,
+    Descriptor,
 };
 
 use glam::{f32::Mat4, UVec2};
@@ -492,10 +492,9 @@ impl Task for DrawTask {
         let scene = &*world.scene;
         let draw = &*world.draw;
 
-        let views: Vec<Arc<LayerView<VulkanTypes>>> = {
-            let view = scene.views().lock();
-            view.iter().cloned().collect()
-        };
+        // TODO: Add order
+        let views: &[LayerView] = std::slice::from_ref(scene.root_view());
+
         cbf.set_viewport(0, std::slice::from_ref(&draw.viewport))?;
 
         let mut suballocator = BumpAllocator::new(draw.view_proj_region);
@@ -517,13 +516,8 @@ impl Task for DrawTask {
         /* Iterate All views */
 
         for (view, (start, range)) in views.iter().zip(camera_allocations) {
-            let layer = view.layer();
+            let layer = scene.layer(view.layer_id()).unwrap();
 
-            // Clear layer views with less references than 3.
-            if Arc::strong_count(view) <= 2 {
-                scene.update();
-                continue;
-            }
             // Skip disabled layer view
             if !view.draw() {
                 continue;
@@ -541,26 +535,15 @@ impl Task for DrawTask {
             write[0] = view.camera().make_view_matrix();
             write[1] = view.make_projection_matrix();
 
-            // Order all objects to the right draw order.
-            let mut order: Vec<VisualObject<VulkanTypes>> =
-                Vec::with_capacity(layer.number_of_objects());
-
-            for object in layer.children().lock().iter() {
-                let object = object.lock();
-                order.push(VisualObject {
-                    transform: object.object.transform,
-                    appearance: object.object.appearance.clone(),
-                });
-                Node::order_position(&mut order, &object);
-            }
-
             let texture_guard = vulkan.textures.pin();
             let buffer_guard = vulkan.buffers.pin();
             let model_guard = vulkan.models.pin();
 
             /* Draw Objects */
 
-            for object in order {
+            for id in layer.object_ids_iter() {
+                let object = scene.object(*id).unwrap();
+
                 let appearance = &object.appearance;
 
                 // Skip objects marked as invisible.

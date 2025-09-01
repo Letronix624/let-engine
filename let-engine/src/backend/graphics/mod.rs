@@ -42,6 +42,7 @@ use vulkano::{
     LoadingError, VulkanError as VulkanoError,
 };
 
+use vulkano_taskgraph::resource::AccessTypes;
 use winit::raw_window_handle::HasDisplayHandle;
 
 pub use vulkano::DeviceSize;
@@ -429,8 +430,12 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     fn remove_buffer<B: Data>(&self, id: BufferId<B>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.buffers.remove(id.as_id(), &self.buffer_guard);
-        // vulkan.remove_resource(vulkan::Resource::Buffer { id, access_types: AccessType });
+        if let Some(buffer) = vulkan.buffers.remove(id.as_id(), &self.buffer_guard) {
+            vulkan.remove_resource(vulkan::Resource::Buffer {
+                id: buffer.buffer_id,
+                access_types: buffer.access_types(),
+            });
+        }
 
         Ok(())
     }
@@ -438,7 +443,18 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     fn remove_model<V: Vertex>(&self, id: ModelId<V>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.models.remove(id.as_id(), &self.model_guard);
+        if let Some(model) = vulkan.models.remove(id.as_id(), &self.model_guard) {
+            vulkan.remove_resource(vulkan::Resource::Buffer {
+                id: model.vertex_buffer_id(),
+                access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
+            });
+            if let Some(id) = model.index_buffer_id() {
+                vulkan.remove_resource(vulkan::Resource::Buffer {
+                    id,
+                    access_types: AccessTypes::INDEX_READ,
+                });
+            }
+        }
 
         Ok(())
     }
@@ -446,7 +462,12 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     fn remove_texture(&self, id: <VulkanTypes as Loaded>::TextureId) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.textures.remove(id, &self.texture_guard);
+        if let Some(texture) = vulkan.textures.remove(id, &self.texture_guard) {
+            vulkan.remove_resource(vulkan::Resource::Image {
+                id: texture.image_id(),
+                access_types: AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
+            });
+        };
 
         Ok(())
     }

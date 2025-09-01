@@ -25,20 +25,20 @@ rkyv = { workspace = true }
 image = { workspace = true }
 indexmap = "2.7"
 paste = "1.0"
-mint = "0.5.9"
 raw-window-handle = "0.6.2"
 half = "2.4"
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 engine-macros = { path = "../macros" }
 kira = "0.10"
+slotmap = "1.0.7"
 
 [dependencies.glam]
 workspace = true
-features = ["bytemuck", "mint"]
+features = ["bytemuck"]
 
 [dependencies.nalgebra]
 workspace = true
-features = ["convert-mint"]
+features = ["convert-glam030"]
 
 [dependencies.rapier2d]
 workspace = true

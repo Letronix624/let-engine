@@ -394,6 +394,17 @@ impl<T: Data> GpuBuffer<T> {
             BufferUsage::Storage => DescriptorType::StorageImage,
         }
     }
+
+    pub(crate) fn access_types(&self) -> AccessTypes {
+        match self.usage {
+            BufferUsage::Uniform => {
+                AccessTypes::VERTEX_SHADER_UNIFORM_READ | AccessTypes::FRAGMENT_SHADER_UNIFORM_READ
+            }
+            BufferUsage::Storage => {
+                AccessTypes::FRAGMENT_SHADER_STORAGE_READ | AccessTypes::VERTEX_SHADER_STORAGE_READ
+            }
+        }
+    }
 }
 
 #[derive(Debug, Error)]

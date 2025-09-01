@@ -49,16 +49,14 @@ impl GenericJoint {
 
     /// Sets the joint’s frame, expressed in the first rigid-body’s local-space.
     pub fn set_local_frame1(&mut self, local_frame: (Vec2, f32)) -> &mut Self {
-        let frame_pos = mint::Vector2::from(local_frame.0);
-        let iso = nalgebra::Isometry2::new(frame_pos.into(), local_frame.1);
+        let iso = nalgebra::Isometry2::new(local_frame.0.into(), local_frame.1);
         self.data.set_local_frame1(iso);
         self
     }
 
     /// Sets the joint’s frame, expressed in the second rigid-body’s local-space.
     pub fn set_local_frame2(&mut self, local_frame: (Vec2, f32)) -> &mut Self {
-        let frame_pos = mint::Vector2::from(local_frame.0);
-        let iso = nalgebra::Isometry2::new(frame_pos.into(), local_frame.1);
+        let iso = nalgebra::Isometry2::new(local_frame.0.into(), local_frame.1);
         self.data.set_local_frame2(iso);
         self
     }
@@ -72,9 +70,8 @@ impl GenericJoint {
 
     /// Sets the principal (local X) axis of this joint, expressed in the first rigid-body’s local-space.
     pub fn set_local_axis1(&mut self, local_axis: Vec2) -> &mut Self {
-        let axis = mint::Vector2::from(local_axis);
         self.data
-            .set_local_axis1(UnitVector::new_normalize(axis.into()));
+            .set_local_axis1(UnitVector::new_normalize(local_axis.into()));
         self
     }
 
@@ -87,9 +84,8 @@ impl GenericJoint {
 
     /// Sets the principal (local X) axis of this joint, expressed in the second rigid-body’s local-space.
     pub fn set_local_axis2(&mut self, local_axis: Vec2) -> &mut Self {
-        let axis = mint::Vector2::from(local_axis);
         self.data
-            .set_local_axis2(UnitVector::new_normalize(axis.into()));
+            .set_local_axis2(UnitVector::new_normalize(local_axis.into()));
         self
     }
 
@@ -102,8 +98,7 @@ impl GenericJoint {
 
     /// Sets anchor of this joint, expressed in the first rigid-body’s local-space.
     pub fn set_local_anchor1(&mut self, anchor1: Vec2) -> &mut Self {
-        let anch = mint::Point2::from(anchor1);
-        self.data.set_local_anchor1(anch.into());
+        self.data.set_local_anchor1(anchor1.into());
         self
     }
 
@@ -116,8 +111,7 @@ impl GenericJoint {
 
     /// Sets anchor of this joint, expressed in the second rigid-body’s local-space.
     pub fn set_local_anchor2(&mut self, anchor2: Vec2) -> &mut Self {
-        let anch = mint::Point2::from(anchor2);
-        self.data.set_local_anchor2(anch.into());
+        self.data.set_local_anchor2(anchor2.into());
         self
     }
 

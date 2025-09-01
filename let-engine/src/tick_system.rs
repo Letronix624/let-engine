@@ -51,15 +51,12 @@ pub(super) fn run<G: Game<B>, B: Backends>(game: Arc<GameWrapper<G, B>>) {
 
         // update the physics in case they are active in the tick settings.
         #[cfg(feature = "physics")]
-        if game
-            .scene
-            .lock()
-            .physics_iteration(settings.update_physics)
-            .is_err()
-        {
-            // Disable physics updating if it fails. Return running this tick system.
-            settings.update_physics = false;
-        };
+        if settings.update_physics {
+            game.scene
+                .lock()
+                .physics_iteration()
+                .expect("Physics iteration failed.") // TODO: Handle problems
+        }
 
         // record the elapsed time.
         let elapsed_time = start_time.elapsed();

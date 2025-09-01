@@ -33,19 +33,19 @@ struct Game {
     color_buffer: BufferId<Color>,
     view_cycle: usize,
 
-    triangle: Object<VulkanTypes>,
-    square: Object<VulkanTypes>,
-    circle: Object<VulkanTypes>,
+    triangle: ObjectId,
+    square: ObjectId,
+    circle: ObjectId,
 }
 
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: EngineContext) -> Self {
-        let root_layer = context.scene.root_layer().clone();
-
-        let root_view = context.scene.root_view();
-        root_view.set_camera(Transform::with_size(Vec2::splat(1.0 / 500.0)));
-        root_view.set_scaling(CameraScaling::Expand);
+        {
+            let root_view = context.scene.root_view_mut();
+            *root_view.camera_mut() = Transform::with_size(Vec2::splat(1.0 / 500.0));
+            root_view.set_scaling(CameraScaling::Expand);
+        }
 
         // All shapes are going to share the same material and color.
         let default_material = context
@@ -75,9 +75,12 @@ impl Game {
             ])
             .build(&context.graphics)
             .unwrap();
-        let mut triangle = NewObject::new(triangle_appearance);
+        let mut triangle = ObjectBuilder::new(triangle_appearance);
         triangle.transform.position = vec2(-2.0, 0.21); // move triangle to the left
-        let triangle = triangle.init(&root_layer).unwrap();
+        let triangle = context
+            .scene
+            .add_object(context.scene.root_layer_id(), triangle)
+            .unwrap();
 
         // Shape 2: Square
         let square_model = context.graphics.load_model(&model!(square)).unwrap();
@@ -99,8 +102,11 @@ impl Game {
             ])
             .build(&context.graphics)
             .unwrap();
-        let square = NewObject::new(square_appearance);
-        let square = square.init(&root_layer).unwrap();
+        let square = ObjectBuilder::new(square_appearance);
+        let square = context
+            .scene
+            .add_object(context.scene.root_layer_id(), square)
+            .unwrap();
 
         // Shape 3: Circle
         let circle_model = context.graphics.load_model(&circle!(40)).unwrap();
@@ -122,9 +128,12 @@ impl Game {
             ])
             .build(&context.graphics)
             .unwrap();
-        let mut circle = NewObject::new(circle_appearance);
+        let mut circle = ObjectBuilder::new(circle_appearance);
         circle.transform.position.x = 2.0; // move circle to the right
-        let circle = circle.init(&root_layer).unwrap();
+        let circle = context
+            .scene
+            .add_object(context.scene.root_layer_id(), circle)
+            .unwrap();
 
         Self {
             color_buffer: circle_buffer,
@@ -160,24 +169,48 @@ impl let_engine::Game for Game {
 
                         match self.view_cycle {
                             0 => {
-                                self.circle.appearance.set_visible(true);
-                                self.circle.sync().unwrap();
+                                context
+                                    .scene
+                                    .object_mut(self.circle)
+                                    .unwrap()
+                                    .appearance
+                                    .set_visible(true);
                             }
                             1 => {
-                                self.triangle.appearance.set_visible(false);
-                                self.triangle.sync().unwrap();
+                                context
+                                    .scene
+                                    .object_mut(self.triangle)
+                                    .unwrap()
+                                    .appearance
+                                    .set_visible(false);
                             }
                             2 => {
-                                self.triangle.appearance.set_visible(true);
-                                self.square.appearance.set_visible(false);
-                                self.triangle.sync().unwrap();
-                                self.square.sync().unwrap();
+                                context
+                                    .scene
+                                    .object_mut(self.triangle)
+                                    .unwrap()
+                                    .appearance
+                                    .set_visible(true);
+                                context
+                                    .scene
+                                    .object_mut(self.square)
+                                    .unwrap()
+                                    .appearance
+                                    .set_visible(false);
                             }
                             3 => {
-                                self.square.appearance.set_visible(true);
-                                self.circle.appearance.set_visible(false);
-                                self.square.sync().unwrap();
-                                self.circle.sync().unwrap();
+                                context
+                                    .scene
+                                    .object_mut(self.square)
+                                    .unwrap()
+                                    .appearance
+                                    .set_visible(true);
+                                context
+                                    .scene
+                                    .object_mut(self.circle)
+                                    .unwrap()
+                                    .appearance
+                                    .set_visible(false);
                             }
                             _ => unreachable!(),
                         }
