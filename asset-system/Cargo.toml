@@ -2,7 +2,7 @@
 name = "asset-system"
 version = "0.1.0"
 authors = ["let"]
-edition = "2021"
+edition = "2024"
 description = "asset management and packing system for games"
 readme = "./README.md"
 repository = "https://github.com/Letronix624/let-engine"
@@ -16,7 +16,7 @@ toml = "0.8"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 foldhash = { workspace = true }
-bincode = { workspace = true }
+bincode = { workspace = true, features = ["serde"]}
 parking_lot = { workspace = true }
 smol = { workspace = true }
 
@@ -49,7 +49,7 @@ optional = true
 toml = "0.8"
 anyhow = { workspace = true }
 foldhash = { workspace = true }
-bincode = { workspace = true }
+bincode = { workspace = true, features = ["serde"]}
 
 [build-dependencies.serde]
 workspace = true

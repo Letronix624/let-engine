@@ -9,51 +9,49 @@ use std::{
     sync::{Arc, OnceLock},
 };
 use vulkano::{
+    DeviceSize, Validated,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
-    descriptor_set::{sys::RawDescriptorSet, DescriptorSet, WriteDescriptorSet},
+    descriptor_set::{DescriptorSet, WriteDescriptorSet, sys::RawDescriptorSet},
     format::Format,
     image::sampler::Sampler,
     memory::{
-        allocator::{
-            suballocator::Region, AllocationCreateInfo, BumpAllocator, DeviceLayout,
-            MemoryTypeFilter, Suballocator,
-        },
         DeviceAlignment,
+        allocator::{
+            AllocationCreateInfo, BumpAllocator, DeviceLayout, MemoryTypeFilter, Suballocator,
+            suballocator::Region,
+        },
     },
     pipeline::{
+        DynamicState, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
         graphics::{
+            GraphicsPipelineCreateInfo,
             color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
             viewport::{Viewport, ViewportState},
-            GraphicsPipelineCreateInfo,
         },
-        DynamicState, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
     },
     swapchain::{Surface, Swapchain, SwapchainCreateInfo},
-    DeviceSize, Validated,
 };
 use vulkano_taskgraph::{
+    Id, Task,
     graph::{AttachmentInfo, CompileInfo, ExecutableTaskGraph, NodeId, TaskGraph},
     resource::AccessTypes,
-    resource_map, Id, Task,
+    resource_map,
 };
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use let_engine_core::objects::{
-    scenes::{LayerView, Scene},
-    Descriptor,
-};
+use let_engine_core::objects::{Descriptor, scenes::Scene};
 
-use glam::{f32::Mat4, UVec2};
+use glam::{UVec2, f32::Mat4};
 
 use crate::backend::graphics::vulkan::NewResource;
 
 use super::{
-    material::MaterialId,
-    vulkan::{swapchain::create_swapchain, topology_to_vulkan, Resource, Vulkan, VK},
     Graphics, PresentMode, VulkanError, VulkanTypes,
+    material::MaterialId,
+    vulkan::{Resource, VK, Vulkan, swapchain::create_swapchain, topology_to_vulkan},
 };
 
 /// Responsible for drawing on the surface.
@@ -489,17 +487,17 @@ impl Task for DrawTask {
     ) -> vulkano_taskgraph::TaskResult {
         let vulkan = VK.get().unwrap();
 
-        let scene = &*world.scene;
-        let draw = &*world.draw;
+        let scene = unsafe { &*world.scene };
+        let draw = unsafe { &*world.draw };
 
         // TODO: Add order
-        let views: &[LayerView] = std::slice::from_ref(scene.root_view());
+        let views = scene.views_iter();
 
-        cbf.set_viewport(0, std::slice::from_ref(&draw.viewport))?;
+        unsafe { cbf.set_viewport(0, std::slice::from_ref(&draw.viewport))? };
 
         let mut suballocator = BumpAllocator::new(draw.view_proj_region);
 
-        let camera_allocations = views.iter().map(|_| {
+        let views = views.map(|(_, view)| {
             let suballocation = suballocator
                 .allocate(
                     DeviceLayout::new_sized::<[Mat4; 2]>(),
@@ -510,12 +508,12 @@ impl Task for DrawTask {
             let start = suballocation.offset;
             let size = suballocation.size;
 
-            (start, size)
+            (view, start, size)
         });
 
         /* Iterate All views */
 
-        for (view, (start, range)) in views.iter().zip(camera_allocations) {
+        for (view, start, range) in views {
             let layer = scene.layer(view.layer_id()).unwrap();
 
             // Skip disabled layer view
@@ -588,14 +586,20 @@ impl Task for DrawTask {
                                 Descriptor::Texture(texture_id) => {
                                     let texture =
                                         vulkan.textures.get(*texture_id, &texture_guard).unwrap();
-                                    let view = texture.image_view().clone();
+                                    let image_view = Some(texture.image_view().clone());
 
-                                    let sampler =
+                                    let sampler = Some(
                                         Sampler::new(&vulkan.device, &texture.vk_sampler())
-                                            .unwrap();
+                                            .unwrap(),
+                                    );
 
-                                    writes.push(WriteDescriptorSet::image_view_sampler(
-                                        binding, view, sampler,
+                                    writes.push(WriteDescriptorSet::image(
+                                        binding,
+                                        vulkano::descriptor_set::DescriptorImageInfo {
+                                            sampler,
+                                            image_view,
+                                            ..Default::default()
+                                        },
                                     ));
                                 }
                                 Descriptor::Buffer(buffer_id) => {
@@ -642,12 +646,12 @@ impl Task for DrawTask {
                 // Bind everything to the command buffer.
                 let model = vulkan
                     .models
-                    .get(appearance.model_id().as_id(), &model_guard)
+                    .get(unsafe { appearance.model_id() }.as_id(), &model_guard)
                     .unwrap();
 
-                cbf.bind_pipeline_graphics(&graphics_pipeline)?;
-                cbf.as_raw()
-                    .bind_descriptor_sets(
+                unsafe { cbf.bind_pipeline_graphics(&graphics_pipeline)? };
+                unsafe {
+                    cbf.as_raw().bind_descriptor_sets(
                         vulkano::pipeline::PipelineBindPoint::Graphics,
                         graphics_pipeline.layout(),
                         0,
@@ -657,16 +661,19 @@ impl Task for DrawTask {
                             .collect::<Vec<&RawDescriptorSet>>(),
                         &[],
                     )
-                    .unwrap();
+                }
+                .unwrap();
                 cbf.destroy_objects(descriptors);
-                cbf.push_constants(graphics_pipeline.layout(), 0, &model_matrix)?;
-                cbf.bind_vertex_buffers(
-                    0,
-                    std::slice::from_ref(&model.vertex_buffer_id()),
-                    &[0],
-                    &[],
-                    &[],
-                )?;
+                unsafe { cbf.push_constants(graphics_pipeline.layout(), 0, &model_matrix)? };
+                unsafe {
+                    cbf.bind_vertex_buffers(
+                        0,
+                        std::slice::from_ref(&model.vertex_buffer_id()),
+                        &[0],
+                        &[],
+                        &[],
+                    )?
+                };
 
                 // Draw object
                 if let Some(index_subbuffer) = model.index_buffer_id() {

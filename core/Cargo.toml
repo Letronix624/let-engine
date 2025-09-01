@@ -23,14 +23,13 @@ serde = { workspace = true }
 foldhash = { workspace = true }
 rkyv = { workspace = true }
 image = { workspace = true }
-indexmap = "2.7"
-paste = "1.0"
-raw-window-handle = "0.6.2"
-half = "2.4"
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
+half = { version = "2.6", features = ["bytemuck"] }
 engine-macros = { path = "../macros" }
+paste = "1.0"
+raw-window-handle = "0.6"
 kira = "0.10"
-slotmap = "1.0.7"
+slotmap = "1.0"
 
 [dependencies.glam]
 workspace = true
@@ -46,7 +45,7 @@ features = ["simd-stable"]
 optional = true
 
 [build-dependencies]
-shaderc = "0.9"
+shaderc = "0.10"
 
 [features]
 physics = ["dep:rapier2d"]

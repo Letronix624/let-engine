@@ -1,3 +1,5 @@
+use std::collections::hash_set::Iter;
+
 use super::*;
 use crate::{backend::graphics::Loaded, camera::*};
 use anyhow::Result;
@@ -9,7 +11,7 @@ use slotmap::{KeyData, SlotMap};
 use crate::Mutex;
 
 /// The whole scene seen with all it's layers.
-pub struct Scene<T: Loaded> {
+pub struct Scene<T: Loaded = ()> {
     layers: SlotMap<LayerId, Layer>,
     root_layer_id: LayerId,
 
@@ -161,6 +163,10 @@ impl<T: Loaded> Scene<T> {
         layer.views.insert(key);
 
         Some(key)
+    }
+
+    pub fn views_iter(&self) -> slotmap::basic::Iter<'_, LayerViewId, LayerView> {
+        self.layer_views.iter()
     }
 
     pub fn view(&self, id: LayerViewId) -> Option<&LayerView> {
@@ -363,7 +369,7 @@ impl Layer {
         self.parent_id
     }
 
-    pub fn object_ids_iter(&self) -> std::collections::hash_set::Iter<ObjectId> {
+    pub fn object_ids_iter(&self) -> Iter<ObjectId> {
         self.objects.iter()
     }
 
@@ -375,6 +381,14 @@ impl Layer {
     /// Returns the number of objects in total initialized into this layer.
     pub fn number_of_objects(&self) -> usize {
         self.objects.len()
+    }
+
+    pub fn view_ids_iter(&self) -> Iter<LayerViewId> {
+        self.views.iter()
+    }
+
+    pub fn layer_ids_iter(&self) -> Iter<LayerId> {
+        self.layers.iter()
     }
 }
 

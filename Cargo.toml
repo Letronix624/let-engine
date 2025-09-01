@@ -10,7 +10,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.11.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/Letronix624/let-engine"
 homepage = "https://let.software" 
 keywords = ["gamedev", "graphics", "engine"]
@@ -42,10 +42,9 @@ opt-level = 3
 
 [workspace.dependencies]
 parking_lot = "0.12"
-foldhash = "0.1"
+foldhash = "0.2"
 anyhow = "1.0"
 thiserror = "2.0"
-bincode = "1.3"
 derive_builder = "0.20"
 crossbeam = "0.8"
 glam = "0.30"
@@ -54,13 +53,14 @@ winit = "0.30"
 rapier2d = "0.28"
 image = "0.25"
 serde = "1.0"
-flate2 = "1.0"
-bzip2 = "0.4"
+flate2 = "1.1"
+bzip2 = "0.6"
 zstd = "0.13"
 xz2 = "0.1"
 lz4 = "1.28"
 smol = "2.0"
 futures = "0.3"
-bytemuck = "1.21"
+bytemuck = "1.23"
 rkyv = "0.8"
+bincode = "2.0"
 

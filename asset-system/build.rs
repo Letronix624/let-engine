@@ -119,7 +119,7 @@ fn main() -> Result<()> {
                 assets.insert(relative_path, data);
             }
             // Serialize the HashMap into Bincode
-            let mut assets = bincode::serialize(&assets)?;
+            let mut assets = bincode::encode_to_vec(&assets, bincode::config::standard())?;
             // Compress the data if enabled
             let compressed_data = compression.compress(&assets, compression_level)?;
             assets = compressed_data;
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let map_data = bincode::serialize(&map)?;
+    let map_data = bincode::serde::encode_to_vec(&map, bincode::config::standard())?;
     fs::write(map_data_path, map_data)?;
 
     Ok(())

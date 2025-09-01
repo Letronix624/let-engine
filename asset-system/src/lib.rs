@@ -114,7 +114,9 @@ use serde::{Deserialize, Serialize};
 /// Every resource path to the disk path where the asset is located with the compression algorithm.
 static MAP: LazyLock<HashMap<String, (std::path::PathBuf, Compression)>> = LazyLock::new(|| {
     let data = include_bytes!(concat!(env!("OUT_DIR"), "/map_data"));
-    bincode::deserialize(data).unwrap_or_default()
+    bincode::serde::decode_from_slice(data, bincode::config::standard())
+        .unwrap_or_default()
+        .0
 });
 
 /// The compression algorithm used for the resources.
@@ -266,7 +268,9 @@ impl Cache {
                 .decompress(&data)
                 .map_err(AssetError::UnsupportedFormat)?;
 
-            bincode::deserialize(&data).map_err(|x| AssetError::UnsupportedFormat(x.into()))?
+            bincode::serde::decode_from_slice(&data, bincode::config::standard())
+                .map_err(|x| AssetError::UnsupportedFormat(x.into()))?
+                .0
         };
 
         let mut result: Option<Arc<[u8]>> = None;

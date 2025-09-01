@@ -491,6 +491,9 @@ impl_vertex!(i8, R8Sint);
 impl_vertex!(U8Vec4, Rgba8Uint);
 impl_vertex!(I8Vec4, Rgba8Sint);
 
+use half::f16;
+impl_vertex!(f16, R16Float);
+
 impl_vertex!(f32, R32Float);
 impl_vertex!(Vec2, Rg32Float);
 impl_vertex!(Vec3, Rgb32Float);
