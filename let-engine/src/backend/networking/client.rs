@@ -412,8 +412,8 @@ impl<Msg> ClientInterface<Msg> {
             let mut last_ord = 0;
 
             while let Ok(size) = socket.udp_socket.recv(&mut buf).await {
-                if let Some(mut message) = buffered_message.take() {
-                    if !message.outdated() {
+                if let Some(mut message) = buffered_message.take()
+                    && !message.outdated() {
                         if message.completed(&buf[..size]) {
                             messages
                                 .send(ClientMessage::Udp(message.consume()))
@@ -424,7 +424,6 @@ impl<Msg> ClientInterface<Msg> {
                         }
                         continue;
                     }
-                }
                 buffered_message = None;
 
                 match size {

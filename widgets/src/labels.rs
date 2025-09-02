@@ -3,31 +3,31 @@
 use std::sync::LazyLock;
 
 use ab_glyph::FontArc;
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam::channel::{Receiver, Sender, unbounded};
 use glyph_brush::ab_glyph::PxScale;
 use glyph_brush::{
-    ab_glyph, BrushAction, BrushError, FontId, GlyphBrush, GlyphBrushBuilder, HorizontalAlign,
-    Layout, Section, SectionBuilder, Text, VerticalAlign,
+    BrushAction, BrushError, FontId, GlyphBrush, GlyphBrushBuilder, HorizontalAlign, Layout,
+    Section, SectionBuilder, Text, VerticalAlign, ab_glyph,
 };
 use let_engine_core::backend::graphics::{GraphicsInterface, Loaded};
 use let_engine_core::objects::{AppearanceBuilder, Color, Descriptor};
 use let_engine_core::resources::buffer::{
     Buffer, BufferAccess, BufferUsage, LoadedBuffer, Location,
 };
-use let_engine_core::resources::data::{tvert, TVert};
+use let_engine_core::resources::data::{TVert, tvert};
 use let_engine_core::resources::material::{
     GraphicsShaders, Material, MaterialSettingsBuilder, Topology,
 };
 
 use anyhow::{Context, Result};
 
-use glam::{uvec2, vec2, UVec2, Vec2};
+use glam::{UVec2, Vec2, uvec2, vec2};
+use let_engine_core::resources::Format;
 use let_engine_core::resources::model::{LoadedModel, Model};
 use let_engine_core::resources::texture::{
     LoadedTexture, Texture, TextureSettings, TextureSettingsBuilder, ViewTypeDim,
 };
-use let_engine_core::resources::Format;
-use let_engine_core::{objects::Transform, Direction};
+use let_engine_core::{Direction, objects::Transform};
 
 /// Info to create default label objects with.
 #[derive(Clone)]
@@ -227,7 +227,7 @@ impl<T: Loaded + 'static> Label<T> {
 
 impl<T: Loaded + 'static> Label<T> {
     /// Create a GlyphBrush section out of this label description.
-    pub(crate) fn create_section(&self, id: usize) -> Section<usize> {
+    pub(crate) fn create_section(&self, id: usize) -> Section<'_, usize> {
         let extent = self.extent.as_vec2();
 
         let text = Text {
@@ -530,7 +530,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
                 }) => {
                     self.glyph_brush.resize_texture(width, height);
                     todo!(); // TODO
-                             // self.texture.resize((width, height).into())?;
+                    // self.texture.resize((width, height).into())?;
                 }
             }
         };

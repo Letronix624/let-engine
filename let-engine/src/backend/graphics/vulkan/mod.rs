@@ -7,8 +7,8 @@ pub use instance::Queues;
 use let_engine_core::resources::material::Topology;
 use parking_lot::Mutex;
 use vulkano_taskgraph::{
-    resource::{AccessTypes, Flight, Resources},
     Id, InvalidSlotError, Ref,
+    resource::{AccessTypes, Flight, Resources},
 };
 use winit::raw_window_handle::HasDisplayHandle;
 #[cfg(feature = "vulkan_debug")]
@@ -23,20 +23,20 @@ use vulkano::{
     device::{Device, DeviceFeatures},
     image::Image,
     pipeline::{
+        GraphicsPipeline,
         cache::{PipelineCache, PipelineCacheCreateInfo},
         graphics::input_assembly::PrimitiveTopology,
-        GraphicsPipeline,
     },
 };
 
 use std::sync::{Arc, OnceLock};
 
 use super::{
+    DefaultGraphicsBackendError, Graphics,
     buffer::GpuBuffer,
     material::{GpuMaterial, MaterialId},
     model::GpuModel,
     texture::{GpuTexture, TextureId},
-    DefaultGraphicsBackendError, Graphics,
 };
 
 pub static VK: OnceLock<Vulkan> = OnceLock::new();
@@ -145,7 +145,7 @@ impl Vulkan {
         })
     }
 
-    pub fn graphics_flight(&self) -> Result<Ref<Flight>, InvalidSlotError> {
+    pub fn graphics_flight(&self) -> Result<Ref<'_, Flight>, InvalidSlotError> {
         self.resources.flight(self.graphics_flight)
     }
 
@@ -163,7 +163,7 @@ impl Vulkan {
             .unwrap()
     }
 
-    pub fn transfer_flight(&self) -> Result<Ref<Flight>, InvalidSlotError> {
+    pub fn transfer_flight(&self) -> Result<Ref<'_, Flight>, InvalidSlotError> {
         self.resources.flight(self.transfer_flight)
     }
 

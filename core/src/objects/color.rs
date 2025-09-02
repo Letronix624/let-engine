@@ -1,6 +1,6 @@
 use engine_macros::Vertex;
 /// A struct that represents a color to use on objects, the clear color or labels.
-use glam::{vec3, vec4, Vec3, Vec4};
+use glam::{Vec3, Vec4, vec3, vec4};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -352,28 +352,36 @@ impl std::ops::DivAssign<Color> for Color {
 impl std::ops::AddAssign<f32> for Color {
     #[inline]
     fn add_assign(&mut self, rhs: f32) {
-        self.rgba.map(|mut x| x.add_assign(rhs));
+        for mut x in self.rgba {
+            x.add_assign(rhs)
+        }
     }
 }
 
 impl std::ops::SubAssign<f32> for Color {
     #[inline]
     fn sub_assign(&mut self, rhs: f32) {
-        self.rgba.map(|mut x| x.sub_assign(rhs));
+        for mut x in self.rgba {
+            x.sub_assign(rhs)
+        }
     }
 }
 
 impl std::ops::MulAssign<f32> for Color {
     #[inline]
     fn mul_assign(&mut self, rhs: f32) {
-        self.rgba.map(|mut x| x.mul_assign(rhs));
+        for mut x in self.rgba {
+            x.mul_assign(rhs)
+        }
     }
 }
 
 impl std::ops::DivAssign<f32> for Color {
     #[inline]
     fn div_assign(&mut self, rhs: f32) {
-        self.rgba.map(|mut x| x.div_assign(rhs));
+        for mut x in self.rgba {
+            x.div_assign(rhs)
+        }
     }
 }
 

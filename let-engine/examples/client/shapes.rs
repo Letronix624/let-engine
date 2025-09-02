@@ -156,67 +156,67 @@ impl let_engine::Game for Game {
     }
 
     fn input(&mut self, context: EngineContext, event: events::InputEvent) {
-        if let InputEvent::KeyboardInput { input } = event {
-            if let ElementState::Pressed = input.state {
-                match input.key {
-                    // Exit when the escape key is pressed.
-                    Key::Named(NamedKey::Escape) => {
-                        context.exit();
-                    }
-                    Key::Named(NamedKey::Space) => {
-                        self.view_cycle = (self.view_cycle + 1) % 4;
-                        log::info!("Mode: {}", self.view_cycle + 1);
-
-                        match self.view_cycle {
-                            0 => {
-                                context
-                                    .scene
-                                    .object_mut(self.circle)
-                                    .unwrap()
-                                    .appearance
-                                    .set_visible(true);
-                            }
-                            1 => {
-                                context
-                                    .scene
-                                    .object_mut(self.triangle)
-                                    .unwrap()
-                                    .appearance
-                                    .set_visible(false);
-                            }
-                            2 => {
-                                context
-                                    .scene
-                                    .object_mut(self.triangle)
-                                    .unwrap()
-                                    .appearance
-                                    .set_visible(true);
-                                context
-                                    .scene
-                                    .object_mut(self.square)
-                                    .unwrap()
-                                    .appearance
-                                    .set_visible(false);
-                            }
-                            3 => {
-                                context
-                                    .scene
-                                    .object_mut(self.square)
-                                    .unwrap()
-                                    .appearance
-                                    .set_visible(true);
-                                context
-                                    .scene
-                                    .object_mut(self.circle)
-                                    .unwrap()
-                                    .appearance
-                                    .set_visible(false);
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                    _ => (),
+        if let InputEvent::KeyboardInput { input } = event
+            && let ElementState::Pressed = input.state
+        {
+            match input.key {
+                // Exit when the escape key is pressed.
+                Key::Named(NamedKey::Escape) => {
+                    context.exit();
                 }
+                Key::Named(NamedKey::Space) => {
+                    self.view_cycle = (self.view_cycle + 1) % 4;
+                    log::info!("Mode: {}", self.view_cycle + 1);
+
+                    match self.view_cycle {
+                        0 => {
+                            context
+                                .scene
+                                .object_mut(self.circle)
+                                .unwrap()
+                                .appearance
+                                .set_visible(true);
+                        }
+                        1 => {
+                            context
+                                .scene
+                                .object_mut(self.triangle)
+                                .unwrap()
+                                .appearance
+                                .set_visible(false);
+                        }
+                        2 => {
+                            context
+                                .scene
+                                .object_mut(self.triangle)
+                                .unwrap()
+                                .appearance
+                                .set_visible(true);
+                            context
+                                .scene
+                                .object_mut(self.square)
+                                .unwrap()
+                                .appearance
+                                .set_visible(false);
+                        }
+                        3 => {
+                            context
+                                .scene
+                                .object_mut(self.square)
+                                .unwrap()
+                                .appearance
+                                .set_visible(true);
+                            context
+                                .scene
+                                .object_mut(self.circle)
+                                .unwrap()
+                                .appearance
+                                .set_visible(false);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                _ => (),
             }
         }
     }

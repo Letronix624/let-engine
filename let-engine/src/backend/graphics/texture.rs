@@ -2,28 +2,28 @@
 
 use concurrent_slotmap::{Key, SlotId};
 use let_engine_core::resources::{
+    SampledFormatType,
     buffer::BufferAccess,
     texture::{AddressMode, Filter, LoadedTexture, Sampler, Texture, TextureSettings, ViewTypeDim},
-    SampledFormatType,
 };
 use vulkano_taskgraph::{
+    Id,
     command_buffer::{CopyBufferToImageInfo, CopyImageToBufferInfo},
     resource::{AccessTypes, HostAccessType, ImageLayoutType},
-    Id,
 };
 
 use std::sync::Arc;
 use vulkano::{
+    DeviceSize,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
     descriptor_set::layout::DescriptorType,
     image::{
+        Image, ImageCreateInfo, ImageType, ImageUsage,
         sampler::{Filter as VkFilter, SamplerAddressMode, SamplerCreateInfo, SamplerMipmapMode},
         view::{ImageView, ImageViewCreateInfo, ImageViewType},
-        Image, ImageCreateInfo, ImageType, ImageUsage,
     },
     memory::allocator::{AllocationCreateInfo, DeviceLayout, MemoryTypeFilter},
     sync::HostAccessError,
-    DeviceSize,
 };
 
 /// A VRAM loaded instance of a texture.
@@ -286,7 +286,7 @@ impl GpuTexture {
         &self.view
     }
 
-    pub(crate) fn vk_sampler(&self) -> vulkano::image::sampler::SamplerCreateInfo {
+    pub(crate) fn vk_sampler(&self) -> vulkano::image::sampler::SamplerCreateInfo<'_> {
         sampler_to_vulkano(
             &self.settings.sampler,
             &self.settings.format.sampled_format_type(),
@@ -426,9 +426,8 @@ impl LoadedTexture for GpuTexture {
 use thiserror::Error;
 
 use super::{
-    format_to_vulkano,
-    vulkan::{Vulkan, VK},
-    VulkanError,
+    VulkanError, format_to_vulkano,
+    vulkan::{VK, Vulkan},
 };
 
 /// Errors that occur from the GPU texture.

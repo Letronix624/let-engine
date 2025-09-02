@@ -1,13 +1,13 @@
 //! Camera and vision related settings.
 
-use glam::{vec2, Vec2};
+use glam::{Vec2, vec2};
 
 use crate::objects::Transform;
 
 /// The Camera scaling modes determine how far you can see when the aspect ratio changes.
 ///
 /// Each mode calculates how far the camera can see in world space units depending on the provided dimensions multiplied by the zoom value.
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub enum CameraScaling {
     /// Keeps the view size fixed from -1  to 1 in both axes regardless of provided dimensions.

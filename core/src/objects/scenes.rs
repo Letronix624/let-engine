@@ -105,10 +105,10 @@ impl<T: Loaded> Scene<T> {
         };
 
         // Remove layer from parent if there is one
-        if let Some(parent_id) = layer.parent_id {
-            if let Some(parent) = self.layers.get_mut(parent_id) {
-                parent.layers.remove(&id);
-            };
+        if let Some(parent_id) = layer.parent_id
+            && let Some(parent) = self.layers.get_mut(parent_id)
+        {
+            parent.layers.remove(&id);
         };
 
         // recursively get all ids to be removed
@@ -259,10 +259,10 @@ impl<T: Loaded> Scene<T> {
         object.physics.remove(&mut layer.physics);
 
         // Remove yourself from parent
-        if let Some(parent_id) = object.parent_id {
-            if let Some(parent) = self.objects.get_mut(parent_id) {
-                parent.children.remove(&id);
-            }
+        if let Some(parent_id) = object.parent_id
+            && let Some(parent) = self.objects.get_mut(parent_id)
+        {
+            parent.children.remove(&id);
         }
 
         // Create removal stack
@@ -369,7 +369,7 @@ impl Layer {
         self.parent_id
     }
 
-    pub fn object_ids_iter(&self) -> Iter<ObjectId> {
+    pub fn object_ids_iter(&self) -> Iter<'_, ObjectId> {
         self.objects.iter()
     }
 
@@ -383,11 +383,11 @@ impl Layer {
         self.objects.len()
     }
 
-    pub fn view_ids_iter(&self) -> Iter<LayerViewId> {
+    pub fn view_ids_iter(&self) -> Iter<'_, LayerViewId> {
         self.views.iter()
     }
 
-    pub fn layer_ids_iter(&self) -> Iter<LayerId> {
+    pub fn layer_ids_iter(&self) -> Iter<'_, LayerId> {
         self.layers.iter()
     }
 }

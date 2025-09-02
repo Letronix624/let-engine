@@ -552,15 +552,14 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
 
                     let texture_format = format_to_vulkano(&texture.settings().format);
 
-                    if let Some(format) = requirement.image_format {
-                        if format != texture_format {
+                    if let Some(format) = requirement.image_format
+                        && format != texture_format {
                             return Err(AppearanceCreationError::WrongTextureFormat {
                                 location: *location,
                                 expected_format: format,
                                 provided_format: texture_format,
                             });
                         }
-                    }
 
                     if requirement.image_multisampled {
                         return Err(AppearanceCreationError::NoMultisampleSupport);

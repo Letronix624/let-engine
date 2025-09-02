@@ -132,12 +132,11 @@ impl let_engine::Game for Game {
 
     // Exit when the escape key is pressed.
     fn input(&mut self, context: EngineContext, event: InputEvent) {
-        if let InputEvent::KeyboardInput { input } = event {
-            if let ElementState::Pressed = input.state {
-                if let Key::Named(NamedKey::Escape) = input.key {
-                    context.exit();
-                }
-            }
+        if let InputEvent::KeyboardInput { input } = event
+            && let ElementState::Pressed = input.state
+            && let Key::Named(NamedKey::Escape) = input.key
+        {
+            context.exit();
         }
     }
 }

@@ -129,41 +129,41 @@ impl let_engine::Game for Game {
     }
 
     fn input(&mut self, context: EngineContext, event: events::InputEvent) {
-        if let InputEvent::KeyboardInput { input } = event {
-            if let ElementState::Pressed = input.state {
-                match input.key {
-                    // Exit when the escape key is pressed.
-                    Key::Named(NamedKey::Escape) => {
-                        context.exit();
-                    }
-                    // Edit texture when space is pressed.
-                    Key::Named(NamedKey::Space) => {
-                        let texture = context.graphics.texture(self.texture).unwrap();
-                        // Write data to the texture
-                        texture
-                            .write_data(|data| {
-                                let mut buffer: ImageBuffer<image::Rgba<u8>, &mut [u8]> =
-                                    ImageBuffer::from_raw(RES.x, RES.y, data).unwrap();
-
-                                const PIXELS: usize = 100000;
-
-                                log::info!("Shifting {PIXELS} pixels");
-                                for _ in 0..PIXELS {
-                                    let c = uvec2(
-                                        rand::random_range(0..RES.x),
-                                        rand::random_range(0..RES.y),
-                                    );
-
-                                    let pixel = buffer.get_pixel_mut(c.x, c.y);
-                                    pixel.0[0..2].iter_mut().for_each(|rgb: &mut u8| {
-                                        *rgb = rgb.rotate_left(1);
-                                    });
-                                }
-                            })
-                            .unwrap();
-                    }
-                    _ => (),
+        if let InputEvent::KeyboardInput { input } = event
+            && let ElementState::Pressed = input.state
+        {
+            match input.key {
+                // Exit when the escape key is pressed.
+                Key::Named(NamedKey::Escape) => {
+                    context.exit();
                 }
+                // Edit texture when space is pressed.
+                Key::Named(NamedKey::Space) => {
+                    let texture = context.graphics.texture(self.texture).unwrap();
+                    // Write data to the texture
+                    texture
+                        .write_data(|data| {
+                            let mut buffer: ImageBuffer<image::Rgba<u8>, &mut [u8]> =
+                                ImageBuffer::from_raw(RES.x, RES.y, data).unwrap();
+
+                            const PIXELS: usize = 100000;
+
+                            log::info!("Shifting {PIXELS} pixels");
+                            for _ in 0..PIXELS {
+                                let c = uvec2(
+                                    rand::random_range(0..RES.x),
+                                    rand::random_range(0..RES.y),
+                                );
+
+                                let pixel = buffer.get_pixel_mut(c.x, c.y);
+                                pixel.0[0..2].iter_mut().for_each(|rgb: &mut u8| {
+                                    *rgb = rgb.rotate_left(1);
+                                });
+                            }
+                        })
+                        .unwrap();
+                }
+                _ => (),
             }
         }
     }

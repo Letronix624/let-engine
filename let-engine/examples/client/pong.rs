@@ -268,30 +268,30 @@ impl let_engine::Game for Game {
     }
 
     fn input(&mut self, context: EngineContext, event: events::InputEvent) {
-        if let InputEvent::KeyboardInput { input } = event {
-            if input.state == ElementState::Pressed {
-                match input.key {
-                    // Exit when the escape key is pressed.
-                    Key::Named(NamedKey::Escape) => context.exit(),
-                    Key::Character(e) => {
-                        if e == *"e" {
-                            // Troll the right paddle
-                            self.right_paddle.shrink(context.scene);
-                        } else if e == *"q" {
-                            // Grow and show the right paddle whos boss.
-                            self.left_paddle.grow(context.scene);
-                        }
+        if let InputEvent::KeyboardInput { input } = event
+            && input.state == ElementState::Pressed
+        {
+            match input.key {
+                // Exit when the escape key is pressed.
+                Key::Named(NamedKey::Escape) => context.exit(),
+                Key::Character(e) => {
+                    if e == *"e" {
+                        // Troll the right paddle
+                        self.right_paddle.shrink(context.scene);
+                    } else if e == *"q" {
+                        // Grow and show the right paddle whos boss.
+                        self.left_paddle.grow(context.scene);
                     }
-                    // Oh, so the left paddle thinks it's funny. I'll show it.
-                    Key::Named(NamedKey::ArrowLeft) => {
-                        self.left_paddle.shrink(context.scene);
-                    }
-                    // I can grow too, noob.
-                    Key::Named(NamedKey::ArrowRight) => {
-                        self.right_paddle.grow(context.scene);
-                    }
-                    _ => (),
                 }
+                // Oh, so the left paddle thinks it's funny. I'll show it.
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.left_paddle.shrink(context.scene);
+                }
+                // I can grow too, noob.
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.right_paddle.grow(context.scene);
+                }
+                _ => (),
             }
         }
     }
