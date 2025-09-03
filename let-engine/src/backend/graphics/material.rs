@@ -15,12 +15,12 @@ use thiserror::Error;
 use vulkano::{
     pipeline::graphics::vertex_input::{VertexDefinition, VertexInputState},
     shader::{
-        spirv::bytes_to_words, DescriptorBindingRequirements, EntryPoint, ShaderModule,
-        ShaderModuleCreateInfo,
+        DescriptorBindingRequirements, EntryPoint, ShaderModule, ShaderModuleCreateInfo,
+        spirv::bytes_to_words,
     },
 };
 
-use super::{vertex_buffer_description_to_vulkano, vulkan::Vulkan, VulkanError};
+use super::{VulkanError, vertex_buffer_description_to_vulkano, vulkan::Vulkan};
 
 /// A material holding the way an object should be drawn.
 #[derive(Clone)]
@@ -84,7 +84,6 @@ impl GpuMaterial {
     ) -> Result<Self, GpuMaterialError> {
         if settings.primitive_restart && settings.topology.is_list() {
             return Err(GpuMaterialError::InvalidSettings(
-                // TODO: What is this?
                 "`primitive_restart = true`".to_string(),
                 format!("`topology = {:?}`", settings.topology),
             ));

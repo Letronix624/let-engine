@@ -6,7 +6,7 @@ pub use winit::event::MouseButton;
 use winit::event::{ElementState, WindowEvent};
 pub use winit::keyboard::*;
 
-use glam::f32::{vec2, Vec2};
+use glam::f32::{Vec2, vec2};
 
 /// Holds the input information to be used in game.
 ///
@@ -108,8 +108,8 @@ impl Input {
         let cam = camera.position;
         let zoom = camera.size;
         vec2(
-            cp[0] * (dimensions.x * zoom.x) + cam[0] * 2.0,
-            cp[1] * (dimensions.y * zoom.y) + cam[1] * 2.0,
+            cp[0] * (dimensions.x * zoom.x) + cam[0],
+            cp[1] * (dimensions.y * zoom.y) + cam[1],
         )
     }
 

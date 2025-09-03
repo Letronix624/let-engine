@@ -99,15 +99,14 @@
 
 #[allow(unused_imports)]
 use std::{
+    fs,
     io::{Read, Write},
     sync::{Arc, LazyLock},
 };
 
-use smol::fs;
-
 use foldhash::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
@@ -216,13 +215,8 @@ pub enum AssetError {
 /// This function can also be called to precache assets here.
 ///
 /// It takes the asset directory relative path to a resource found inside and returns it.
-pub async fn asset(path: &str) -> Result<Arc<[u8]>, AssetError> {
-    CACHE.get_or_load(path).await
-}
-
-/// Exactly the same as [asset] but not async and blocking.
-pub fn asset_blocking(path: &str) -> Result<Arc<[u8]>, AssetError> {
-    smol::block_on(async { CACHE.get_or_load(path).await })
+pub fn asset(path: &str) -> Result<Arc<[u8]>, AssetError> {
+    CACHE.get_or_load(path)
 }
 
 /// Clears the asset cache for unused keys and removes them. When calling the `asset` function for an unloaded asset it takes the same time
@@ -239,7 +233,7 @@ struct Cache {
 
 impl Cache {
     /// Returns the data to an asset using the asset directory relative path to the asset you are trying to access.
-    pub async fn get_or_load(&self, key: &str) -> Result<Arc<[u8]>, AssetError> {
+    pub fn get_or_load(&self, key: &str) -> Result<Arc<[u8]>, AssetError> {
         // Return data if it is listed in the cache
         if let Some(data) = self.map.read().get(key) {
             return Ok(data.clone());
@@ -262,7 +256,7 @@ impl Cache {
         // Decompressed and deserialized HashMap of keys and data
         let map: HashMap<String, Vec<u8>> = {
             // Read from disk,
-            let data = fs::read(asset_path).await.map_err(AssetError::Io)?;
+            let data = fs::read(asset_path).map_err(AssetError::Io)?;
             // Uncompress if it has compression or return an error if it does not have a supported format.
             let data = compression
                 .decompress(&data)

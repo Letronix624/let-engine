@@ -6,40 +6,40 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use buffer::{BufferId, GpuBuffer};
-use concurrent_slotmap::{hyaline::Guard, Key};
-use crossbeam::channel::{bounded, Receiver, Sender};
+use concurrent_slotmap::{Key, hyaline::Guard};
+use crossbeam::channel::{Receiver, Sender, bounded};
 use draw::Draw;
 use glam::UVec2;
 use let_engine_core::{
     backend::graphics::{GraphicsBackend, Loaded},
-    objects::{scenes::Scene, Color, Descriptor},
+    objects::{Color, Descriptor, scenes::Scene},
     resources::{
+        Format,
         buffer::Location,
         data::Data,
         model::{Vertex, VertexBufferDescription},
         texture::LoadedTexture,
-        Format,
     },
 };
 use material::{
-    eq_vertex_input_state, GpuMaterial, MaterialId, ShaderError, VulkanGraphicsShaders,
+    GpuMaterial, MaterialId, ShaderError, VulkanGraphicsShaders, eq_vertex_input_state,
 };
 use model::{GpuModel, ModelId};
 use parking_lot::RwLock;
-use texture::{image_view_type_to_vulkano, GpuTexture, TextureId};
+use texture::{GpuTexture, TextureId, image_view_type_to_vulkano};
 use thiserror::Error;
-use vulkan::{Vulkan, VK};
+use vulkan::{VK, Vulkan};
 use vulkano::{
+    LoadingError, VulkanError as VulkanoError,
     buffer::AllocateBufferError,
     descriptor_set::layout::DescriptorType,
     format::NumericType,
-    image::{view::ImageViewType, AllocateImageError},
+    image::{AllocateImageError, view::ImageViewType},
     memory::allocator::MemoryAllocatorError,
     pipeline::graphics::vertex_input::VertexDefinition,
     shader::spirv::SpirvBytesNotMultipleOf4,
-    LoadingError, VulkanError as VulkanoError,
 };
 
 use vulkano_taskgraph::resource::AccessTypes;
@@ -130,10 +130,10 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         &mut self,
         window: &Arc<
             impl winit::raw_window_handle::HasWindowHandle
-                + HasDisplayHandle
-                + std::any::Any
-                + Send
-                + Sync,
+            + HasDisplayHandle
+            + std::any::Any
+            + Send
+            + Sync,
         >,
     ) {
         // TODO: Remove unwraps
@@ -235,7 +235,9 @@ pub enum AppearanceCreationError {
     /// - `location`: The texture's location.
     /// - `expected_format`: The expected format.
     /// - `provided_format`: The provided format.
-    #[error("Shader requires format {expected_format:?} at texture location {location:?}, but got {provided_format:?}.")]
+    #[error(
+        "Shader requires format {expected_format:?} at texture location {location:?}, but got {provided_format:?}."
+    )]
     WrongTextureFormat {
         location: Location,
         expected_format: vulkano::format::Format,
@@ -553,13 +555,14 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
                     let texture_format = format_to_vulkano(&texture.settings().format);
 
                     if let Some(format) = requirement.image_format
-                        && format != texture_format {
-                            return Err(AppearanceCreationError::WrongTextureFormat {
-                                location: *location,
-                                expected_format: format,
-                                provided_format: texture_format,
-                            });
-                        }
+                        && format != texture_format
+                    {
+                        return Err(AppearanceCreationError::WrongTextureFormat {
+                            location: *location,
+                            expected_format: format,
+                            provided_format: texture_format,
+                        });
+                    }
 
                     if requirement.image_multisampled {
                         return Err(AppearanceCreationError::NoMultisampleSupport);
@@ -809,7 +812,7 @@ pub struct Graphics {
     /// # Default
     ///
     /// - [`Color::BLACK`]
-    pub clear_color: Color, // TODO
+    pub clear_color: Color, // TODO: Clear(Color), Load, DontCare
 
     /// The amount of retries of creating a window surface to attempt before failing
     /// to create the backend.

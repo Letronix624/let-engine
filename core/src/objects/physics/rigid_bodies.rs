@@ -1,6 +1,6 @@
 //! Wrapping of Rapiers rigid bodies to be used with Let Engine and Glam.
 
-use glam::{vec2, Vec2};
+use glam::{Vec2, vec2};
 use nalgebra::Isometry2;
 use rapier2d::prelude::*;
 
@@ -8,8 +8,14 @@ use thiserror::Error;
 
 /// This error gets returned when one of the objects input into register_joint does not have a rigid body to attach the joint to.
 #[derive(Error, Debug)]
-#[error("One of the objects does not have a rigid body")]
-pub struct NoRigidBodyError;
+pub enum AddJointError {
+    #[error("One of the objects does not have a rigid body")]
+    NoRigidBody,
+    #[error("One of the IDs is invalid")]
+    NoObject,
+    #[error("Both objects belong to different layers.")]
+    DifferentLayers,
+}
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};

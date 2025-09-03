@@ -200,6 +200,8 @@ impl<T: Loaded> Scene<T> {
 
         let object_id = self.objects.insert(object);
 
+        self.dirty_objects.push(object_id);
+
         layer.objects.insert(object_id);
 
         Some(object_id)
@@ -226,6 +228,8 @@ impl<T: Loaded> Scene<T> {
 
         let object_id = self.objects.insert(object);
 
+        self.dirty_objects.push(object_id);
+
         self.objects
             .get_mut(parent_id)
             .unwrap()
@@ -238,6 +242,21 @@ impl<T: Loaded> Scene<T> {
 
     pub fn object(&self, id: ObjectId) -> Option<&Object<T>> {
         self.objects.get(id)
+    }
+
+    /// Returns the public transform, the transform of the object with all parents applied.
+    pub fn object_public_transfrom(&self, id: ObjectId) -> Option<Transform> {
+        let object = self.objects.get(id)?;
+        let mut public_transform = object.transform;
+        let mut parent_id = object.parent_id;
+        while let Some(id) = parent_id {
+            let parent = self.objects.get(id).expect("Parent of an object in the object map should ALWAYS exist in the objects map, else there is a bug.");
+
+            public_transform = public_transform.combine(parent.transform);
+            parent_id = parent.parent_id;
+        }
+
+        Some(public_transform)
     }
 
     pub fn object_mut(&mut self, id: ObjectId) -> Option<&mut Object<T>> {
@@ -276,6 +295,40 @@ impl<T: Loaded> Scene<T> {
         }
     }
 
+    /// Adds a joint between object 1 and 2.
+    ///
+    /// Objects must be from the same layer
+    pub fn add_joint(
+        &mut self,
+        object1: ObjectId,
+        object2: ObjectId,
+        data: impl Into<joints::GenericJoint>,
+        wake_up: bool,
+    ) -> Result<ImpulseJointHandle, AddJointError> {
+        let object1 = self.objects.get(object1).ok_or(AddJointError::NoObject)?;
+        let object2 = self.objects.get(object2).ok_or(AddJointError::NoObject)?;
+
+        if object1.layer_id != object2.layer_id {
+            return Err(AddJointError::DifferentLayers);
+        }
+
+        let layer = self
+            .layers
+            .get_mut(object1.layer_id)
+            .expect("Object can not be in an invalid layer.");
+
+        if let (Some(handle1), Some(handle2)) =
+            (object1.rigidbody_handle(), object2.rigidbody_handle())
+        {
+            Ok(layer
+                .physics
+                .impulse_joint_set
+                .insert(handle1, handle2, data.into().data, wake_up))
+        } else {
+            Err(AddJointError::NoRigidBody)
+        }
+    }
+
     /// Updates the scene physics and layers.
     #[cfg(feature = "physics")]
     pub fn physics_iteration(&mut self) -> Result<()> {
@@ -287,19 +340,11 @@ impl<T: Loaded> Scene<T> {
                 continue;
             };
 
+            let public_transform = self.object_public_transfrom(object_id).unwrap();
+
             let Some(layer) = self.layers.get_mut(object.layer_id) else {
                 continue;
             };
-
-            // Calculate public transform of this object
-            let mut public_transform = object.transform;
-            let mut parent_id = object.parent_id;
-            while let Some(id) = parent_id {
-                let parent = self.objects.get(id).expect("Parent of an object in the object map should ALWAYS exist in the objects map, else there is a bug.");
-
-                public_transform = public_transform.combine(parent.transform);
-                parent_id = parent.parent_id;
-            }
 
             let object = self.objects.get_mut(object_id).unwrap();
 
@@ -408,7 +453,7 @@ impl Layer {
             QueryFilter::new(),
         );
 
-        // TODO: Allow user to do this
+        // TODO: Allow user to set max distance
         let result = query_pipeline.project_point(&position.into(), 1000., true);
 
         if let Some((handle, _)) = result {
@@ -566,26 +611,6 @@ impl Layer {
     /// Sets the physics simulation parameters.
     pub fn set_physics_parameters(&mut self, parameters: IntegrationParameters) {
         self.physics.integration_parameters = parameters;
-    }
-
-    /// Adds a joint between object 1 and 2.
-    pub fn add_joint<T: Loaded>(
-        &mut self,
-        object1: &Object<T>,
-        object2: &Object<T>,
-        data: impl Into<joints::GenericJoint>,
-        wake_up: bool,
-    ) -> Result<ImpulseJointHandle, NoRigidBodyError> {
-        if let (Some(handle1), Some(handle2)) =
-            (object1.rigidbody_handle(), object2.rigidbody_handle())
-        {
-            Ok(self
-                .physics
-                .impulse_joint_set
-                .insert(handle1, handle2, data.into().data, wake_up))
-        } else {
-            Err(NoRigidBodyError)
-        }
     }
 
     /// Returns if the joint exists.

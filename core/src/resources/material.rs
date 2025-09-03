@@ -41,7 +41,7 @@ impl Material {
     ///
     /// vertex type: [`TVert`](crate::prelude::TVert)
     /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
-    /// set 1, binding 0: `(Color, u32)`
+    /// set 1, binding 0: [`Color`](crate::prelude::Color)
     /// set 2, binding 0: Texture
     pub fn default_textured() -> Self {
         Self {

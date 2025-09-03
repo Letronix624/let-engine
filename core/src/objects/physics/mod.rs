@@ -10,7 +10,7 @@ mod colliders;
 pub mod joints;
 mod rigid_bodies;
 pub use colliders::{Collider, ColliderBuilder, Shape};
-pub use rigid_bodies::{NoRigidBodyError, RigidBody, RigidBodyBuilder};
+pub use rigid_bodies::{AddJointError, RigidBody, RigidBodyBuilder};
 
 pub use rapier2d::dynamics::{
     CoefficientCombineRule, ImpulseJointHandle, IntegrationParameters, LockedAxes,
@@ -159,8 +159,20 @@ impl std::fmt::Debug for ObjectPhysics {
 }
 impl ObjectPhysics {
     /// Updates the physics part of the objects on Sync.
-    pub fn update(&mut self, transform: Transform, id: ObjectId, layer_physics: &mut Physics) {
+    pub fn update(
+        &mut self,
+        public_transform: Transform,
+        id: ObjectId,
+        layer_physics: &mut Physics,
+    ) {
         let id = id.0.as_ffi() as u128;
+
+        // dbg!(
+        //     self.collider.is_some(),
+        //     self.rigid_body.is_some(),
+        //     self.collider_handle.is_some(),
+        //     self.rigid_body_handle.is_some()
+        // );
 
         // What happens in every combination.
         match (
@@ -171,20 +183,20 @@ impl ObjectPhysics {
         ) {
             // Adds a collider to the collider set.
             (Some(collider), None, None, None) => {
-                collider.0.set_position(transform.into());
+                collider.0.set_position(public_transform.into());
                 collider.0.user_data = id;
                 self.collider_handle = Some(layer_physics.collider_set.insert(collider.0.clone()));
             }
             // Adds a colliderless rigid body to the rigid body set.
             (None, Some(rigid_body), None, None) => {
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let handle = layer_physics.rigid_body_set.insert(rigid_body.0.clone());
                 self.rigid_body_handle = Some(handle);
             }
             // Adds a collider with a rigid body parent to both the collider and rigid body set.
             (Some(collider), Some(rigid_body), None, None) => {
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let pos = self.local_collider_position;
                 let iso = Isometry2::new(pos.into(), 0.0);
@@ -202,7 +214,7 @@ impl ObjectPhysics {
             }
             // Updates the collider in the collider set.
             (Some(collider), None, Some(collider_handle), None) => {
-                collider.0.set_position(transform.into());
+                collider.0.set_position(public_transform.into());
                 let public_collider = layer_physics
                     .collider_set
                     .get_mut(*collider_handle)
@@ -214,14 +226,14 @@ impl ObjectPhysics {
                 layer_physics.remove_collider(*collider_handle);
                 self.collider_handle = None;
 
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 self.rigid_body_handle =
                     Some(layer_physics.rigid_body_set.insert(rigid_body.0.clone()));
             }
             // Updates the collider in the collider set to be parentless at the public position and removes the rigid body from it's set.
             (Some(collider), Some(rigid_body), Some(collider_handle), None) => {
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let rigid_body_handle =
                     Some(layer_physics.rigid_body_set.insert(rigid_body.0.clone()));
@@ -246,13 +258,13 @@ impl ObjectPhysics {
                 layer_physics.remove_rigid_body(*rigid_body_handle, false);
                 self.rigid_body_handle = None;
 
-                collider.0.set_position(transform.into());
+                collider.0.set_position(public_transform.into());
                 collider.0.user_data = id;
                 self.collider_handle = Some(layer_physics.collider_set.insert(collider.0.clone()));
             }
             // Updates the colliderless rigid body in it's rigid body set.
             (None, Some(rigid_body), None, Some(rigid_body_handle)) => {
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let public_body = layer_physics
                     .rigid_body_set
@@ -262,7 +274,7 @@ impl ObjectPhysics {
             }
             // Adds the collider to the collider set giving the rigid body a collider and updating it in it's rigid body set.
             (Some(collider), Some(rigid_body), None, Some(rigid_body_handle)) => {
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
 
                 let pos = self.local_collider_position;
@@ -287,7 +299,7 @@ impl ObjectPhysics {
             }
             // Updates the collider in the collider set and removes it's rigid body parent from it's rigid body set.
             (Some(collider), None, Some(collider_handle), Some(rigid_body_handle)) => {
-                collider.0.set_position(transform.into());
+                collider.0.set_position(public_transform.into());
                 let public_collider = layer_physics
                     .collider_set
                     .get_mut(*collider_handle)
@@ -302,7 +314,7 @@ impl ObjectPhysics {
                 layer_physics.remove_collider(*collider_handle);
                 self.collider_handle = None;
 
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let public_body = layer_physics
                     .rigid_body_set
@@ -321,7 +333,7 @@ impl ObjectPhysics {
                     .unwrap();
                 *public_collider = collider.0.clone();
 
-                rigid_body.0.set_position(transform.into(), true);
+                rigid_body.0.set_position(public_transform.into(), true);
                 rigid_body.0.user_data = id;
                 let public_body = layer_physics
                     .rigid_body_set

@@ -529,7 +529,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
                     suggested: (width, height),
                 }) => {
                     self.glyph_brush.resize_texture(width, height);
-                    todo!(); // TODO
+                    todo!("resize glyph map texture"); // TODO
                     // self.texture.resize((width, height).into())?;
                 }
             }
