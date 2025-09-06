@@ -4,10 +4,6 @@ use crate::objects::Transform;
 use glam::Vec2;
 use rapier2d::{parry::transformation::vhacd::VHACDParameters, prelude::*};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
 pub struct Collider(pub(crate) rapier2d::geometry::Collider);
 
@@ -419,7 +415,6 @@ impl ColliderBuilder {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Shape(pub(crate) SharedShape);
 
 impl Shape {
@@ -432,7 +427,7 @@ impl Shape {
                     let pos = x.0.position;
                     let iso = nalgebra::Isometry2::new(pos.into(), x.0.rotation);
 
-                    (iso, x.1 .0)
+                    (iso, x.1.0)
                 })
                 .collect(),
         ))

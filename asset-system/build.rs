@@ -7,7 +7,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use toml::{map::Map, Table};
+use toml::{Table, map::Map};
 
 fn main() -> Result<()> {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -301,7 +301,7 @@ impl Compression {
             "lempel-ziv-markov-chain-algorithm" => Compression::Lzma,
             #[cfg(feature = "lz4")]
             "lz4" => Compression::Lz4,
-            _ => panic!("the given compression in the config does not exist."),
+            other => panic!("the given compression \"{other}\" does not exist."),
         }
     }
 }

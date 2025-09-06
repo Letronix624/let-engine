@@ -2,7 +2,7 @@ use std::{
     future::Future,
     marker::PhantomData,
     net::ToSocketAddrs,
-    sync::{atomic::AtomicU32, Arc},
+    sync::{Arc, atomic::AtomicU32},
     time::{Duration, Instant},
 };
 
@@ -10,22 +10,22 @@ use anyhow::Result;
 use futures::future::Either;
 use rand::Rng;
 use rkyv::{
+    Serialize,
     api::high::HighSerializer,
     rancor,
     ser::allocator::{Arena, ArenaHandle},
     util::AlignedVec,
-    Serialize,
 };
 use smol::{
+    Timer,
     channel::Sender,
     io::{AsyncReadExt, AsyncWriteExt},
     lock::Mutex,
     net::{TcpStream, UdpSocket},
-    Timer,
 };
 use thiserror::Error;
 
-use super::{Connection, Disconnected, NetworkingSettings, Warning, SAFE_MTU_SIZE};
+use super::{Connection, Disconnected, NetworkingSettings, SAFE_MTU_SIZE, Warning};
 
 struct Socket {
     client: Mutex<Option<TcpStream>>,
@@ -79,7 +79,6 @@ pub(super) enum ClientMessage {
 
 /// A client instance that allows you to connect to a server using the same game engine
 /// and send/receive messages.
-/// Msg must have Serialize and Deserialize from serde implemented.
 pub struct ClientInterface<Msg> {
     socket: Arc<Socket>,
     messages: Sender<ClientMessage>,
@@ -413,17 +412,18 @@ impl<Msg> ClientInterface<Msg> {
 
             while let Ok(size) = socket.udp_socket.recv(&mut buf).await {
                 if let Some(mut message) = buffered_message.take()
-                    && !message.outdated() {
-                        if message.completed(&buf[..size]) {
-                            messages
-                                .send(ClientMessage::Udp(message.consume()))
-                                .await
-                                .unwrap();
-                        } else {
-                            buffered_message = Some(message);
-                        }
-                        continue;
+                    && !message.outdated()
+                {
+                    if message.completed(&buf[..size]) {
+                        messages
+                            .send(ClientMessage::Udp(message.consume()))
+                            .await
+                            .unwrap();
+                    } else {
+                        buffered_message = Some(message);
                     }
+                    continue;
+                }
                 buffered_message = None;
 
                 match size {

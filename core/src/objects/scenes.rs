@@ -2,13 +2,11 @@ use std::collections::hash_set::Iter;
 
 use super::*;
 use crate::{backend::graphics::Loaded, camera::*};
-use anyhow::Result;
 use foldhash::HashSet;
 use glam::UVec2;
-use rapier2d::parry::query::DefaultQueryDispatcher;
-use slotmap::{KeyData, SlotMap};
-
-use crate::Mutex;
+use slotmap::SlotMap;
+#[cfg(feature = "physics")]
+use {rapier2d::parry::query::DefaultQueryDispatcher, slotmap::KeyData};
 
 /// The whole scene seen with all it's layers.
 pub struct Scene<T: Loaded = ()> {
@@ -23,7 +21,7 @@ pub struct Scene<T: Loaded = ()> {
     #[cfg(feature = "physics")]
     dirty_objects: Vec<ObjectId>,
     #[cfg(feature = "physics")]
-    physics_pipeline: Mutex<PhysicsPipeline>,
+    physics_pipeline: crate::Mutex<PhysicsPipeline>,
 }
 
 impl<T: Loaded> Default for Scene<T> {
@@ -195,11 +193,13 @@ impl<T: Loaded> Scene<T> {
             children: HashSet::default(),
             parent_id: None,
             layer_id,
+            #[cfg(feature = "physics")]
             physics: builder.physics,
         };
 
         let object_id = self.objects.insert(object);
 
+        #[cfg(feature = "physics")]
         self.dirty_objects.push(object_id);
 
         layer.objects.insert(object_id);
@@ -223,11 +223,13 @@ impl<T: Loaded> Scene<T> {
             children: HashSet::default(),
             parent_id: Some(parent_id),
             layer_id: layer.id,
+            #[cfg(feature = "physics")]
             physics: builder.physics,
         };
 
         let object_id = self.objects.insert(object);
 
+        #[cfg(feature = "physics")]
         self.dirty_objects.push(object_id);
 
         self.objects
@@ -261,6 +263,7 @@ impl<T: Loaded> Scene<T> {
 
     pub fn object_mut(&mut self, id: ObjectId) -> Option<&mut Object<T>> {
         let object = self.objects.get_mut(id)?;
+        #[cfg(feature = "physics")]
         self.dirty_objects.push(id);
         Some(object)
     }
@@ -298,6 +301,7 @@ impl<T: Loaded> Scene<T> {
     /// Adds a joint between object 1 and 2.
     ///
     /// Objects must be from the same layer
+    #[cfg(feature = "physics")]
     pub fn add_joint(
         &mut self,
         object1: ObjectId,
@@ -331,7 +335,7 @@ impl<T: Loaded> Scene<T> {
 
     /// Updates the scene physics and layers.
     #[cfg(feature = "physics")]
-    pub fn physics_iteration(&mut self) -> Result<()> {
+    pub fn physics_iteration(&mut self) -> anyhow::Result<()> {
         let mut pipeline = self.physics_pipeline.lock();
 
         // Update physics location of all updated objects

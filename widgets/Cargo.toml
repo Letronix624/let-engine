@@ -30,7 +30,6 @@ workspace = true
 features = ["bytemuck", "mint"]
 
 [features]
-serde = ["glam/serde"]
 
 rand = ["glam/rand"]
 fast-math = ["glam/fast-math"]

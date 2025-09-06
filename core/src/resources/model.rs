@@ -2,10 +2,10 @@ use bytemuck::AnyBitPattern;
 pub use engine_macros::Vertex;
 use foldhash::{HashMap, HashMapExt};
 
-use glam::{vec2, Vec2, Vec3, Vec4};
+use glam::{Vec2, Vec3, Vec4, vec2};
 pub use let_engine_core::{circle, model};
 
-use super::{buffer::BufferAccess, Format};
+use super::{Format, buffer::BufferAccess};
 
 /// Vertex and optional index data for the appearance and shape of objects.
 /// Has 3 simple presets.
@@ -403,7 +403,7 @@ pub trait LoadedModel<V: Vertex>: Send + Sync {
     fn read_indices<R: FnOnce(&[u32])>(&self, f: R) -> Result<(), Self::Error>;
 
     fn write_vertices<W: FnOnce(&mut [V])>(&self, f: W, new_size: usize)
-        -> Result<(), Self::Error>;
+    -> Result<(), Self::Error>;
     fn write_indices<W: FnOnce(&mut [u32])>(
         &self,
         f: W,
@@ -559,7 +559,7 @@ const SQUARE_2D: [Vec2; 6] = [
 
 /// A macro that makes it easy to create circles.
 ///
-/// Returns [Data](let_engine::resources::data::Data) with vertices and indices.
+/// Returns a `Model<Vec2>` with vertices and indices.
 ///
 /// ### $corners
 /// Using this with a `u32` makes a circle fan with as many corners as given.
@@ -574,10 +574,10 @@ const SQUARE_2D: [Vec2; 6] = [
 /// ```rust
 /// use let_engine::prelude::*;
 ///
-/// let hexagon: Data = circle!(6); // Makes a hexagon.
+/// let hexagon: Model<Vec2> = circle!(6); // Makes a hexagon.
 ///
 /// // Makes a pie circle fan with 20 edges with the top right part missing a quarter piece.
-/// let pie: Data = circle!(20, 0.75);
+/// let pie: Model<Vec2> = circle!(20, 0.75);
 /// ```
 ///
 /// ## Tip
@@ -630,7 +630,7 @@ macro_rules! circle {
     // Pie circle
     ($corners:expr, $percent:expr, $access:expr) => {{
         use let_engine::{
-            glam::{vec2, Vec2},
+            glam::{Vec2, vec2},
             resources::model::Model,
         };
 

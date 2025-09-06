@@ -2,11 +2,7 @@ use engine_macros::Vertex;
 /// A struct that represents a color to use on objects, the clear color or labels.
 use glam::{Vec3, Vec4, vec3, vec4};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
 /// Representation of a color in form of 4 `f32`'s for R, G, B and A.
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default, Clone, Copy, Debug, PartialEq, bytemuck::AnyBitPattern, Vertex)]
 #[repr(C)]
 pub struct Color {

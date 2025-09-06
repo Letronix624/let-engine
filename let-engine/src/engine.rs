@@ -48,7 +48,7 @@ Represents the game application with essential methods for a game's lifetime.
 use let_engine::prelude::*;
 struct Game;
 impl let_engine::Game<DefaultBackends> for Game {
-    fn update(&mut self) {
+    fn update(&mut self, context: EngineContext) {
         // runs every frame or every engine loop update.
         //...
     }
@@ -100,9 +100,6 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
 }
 
 /// The struct that holds and executes all of the game data.
-///
-/// Generic `Msg` that requires to be serde serialisable and deserialisable, is the message that can be sent/received from a remote
-/// to be interpreted in the `net_event` function of `game`.
 pub struct Engine<G, B = DefaultBackends>
 where
     G: Game<B>,
@@ -794,22 +791,18 @@ mod tests {
     fn start_engine() -> anyhow::Result<()> {
         struct Game {
             number: u32,
-            exit: bool,
         }
         impl Game {
             pub fn new() -> Self {
-                Self {
-                    number: 0,
-                    exit: false,
-                }
+                Self { number: 0 }
             }
         }
 
         impl crate::Game for Game {
-            fn tick(&mut self, _context: &EngineContext) {
+            fn tick(&mut self, context: EngineContext) {
                 self.number += 1;
                 if self.number > 62 {
-                    self.exit = true;
+                    context.exit();
                 }
             }
         }

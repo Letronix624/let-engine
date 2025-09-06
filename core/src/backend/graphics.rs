@@ -1,10 +1,10 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use glam::UVec2;
 
 use crate::{
-    objects::{Descriptor, scenes::Scene},
+    objects::Descriptor,
     resources::{
         buffer::{Buffer, BufferUsage, LoadedBuffer, Location},
         data::Data,
@@ -32,21 +32,23 @@ pub trait GraphicsBackend: Sized {
     /// Also returns the interfacer for user input to the graphics backend.
     fn new(
         settings: &Self::Settings,
-        event_loop: &winit::event_loop::EventLoop<()>,
+        #[cfg(feature = "client")] event_loop: &winit::event_loop::EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error>;
 
     /// Gives a window reference to the backend to draw to.
+    #[cfg(feature = "client")]
     fn init_window(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
-        window: &Arc<winit::window::Window>,
+        window: &std::sync::Arc<winit::window::Window>,
     );
 
     /// This is used for draws. A function `pre_present_notify` gets included,
     /// which should be called right before presenting for optimisation.
+    #[cfg(feature = "client")]
     fn draw(
         &mut self,
-        scene: &Scene<Self::LoadedTypes>,
+        scene: &crate::objects::scenes::Scene<Self::LoadedTypes>,
         pre_present_notify: impl FnOnce(),
     ) -> Result<(), Self::Error>;
 
@@ -238,19 +240,25 @@ impl GraphicsBackend for () {
 
     fn new(
         _settings: &Self::Settings,
-        _event_loop: &winit::event_loop::EventLoop<()>,
+        #[cfg(feature = "client")] _event_loop: &winit::event_loop::EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error> {
         Ok(((), ()))
     }
 
+    #[cfg(feature = "client")]
     fn init_window(
         &mut self,
         _event_loop: &winit::event_loop::ActiveEventLoop,
-        _window: &Arc<winit::window::Window>,
+        _window: &std::sync::Arc<winit::window::Window>,
     ) {
     }
 
-    fn draw(&mut self, _scene: &Scene<Self>, _: impl FnOnce()) -> Result<(), Self::Error> {
+    #[cfg(feature = "client")]
+    fn draw(
+        &mut self,
+        _scene: &crate::objects::scenes::Scene<Self>,
+        _: impl FnOnce(),
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 

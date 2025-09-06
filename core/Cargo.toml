@@ -47,11 +47,10 @@ optional = true
 shaderc = "0.9"
 
 [features]
-graphics = ["dep:winit"]
-egui = ["graphics", "dep:egui"]
+client = ["dep:winit"]
+egui = ["client", "dep:egui"]
 
 physics = ["dep:rapier2d"]
-serde = ["glam/serde", "rapier2d/serde-serialize"]
 
 rand = ["glam/rand"]
 fast-math = ["glam/fast-math"]

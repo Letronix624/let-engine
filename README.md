@@ -30,7 +30,7 @@ If you for some reason at all are interested in using this game engine, I recomm
 
 - Post processing
 
-- Serialisation, Deserialisation with Serde
+- Serialisation, Deserialisation
 
 - Better labels with text edit and caret
 

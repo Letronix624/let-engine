@@ -1,16 +1,16 @@
 /// The audio backend using Kira.
 use std::sync::Arc;
 
+use crate::Mutex;
 use glam::{Quat, Vec3};
-pub use kira::{
-    backend::{mock::MockBackend, Backend as AudioBackend, DefaultBackend as DefaultAudioBackend},
-    Capacities, PlaySoundError,
-};
 use kira::{
-    sound::SoundData, track::MainTrackBuilder, AudioManager, AudioManagerSettings, Decibels,
-    ResourceLimitReached, Value,
+    AudioManager, AudioManagerSettings, Decibels, ResourceLimitReached, Value, sound::SoundData,
+    track::MainTrackBuilder,
 };
-use parking_lot::Mutex;
+pub use kira::{
+    Capacities, PlaySoundError,
+    backend::{Backend as AudioBackend, DefaultBackend as DefaultAudioBackend, mock::MockBackend},
+};
 use thiserror::Error;
 
 #[derive(Error)]

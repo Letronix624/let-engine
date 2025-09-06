@@ -19,13 +19,9 @@ use scenes::LayerId;
 use derive_builder::Builder;
 use slotmap::new_key_type;
 
-use glam::{vec2, Mat4, Quat, Vec2};
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use glam::{Mat4, Quat, Vec2, vec2};
 
 /// Holds position size and rotation of an object.
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, Debug, PartialEq, Vertex, AnyBitPattern)]
 pub struct Transform {
     #[format(Rg32Float)]
