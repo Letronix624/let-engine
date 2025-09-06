@@ -1,11 +1,10 @@
-use std::{any::Any, collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::Result;
 use glam::UVec2;
-use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 use crate::{
-    objects::{scenes::Scene, Descriptor},
+    objects::{Descriptor, scenes::Scene},
     resources::{
         buffer::{Buffer, LoadedBuffer, Location},
         data::Data,
@@ -33,13 +32,14 @@ pub trait GraphicsBackend: Sized {
     /// Also returns the interfacer for user input to the graphics backend.
     fn new(
         settings: &Self::Settings,
-        handle: impl HasDisplayHandle,
+        event_loop: &winit::event_loop::EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error>;
 
     /// Gives a window reference to the backend to draw to.
     fn init_window(
         &mut self,
-        window: &Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        window: &Arc<winit::window::Window>,
     );
 
     /// This is used for draws. A function `pre_present_notify` gets included,
@@ -49,6 +49,12 @@ pub trait GraphicsBackend: Sized {
         scene: &Scene<Self::LoadedTypes>,
         pre_present_notify: impl FnOnce(),
     ) -> Result<(), Self::Error>;
+
+    #[cfg(feature = "egui")]
+    fn update_egui(&mut self, event: &winit::event::WindowEvent) -> bool;
+
+    #[cfg(feature = "egui")]
+    fn draw_egui(&mut self) -> egui::Context;
 
     /// Gets called when the window has changed size.
     fn resize_event(&mut self, new_size: UVec2);
@@ -197,19 +203,30 @@ impl GraphicsBackend for () {
 
     fn new(
         _settings: &Self::Settings,
-        _handle: impl HasDisplayHandle,
+        _event_loop: &winit::event_loop::EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error> {
         Ok(((), ()))
     }
 
     fn init_window(
         &mut self,
-        _window: &Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        _window: &Arc<winit::window::Window>,
     ) {
     }
 
     fn draw(&mut self, _scene: &Scene<Self>, _: impl FnOnce()) -> Result<(), Self::Error> {
         Ok(())
+    }
+
+    #[cfg(feature = "egui")]
+    fn update_egui(&mut self, _event: &winit::event::WindowEvent) -> bool {
+        false
+    }
+
+    #[cfg(feature = "egui")]
+    fn draw_egui(&mut self) -> egui::Context {
+        egui::Context::default()
     }
 
     fn resize_event(&mut self, _new_size: UVec2) {}

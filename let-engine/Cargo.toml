@@ -13,7 +13,6 @@ license = { workspace = true }
 
 
 [package.metadata.docs.rs]
-# features = ["egui"]
 default-target = "x86_64-unknown-linux-gnu"
 
 [dependencies]
@@ -25,7 +24,6 @@ derive_builder = { workspace = true }
 crossbeam = { workspace = true }
 smol = { workspace = true }
 futures = { workspace = true }
-serde = { workspace = true }
 rkyv = { workspace = true }
 atomic_float = "1.1"
 spin_sleep = "1.3"
@@ -45,10 +43,20 @@ optional = true
 [dependencies.vulkano]
 # version = "0.35"
 git = "https://github.com/vulkano-rs/vulkano.git"
+branch = "master"  
+optional = true
+
+[dependencies.egui]
+workspace = true
+optional = true
+
+[dependencies.egui_winit_vulkano]
+path = "../../egui-winit-vulkano"
 optional = true
 
 [dependencies.vulkano-taskgraph]
 git = "https://github.com/vulkano-rs/vulkano.git"
+branch = "master"  
 optional = true
 
 [dependencies.winit]
@@ -58,10 +66,6 @@ optional = true
 [dependencies.image]
 workspace = true
 optional = true
-
-# [dependencies.egui_winit_vulkano]
-# workspace = true
-# optional = true
 
 [dependencies.glam]
 workspace = true
@@ -119,9 +123,9 @@ default = [
   "default_networking_backend",
 ]
 
-# egui = ["dep:egui_winit_vulkano", "client"]
-client = ["dep:winit", "dep:image"]
-default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client"]
+egui = ["dep:egui_winit_vulkano", "dep:egui", "client", "let-engine-core/egui"]
+client = ["dep:winit", "dep:image", "let-engine-core/graphics"]
+default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client", "dep:egui_winit_vulkano"]
 default_networking_backend = ["dep:local-ip-address", "glam/rkyv", "glam/bytecheck"]
 vulkan_debug = ["default_graphics_backend"]
 physics = ["dep:rapier2d", "let-engine-core/physics"]

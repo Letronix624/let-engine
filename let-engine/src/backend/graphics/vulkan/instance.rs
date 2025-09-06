@@ -1,13 +1,13 @@
 use std::str::FromStr;
 use std::sync::Arc;
 use vulkano::device::physical::PhysicalDevice;
-use vulkano::device::{physical::PhysicalDeviceType, DeviceExtensions};
 use vulkano::device::{
     Device, DeviceCreateInfo, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags,
 };
+use vulkano::device::{DeviceExtensions, physical::PhysicalDeviceType};
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
 use vulkano::swapchain::Surface;
-use vulkano::{library::VulkanLibrary, Version};
+use vulkano::{Version, library::VulkanLibrary};
 use winit::raw_window_handle::HasDisplayHandle;
 
 use crate::backend::graphics::{
@@ -30,14 +30,17 @@ impl Queues {
         }
     }
 
+    #[inline]
     pub fn general(&self) -> &Arc<Queue> {
         &self.general
     }
 
+    #[inline]
     pub fn compute(&self) -> &Arc<Queue> {
         self.compute.as_ref().unwrap_or(self.general())
     }
 
+    #[inline]
     pub fn transfer(&self) -> &Arc<Queue> {
         self.transfer.as_ref().unwrap_or(self.general())
     }

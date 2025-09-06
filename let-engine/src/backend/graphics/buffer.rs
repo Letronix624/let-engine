@@ -1,6 +1,6 @@
 use std::{
     marker::PhantomData,
-    sync::{atomic::AtomicU8, Arc},
+    sync::{Arc, atomic::AtomicU8},
 };
 
 use concurrent_slotmap::{Key, SlotId};
@@ -10,21 +10,21 @@ use let_engine_core::resources::{
 };
 use thiserror::Error;
 use vulkano::{
+    DeviceSize,
     buffer::{Buffer as VkBuffer, BufferCreateInfo, BufferUsage as VkBufferUsage},
     descriptor_set::layout::DescriptorType,
     memory::allocator::{AllocationCreateInfo, DeviceLayout, MemoryTypeFilter},
     sync::HostAccessError,
-    DeviceSize,
 };
 use vulkano_taskgraph::{
+    Id,
     command_buffer::CopyBufferInfo,
     resource::{AccessTypes, HostAccessType},
-    Id,
 };
 
 use super::{
-    vulkan::{Vulkan, VK},
     VulkanError,
+    vulkan::{VK, Vulkan},
 };
 
 #[derive(Clone)]
@@ -441,7 +441,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
 
         match &self.access_method {
             AccessMethod::Fixed => {
-                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed))
+                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed));
             }
             AccessMethod::Staged { staging_id } => {
                 flight.wait(None).unwrap();
@@ -527,7 +527,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
         let vulkan = VK.get().unwrap();
         match &self.access_method {
             AccessMethod::Fixed => {
-                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed))
+                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed));
             }
             AccessMethod::Staged { staging_id } => {
                 let queue = vulkan.queues.transfer();

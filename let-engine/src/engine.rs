@@ -4,10 +4,10 @@ use std::sync::atomic::Ordering::Relaxed;
 
 use let_engine_core::{
     backend::{
+        Backends,
         audio::{self, AudioInterface},
         graphics::GraphicsBackend,
         networking::{NetEvent, NetworkingBackend},
-        Backends,
     },
     objects::scenes::Scene,
 };
@@ -32,8 +32,8 @@ use {
     winit::event::MouseScrollDelta,
 };
 
-use std::{sync::atomic::AtomicBool, time::Instant};
 use std::{sync::Arc, time::Duration};
+use std::{sync::atomic::AtomicBool, time::Instant};
 
 type Connection<B> = <B as NetworkingBackend>::Connection;
 type ClientMessage<'a, B> = <B as NetworkingBackend>::ClientEvent<'a>;
@@ -61,6 +61,9 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     /// Runs every frame.
     #[cfg(feature = "client")]
     fn update(&mut self, context: EngineContext<B>) {}
+
+    #[cfg(feature = "egui")]
+    fn egui(&mut self, context: EngineContext<B>, egui_context: egui::Context) {}
 
     /// Runs based on the configured tick settings of the engine.
     fn tick(&mut self, context: EngineContext<B>) {}
@@ -250,7 +253,7 @@ where
 
         self.game.window.set(Window::new(window.clone())).unwrap();
 
-        self.graphics_backend.init_window(&window);
+        self.graphics_backend.init_window(event_loop, &window);
 
         self.game.window_ready();
 
@@ -278,6 +281,11 @@ where
         };
 
         self.game.input.lock().update(&event, window_size);
+
+        #[cfg(feature = "egui")]
+        if self.graphics_backend.update_egui(&event) {
+            return;
+        }
 
         let window_event = match event {
             WindowEvent::Resized(size) => {
@@ -326,6 +334,9 @@ where
                 }
             }),
             WindowEvent::RedrawRequested => {
+                #[cfg(feature = "egui")]
+                self.game.egui(self.graphics_backend.draw_egui());
+
                 self.game.update();
 
                 self.graphics_backend
@@ -506,6 +517,15 @@ where
         let mut input = self.input.lock();
         let context = self.context(&mut scene, &mut input);
         self.game.lock().update(context);
+    }
+
+    #[inline]
+    #[cfg(feature = "egui")]
+    pub fn egui(&self, egui_context: egui::Context) {
+        let mut scene = self.scene.lock();
+        let mut input = self.input.lock();
+        let context = self.context(&mut scene, &mut input);
+        self.game.lock().egui(context, egui_context);
     }
 
     #[inline]

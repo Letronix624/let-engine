@@ -1,9 +1,11 @@
 use anyhow::Result;
 use concurrent_slotmap::Key;
 use crossbeam::channel::Receiver;
+
+use egui_winit_vulkano::{EguiSystem, RenderEguiWorld};
+
 use foldhash::HashSet;
 use std::{
-    any::Any,
     collections::BTreeMap,
     num::NonZero,
     sync::{Arc, OnceLock},
@@ -40,7 +42,7 @@ use vulkano_taskgraph::{
     resource::AccessTypes,
     resource_map,
 };
-use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use winit::event_loop::ActiveEventLoop;
 
 use let_engine_core::objects::{Descriptor, scenes::Scene};
 
@@ -55,7 +57,6 @@ use super::{
 };
 
 /// Responsible for drawing on the surface.
-#[derive(Debug)]
 pub struct Draw {
     swapchain_id: Id<Swapchain>,
     virtual_swapchain_id: Id<Swapchain>,
@@ -76,6 +77,17 @@ pub struct Draw {
     view_proj_region: Region,
     view_proj_alignment: DeviceAlignment,
     view_proj_buffer_id: Id<Buffer>,
+    egui_system: EguiSystem<DrawWorld>,
+}
+
+impl RenderEguiWorld<DrawWorld> for DrawWorld {
+    fn get_egui_system(&self) -> &EguiSystem<DrawWorld> {
+        unsafe { &(&*self.draw).egui_system }
+    }
+
+    fn get_swapchain_id(&self) -> Id<Swapchain> {
+        unsafe { (&*self.draw).swapchain_id }
+    }
 }
 
 impl Draw {
@@ -83,14 +95,15 @@ impl Draw {
         settings: Graphics,
         settings_receiver: Receiver<Graphics>,
         present_modes: &OnceLock<Vec<PresentMode>>,
-        window: &Arc<impl HasWindowHandle + HasDisplayHandle + Any + Send + Sync>,
+        event_loop: &ActiveEventLoop,
+        window: &Arc<winit::window::Window>,
     ) -> Result<Self> {
         let vulkan = VK.get().unwrap();
 
         let surface = Surface::from_window(&vulkan.instance, window)?;
 
         let (swapchain_id, dimensions, image_format) =
-            create_swapchain(&vulkan.device, surface, present_modes, vulkan)?;
+            create_swapchain(&vulkan.device, surface.clone(), present_modes, vulkan)?;
 
         let recreate_swapchain = false;
 
@@ -151,6 +164,18 @@ impl Draw {
         }
         .unwrap();
 
+        let egui_system = EguiSystem::new(
+            event_loop,
+            surface,
+            vulkan.queues.general().clone(),
+            vulkan.resources.clone(),
+            vulkan.graphics_flight,
+            image_format,
+            egui_winit_vulkano::EguiSystemConfig {
+                use_bindless: false,
+            },
+        );
+
         Ok(Self {
             swapchain_id,
             virtual_swapchain_id,
@@ -166,6 +191,7 @@ impl Draw {
             view_proj_region,
             view_proj_alignment,
             view_proj_buffer_id,
+            egui_system,
         })
     }
 
@@ -176,7 +202,7 @@ impl Draw {
             image_format: self.image_format,
             ..Default::default()
         });
-        let framebuffer_id = task_graph.add_framebuffer();
+        let virtual_framebuffer_id = task_graph.add_framebuffer();
 
         task_graph.add_host_buffer_access(
             self.view_proj_buffer_id,
@@ -191,7 +217,7 @@ impl Draw {
                 settings: self.settings,
             },
         );
-        builder.framebuffer(framebuffer_id);
+        builder.framebuffer(virtual_framebuffer_id);
         builder.color_attachment(
             virtual_swapchain_id.current_image_id(),
             AccessTypes::COLOR_ATTACHMENT_WRITE,
@@ -223,6 +249,14 @@ impl Draw {
 
         self.draw_node_id = builder.build();
 
+        let egui_node = self.egui_system.render_egui(
+            &mut task_graph,
+            virtual_swapchain_id,
+            virtual_framebuffer_id,
+        );
+
+        task_graph.add_edge(self.draw_node_id, egui_node).unwrap();
+
         let drawing_queue = vulkan.queues.general();
 
         self.task_graph = unsafe {
@@ -233,6 +267,12 @@ impl Draw {
                 ..Default::default()
             })
         }?;
+
+        self.egui_system.create_task_pipeline(
+            &mut self.task_graph,
+            &vulkan.resources,
+            &vulkan.device,
+        );
 
         Ok(())
     }
@@ -296,6 +336,16 @@ impl Draw {
         Ok(())
     }
 
+    #[cfg(feature = "egui")]
+    pub fn egui_update(&mut self, event: &winit::event::WindowEvent) -> bool {
+        self.egui_system.update(event)
+    }
+
+    #[cfg(feature = "egui")]
+    pub fn draw_egui(&mut self) -> egui::Context {
+        self.egui_system.immediate_ui()
+    }
+
     pub fn resize(&mut self, new_size: UVec2) {
         self.recreate_swapchain = true;
         self.dimensions = new_size;
@@ -333,6 +383,8 @@ impl Draw {
         }
 
         self.recreate_swapchain(vulkan)?;
+
+        self.egui_system.update_task_draw_data(&mut self.task_graph);
 
         let resource_map = resource_map!(
             &self.task_graph,

@@ -10,7 +10,7 @@ use vulkano_taskgraph::{
     Id, InvalidSlotError, Ref,
     resource::{AccessTypes, Flight, Resources},
 };
-use winit::raw_window_handle::HasDisplayHandle;
+use winit::event_loop::EventLoop;
 #[cfg(feature = "vulkan_debug")]
 mod debug;
 pub mod swapchain;
@@ -83,10 +83,10 @@ pub enum Resource {
 
 impl Vulkan {
     pub fn init(
-        handle: &impl HasDisplayHandle,
+        event_loop: &EventLoop<()>,
         settings: &Graphics,
     ) -> Result<Self, DefaultGraphicsBackendError> {
-        let instance = instance::create_instance(handle, settings.window_handle_retries)?;
+        let instance = instance::create_instance(event_loop, settings.window_handle_retries)?;
 
         #[cfg(feature = "vulkan_debug")]
         std::mem::forget(debug::make_debug(&instance).unwrap());
@@ -96,7 +96,8 @@ impl Vulkan {
             wide_lines: true,
             ..DeviceFeatures::empty()
         };
-        let (device, queues) = instance::create_device_and_queues(&instance, &features, handle)?;
+        let (device, queues) =
+            instance::create_device_and_queues(&instance, &features, event_loop)?;
 
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             &device,

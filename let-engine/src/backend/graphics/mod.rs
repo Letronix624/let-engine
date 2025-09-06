@@ -43,7 +43,7 @@ use vulkano::{
 };
 
 use vulkano_taskgraph::resource::AccessTypes;
-use winit::raw_window_handle::HasDisplayHandle;
+use winit::event_loop::{ActiveEventLoop, EventLoop};
 
 pub use vulkano::DeviceSize;
 
@@ -55,7 +55,6 @@ pub mod texture;
 mod draw;
 mod vulkan;
 
-#[derive(Debug)]
 pub struct DefaultGraphicsBackend {
     draw: OnceCell<Draw>,
     settings_receiver: Receiver<Graphics>,
@@ -99,11 +98,11 @@ impl GraphicsBackend for DefaultGraphicsBackend {
 
     fn new(
         settings: &Self::Settings,
-        handle: impl HasDisplayHandle,
+        event_loop: &EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error> {
         // Initialize backend in case it is not already initialized.
         if VK.get().is_none() {
-            let vulkan = Vulkan::init(&handle, settings)?;
+            let vulkan = Vulkan::init(event_loop, settings)?;
             let _ = VK.set(vulkan);
         }
         let settings = Arc::new(RwLock::new(*settings));
@@ -126,22 +125,14 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         ))
     }
 
-    fn init_window(
-        &mut self,
-        window: &Arc<
-            impl winit::raw_window_handle::HasWindowHandle
-            + HasDisplayHandle
-            + std::any::Any
-            + Send
-            + Sync,
-        >,
-    ) {
+    fn init_window(&mut self, event_loop: &ActiveEventLoop, window: &Arc<winit::window::Window>) {
         // TODO: Remove unwraps
         let settings = *self.interfacer.settings.read();
         let draw = Draw::new(
             settings,
             self.settings_receiver.clone(),
             &self.interfacer.available_present_modes,
+            event_loop,
             window,
         )
         .unwrap();
@@ -160,6 +151,20 @@ impl GraphicsBackend for DefaultGraphicsBackend {
         } else {
             Ok(())
         }
+    }
+
+    #[cfg(feature = "egui")]
+    fn update_egui(&mut self, event: &winit::event::WindowEvent) -> bool {
+        if let Some(draw) = self.draw.get_mut() {
+            draw.egui_update(event)
+        } else {
+            false
+        }
+    }
+
+    #[cfg(feature = "egui")]
+    fn draw_egui(&mut self) -> egui::Context {
+        self.draw.get_mut().unwrap().draw_egui()
     }
 
     fn resize_event(&mut self, new_size: UVec2) {

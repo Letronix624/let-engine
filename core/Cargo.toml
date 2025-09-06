@@ -18,16 +18,15 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 derive_builder = { workspace = true }
 parking_lot = { workspace = true }
-crossbeam = { workspace = true }
-serde = { workspace = true }
 foldhash = { workspace = true }
 rkyv = { workspace = true }
 image = { workspace = true }
+winit = {workspace = true, optional = true}
+egui = {workspace = true, optional = true}
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 half = { version = "2.6", features = ["bytemuck"] }
 engine-macros = { path = "../macros" }
 paste = "1.0"
-raw-window-handle = "0.6"
 kira = "0.10"
 slotmap = "1.0"
 
@@ -45,9 +44,12 @@ features = ["simd-stable"]
 optional = true
 
 [build-dependencies]
-shaderc = "0.10"
+shaderc = "0.9"
 
 [features]
+graphics = ["dep:winit"]
+egui = ["graphics", "dep:egui"]
+
 physics = ["dep:rapier2d"]
 serde = ["glam/serde", "rapier2d/serde-serialize"]
 

@@ -3,7 +3,6 @@ use super::data::Data;
 #[derive(Debug, Clone)]
 pub struct Buffer<T: Data> {
     data: T,
-    // size: u64,
     usage: BufferUsage,
     buffer_access: BufferAccess,
 }
