@@ -63,9 +63,7 @@ impl PartialEq for GpuTexture {
 }
 
 impl GpuTexture {
-    pub(crate) fn new(texture: &Texture) -> Result<Self, GpuTextureError> {
-        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
-
+    pub(crate) fn new(texture: &Texture, vulkan: &Vulkan) -> Result<Self, GpuTextureError> {
         let settings = texture.settings();
 
         let mip_levels = settings.mip_levels;
@@ -154,9 +152,8 @@ impl GpuTexture {
     pub(crate) fn new_gpu_only(
         dimensions: ViewTypeDim,
         mut settings: TextureSettings,
+        vulkan: &Vulkan,
     ) -> Result<Self, GpuTextureError> {
-        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
-
         settings.access_pattern = BufferAccess::Fixed;
 
         let format = format_to_vulkano(&settings.format);
@@ -309,7 +306,7 @@ impl LoadedTexture for GpuTexture {
             return Err(GpuTextureError::UnsupportedAccess(access));
         };
 
-        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
+        let vulkan = VK.get().unwrap();
 
         let queue = vulkan.queues.transfer();
         let flight = vulkan.transfer_flight().unwrap();
@@ -379,7 +376,7 @@ impl LoadedTexture for GpuTexture {
             ));
         };
 
-        let vulkan = VK.get().ok_or(GpuTextureError::BackendNotInitialized)?;
+        let vulkan = VK.get().unwrap();
         let queue = vulkan.queues.transfer();
 
         let flight = vulkan.transfer_flight().unwrap();
@@ -433,12 +430,6 @@ use super::{
 /// Errors that occur from the GPU texture.
 #[derive(Error, Debug)]
 pub enum GpuTextureError {
-    /// Returns when attempting to create a texture,
-    /// but the engine has not been started with [`Engine::start`](crate::Engine::start),
-    /// or the backend has closed down.
-    #[error("Can not create texture: Engine not initialized.")]
-    BackendNotInitialized,
-
     /// When resizing the wrong view type format was used.
     #[error("Wrong view type used. Can not resize from {0:?} to {1:?}.")]
     InvalidViewType(ImageViewType, ImageViewType),

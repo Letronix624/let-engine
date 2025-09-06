@@ -390,7 +390,52 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     ) -> Result<TextureId> {
         let vulkan = VK.get().context("Vulkan uninitialized")?;
 
-        let texture = GpuTexture::new(texture).context("failed to load texture")?;
+        let texture = GpuTexture::new(texture, vulkan).context("failed to load texture")?;
+
+        Ok(vulkan.textures.insert(texture, &self.texture_guard))
+    }
+
+    fn load_buffer_gpu_only<B: Data>(
+        &self,
+        size: usize,
+        usage: let_engine_core::resources::buffer::BufferUsage,
+    ) -> Result<<VulkanTypes as Loaded>::BufferId<B>> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+
+        let buffer = GpuBuffer::new_gpu_only(size as DeviceSize, usage, vulkan)
+            .context("failed to load buffer")?;
+        let buffer = unsafe { std::mem::transmute::<GpuBuffer<B>, GpuBuffer<u8>>(buffer) };
+
+        Ok(BufferId::from_id(
+            vulkan.buffers.insert(buffer, &self.buffer_guard),
+        ))
+    }
+
+    fn load_model_gpu_only<V: Vertex>(
+        &self,
+        vertex_size: usize,
+        index_size: usize,
+    ) -> Result<<VulkanTypes as Loaded>::ModelId<V>> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+
+        let model = GpuModel::new_gpu_only(vertex_size as DeviceSize, index_size as DeviceSize)
+            .context("failed to load model")?;
+        let model = unsafe { std::mem::transmute::<GpuModel<V>, GpuModel<u8>>(model) };
+
+        Ok(ModelId::from_id(
+            vulkan.models.insert(model, &self.model_guard),
+        ))
+    }
+
+    fn load_texture_gpu_only(
+        &self,
+        dimensions: let_engine_core::resources::texture::ViewTypeDim,
+        settings: let_engine_core::resources::texture::TextureSettings,
+    ) -> Result<<VulkanTypes as Loaded>::TextureId> {
+        let vulkan = VK.get().context("Vulkan uninitialized")?;
+
+        let texture = GpuTexture::new_gpu_only(dimensions, settings, vulkan)
+            .context("failed to load texture")?;
 
         Ok(vulkan.textures.insert(texture, &self.texture_guard))
     }

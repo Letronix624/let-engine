@@ -6,11 +6,11 @@ use glam::UVec2;
 use crate::{
     objects::{Descriptor, scenes::Scene},
     resources::{
-        buffer::{Buffer, LoadedBuffer, Location},
+        buffer::{Buffer, BufferUsage, LoadedBuffer, Location},
         data::Data,
         material::Material,
         model::{LoadedModel, Model, Vertex},
-        texture::{LoadedTexture, Texture},
+        texture::{LoadedTexture, Texture, TextureSettings, ViewTypeDim},
     },
 };
 
@@ -74,6 +74,21 @@ pub trait GraphicsInterface<T: Loaded> {
     fn load_buffer<B: Data>(&self, buffer: &Buffer<B>) -> Result<T::BufferId<B>>;
     fn load_model<V: Vertex>(&self, model: &Model<V>) -> Result<T::ModelId<V>>;
     fn load_texture(&self, texture: &Texture) -> Result<T::TextureId>;
+    fn load_buffer_gpu_only<B: Data>(
+        &self,
+        size: usize,
+        usage: BufferUsage,
+    ) -> Result<T::BufferId<B>>;
+    fn load_model_gpu_only<V: Vertex>(
+        &self,
+        vertex_size: usize,
+        index_size: usize,
+    ) -> Result<T::ModelId<V>>;
+    fn load_texture_gpu_only(
+        &self,
+        dimensions: ViewTypeDim,
+        settings: TextureSettings,
+    ) -> Result<T::TextureId>;
 
     fn material(&self, id: T::MaterialId) -> Option<&T::Material>;
     fn buffer<B: Data>(&self, id: T::BufferId<B>) -> Option<&T::Buffer<B>>;
@@ -108,6 +123,26 @@ impl GraphicsInterface<()> for () {
     }
 
     fn load_texture(&self, _texture: &Texture) -> Result<()> {
+        Ok(())
+    }
+
+    fn load_buffer_gpu_only<B: Data>(&self, _size: usize, _usage: BufferUsage) -> Result<()> {
+        Ok(())
+    }
+
+    fn load_model_gpu_only<V: Vertex>(
+        &self,
+        _vertex_size: usize,
+        _index_size: usize,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn load_texture_gpu_only(
+        &self,
+        _dimensions: ViewTypeDim,
+        _settings: TextureSettings,
+    ) -> Result<()> {
         Ok(())
     }
 
