@@ -15,7 +15,7 @@ use thiserror::Error;
 
 #[derive(Error)]
 #[error("{0}")]
-pub struct AudioBackendError<B: std::fmt::Debug>(B);
+pub struct AudioBackendError<B>(B);
 
 impl<B: std::fmt::Debug> std::fmt::Debug for AudioBackendError<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -35,14 +35,10 @@ impl<B: AudioBackend> Clone for AudioInterface<B> {
     }
 }
 
-impl<B: AudioBackend> AudioInterface<B>
-where
-    B::Settings: Default,
-    B::Error: std::fmt::Debug,
-{
+impl<B: AudioBackend> AudioInterface<B> {
     /// Creates a new audio interface. This is only meant for engine implementations.
     #[doc(hidden)]
-    pub fn new(settings: &AudioSettings) -> Result<Self, AudioBackendError<B::Error>> {
+    pub fn new(settings: AudioSettings<B>) -> Result<Self, AudioBackendError<B::Error>> {
         let manager_settings = AudioManagerSettings {
             capacities: Capacities {
                 sub_track_capacity: settings.sub_track_capacity,
@@ -55,7 +51,7 @@ where
                 .volume(settings.initial_volume)
                 .sound_capacity(settings.sound_capacity),
             internal_buffer_size: settings.internal_buffer_size,
-            ..AudioManagerSettings::default()
+            backend_settings: settings.backend_settings,
         };
 
         let manager = AudioManager::new(manager_settings).map_err(AudioBackendError)?;
@@ -66,7 +62,7 @@ where
     }
 
     /// Restarts the audio system with the new given settings.
-    pub fn restart(&self, settings: &AudioSettings) -> Result<(), AudioBackendError<B::Error>> {
+    pub fn restart(&self, settings: AudioSettings<B>) -> Result<(), AudioBackendError<B::Error>> {
         let manager_settings = AudioManagerSettings {
             capacities: Capacities {
                 sub_track_capacity: settings.sub_track_capacity,
@@ -79,7 +75,7 @@ where
                 .volume(settings.initial_volume)
                 .sound_capacity(settings.sound_capacity),
             internal_buffer_size: settings.internal_buffer_size,
-            ..AudioManagerSettings::default()
+            backend_settings: settings.backend_settings,
         };
 
         let manager = AudioManager::new(manager_settings).map_err(AudioBackendError)?;
@@ -239,8 +235,8 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct AudioSettings {
+#[derive(Debug, PartialEq)]
+pub struct AudioSettings<B: AudioBackend> {
     pub sub_track_capacity: usize,
 
     pub send_track_capacity: usize,
@@ -263,9 +259,33 @@ pub struct AudioSettings {
     /// Decreasing this value increases the precision of clocks and modulators
     /// at the expense of higher CPU usage.
     pub internal_buffer_size: usize,
+
+    pub backend_settings: B::Settings,
 }
 
-impl Default for AudioSettings {
+impl<B: AudioBackend> Clone for AudioSettings<B>
+where
+    B::Settings: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            sub_track_capacity: self.sub_track_capacity,
+            send_track_capacity: self.send_track_capacity,
+            clock_capacity: self.clock_capacity,
+            modulator_capacity: self.modulator_capacity,
+            listener_capacity: self.listener_capacity,
+            sound_capacity: self.sound_capacity,
+            initial_volume: self.initial_volume,
+            internal_buffer_size: self.internal_buffer_size,
+            backend_settings: self.backend_settings.clone(),
+        }
+    }
+}
+
+impl<B: AudioBackend> Default for AudioSettings<B>
+where
+    B::Settings: Default,
+{
     fn default() -> Self {
         Self {
             sub_track_capacity: 128,
@@ -276,6 +296,7 @@ impl Default for AudioSettings {
             sound_capacity: 256,
             initial_volume: Value::Fixed(Decibels(0.0)),
             internal_buffer_size: 128,
+            backend_settings: B::Settings::default(),
         }
     }
 }

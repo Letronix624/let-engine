@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use let_engine_core::{
     backend::{
         Backends,
-        audio::{self, AudioInterface},
+        audio::AudioInterface,
         graphics::GraphicsBackend,
         networking::{NetEvent, NetworkingBackend},
     },
@@ -14,6 +14,8 @@ use let_engine_core::{
 
 use parking_lot::{Condvar, Mutex};
 
+#[cfg(feature = "client")]
+use crate::window::WindowBuilder;
 use crate::{
     backend::DefaultBackends,
     settings,
@@ -23,7 +25,7 @@ use crate::{
 use {
     self::events::ScrollDelta,
     crate::window::Window,
-    crate::{events, input::Input, prelude::EngineSettings},
+    crate::{events, input::Input},
     anyhow::Result,
     glam::{dvec2, uvec2, vec2},
     let_engine_core::backend::graphics::GraphicsInterfacer,
@@ -80,9 +82,6 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     #[cfg(feature = "client")]
     fn input(&mut self, context: EngineContext<B>, event: events::InputEvent) {}
 
-    // #[cfg(all(feature = "client", feature = "egui"))]
-    // fn egui(&mut self, engine_context: &EngineContext<B>, egui_context: ) {}
-
     /// A network event received by the server.
     fn server_event(
         &mut self,
@@ -99,8 +98,15 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     fn end(&mut self, context: EngineContext<B>) {}
 }
 
+pub fn start<G: Game<B>, B: Backends + 'static>(
+    game: impl FnOnce(EngineContext<B>) -> G,
+    settings: impl Into<settings::EngineSettings<B>>,
+) -> Result<(), EngineError<B>> {
+    Engine::start(game, settings)
+}
+
 /// The struct that holds and executes all of the game data.
-pub struct Engine<G, B = DefaultBackends>
+struct Engine<G, B = DefaultBackends>
 where
     G: Game<B>,
     B: Backends,
@@ -108,7 +114,7 @@ where
     #[cfg(feature = "client")]
     graphics_backend: B::Graphics,
     #[cfg(feature = "client")]
-    settings: EngineSettings<B>,
+    window_settings: WindowBuilder,
 
     #[allow(dead_code)]
     game: Arc<GameWrapper<G, B>>,
@@ -116,11 +122,7 @@ where
 
 pub use let_engine_core::EngineError;
 
-impl<G: Game<B>, B: Backends + 'static> Engine<G, B>
-where
-    <B::Kira as audio::AudioBackend>::Settings: Default,
-    <B::Kira as audio::AudioBackend>::Error: std::fmt::Debug,
-{
+impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
     /// Starts the game engine with the given game.
     pub fn start(
         game: impl FnOnce(EngineContext<B>) -> G,
@@ -134,22 +136,22 @@ where
         // Graphics backend
         #[cfg(feature = "client")]
         let (graphics_backend, graphics_interface) =
-            B::Graphics::new(&settings.graphics, &event_loop)
+            B::Graphics::new(settings.graphics, &event_loop)
                 .map_err(EngineError::GraphicsBackend)?;
 
         // Audio backend
         let audio_interface =
-            AudioInterface::new(&settings.audio).map_err(EngineError::AudioBackend)?;
+            AudioInterface::new(settings.audio).map_err(EngineError::AudioBackend)?;
 
         // Networking backend
         let (net_send, net_recv) = bounded(0);
         let (game_send, game_recv) = bounded(0);
 
-        let networking_settings = settings.networking.clone();
+        let networking_settings = settings.networking;
         std::thread::Builder::new()
             .name("let-engine-networking-backend".to_string())
             .spawn(move || {
-                let mut networking_backend = match B::Networking::new(&networking_settings) {
+                let mut networking_backend = match B::Networking::new(networking_settings) {
                     Ok(n) => {
                         net_send
                             .send(Ok((
@@ -221,7 +223,7 @@ where
                 #[cfg(feature = "client")]
                 graphics_backend,
                 #[cfg(feature = "client")]
-                settings,
+                window_settings: settings.window,
                 game,
             };
 
@@ -241,7 +243,7 @@ where
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window: Arc<winit::window::Window> = event_loop
-            .create_window(self.settings.window.clone().into())
+            .create_window(self.window_settings.clone().into())
             .unwrap()
             .into();
 
@@ -807,7 +809,7 @@ mod tests {
             }
         }
 
-        Engine::start(|_| Game::new(), EngineSettings::default())?;
+        crate::start(|_| Game::new(), EngineSettings::default())?;
 
         Ok(())
     }

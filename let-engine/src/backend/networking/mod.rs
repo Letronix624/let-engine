@@ -49,7 +49,7 @@ pub use client::*;
 use let_engine_core::backend::networking::{NetEvent, NetworkingBackend};
 pub use server::*;
 use smol::{
-    channel::{bounded, Receiver},
+    channel::{Receiver, bounded},
     future::race,
 };
 use thiserror::Error;
@@ -97,7 +97,7 @@ where
     type ServerInterface = server::ServerInterface<ServerMsg>;
     type ClientInterface = client::ClientInterface<ClientMsg>;
 
-    fn new(settings: &Self::Settings) -> Result<Self, Self::Error> {
+    fn new(settings: Self::Settings) -> Result<Self, Self::Error> {
         let (server_sender, server_receiver) = bounded(2);
         let (client_sender, client_receiver) = bounded(2);
 
@@ -106,7 +106,7 @@ where
         let server_interface =
             server::ServerInterface::new(settings.clone(), server_sender, arena.clone()).unwrap();
         let client_interface =
-            client::ClientInterface::new(settings.clone(), client_sender, arena).unwrap();
+            client::ClientInterface::new(settings, client_sender, arena).unwrap();
 
         Ok(Self {
             server_interface,
@@ -445,12 +445,12 @@ impl Connection {
 }
 
 use rkyv::{
-    api::high::{to_bytes_in_with_alloc, HighSerializer, HighValidator},
+    Archive, Serialize,
+    api::high::{HighSerializer, HighValidator, to_bytes_in_with_alloc},
     bytecheck::CheckBytes,
     rancor::{self, Source},
     ser::allocator::{Arena, ArenaHandle},
     util::AlignedVec,
-    Archive, Serialize,
 };
 
 /// Serialize the given data to a streamable message format.

@@ -1,6 +1,6 @@
 mod instance;
 use anyhow::Result;
-use concurrent_slotmap::{SlotId, SlotMap};
+use concurrent_slotmap::{SlotId, SlotMap, hyaline::CollectorHandle};
 use crossbeam::channel::{Receiver, Sender};
 use foldhash::HashMap;
 pub use instance::Queues;
@@ -57,6 +57,7 @@ pub struct Vulkan {
     pub vulkan_pipeline_cache: Arc<PipelineCache>,
     pub pipeline_cache: Mutex<HashMap<MaterialId, Arc<GraphicsPipeline>>>,
 
+    pub collector: CollectorHandle,
     pub materials: SlotMap<MaterialId, GpuMaterial>,
     pub buffers: SlotMap<SlotId, GpuBuffer<u8>>,
     pub models: SlotMap<SlotId, GpuModel<u8>>,
@@ -84,7 +85,7 @@ pub enum Resource {
 impl Vulkan {
     pub fn init(
         event_loop: &EventLoop<()>,
-        settings: &Graphics,
+        settings: Graphics,
     ) -> Result<Self, DefaultGraphicsBackendError> {
         let instance = instance::create_instance(event_loop, settings.window_handle_retries)?;
 
@@ -124,6 +125,12 @@ impl Vulkan {
 
         let pipeline_cache = Mutex::new(HashMap::default());
 
+        let collector = CollectorHandle::new();
+        let materials = unsafe { SlotMap::with_collector_and_key(255, collector.clone()) };
+        let buffers = unsafe { SlotMap::with_collector(255, collector.clone()) };
+        let models = unsafe { SlotMap::with_collector(255, collector.clone()) };
+        let textures = unsafe { SlotMap::with_collector_and_key(255, collector.clone()) };
+
         Ok(Self {
             instance,
             device,
@@ -139,10 +146,11 @@ impl Vulkan {
             vulkan_pipeline_cache,
             pipeline_cache,
 
-            materials: SlotMap::with_key(255),
-            buffers: SlotMap::new(255),
-            models: SlotMap::new(255),
-            textures: SlotMap::with_key(255),
+            collector,
+            materials,
+            buffers,
+            models,
+            textures,
         })
     }
 

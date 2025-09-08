@@ -40,7 +40,7 @@ features = ["convert-glam030"]
 
 [dependencies.rapier2d]
 workspace = true
-features = ["simd-stable"]
+features = ["simd-stable", "parallel"]
 optional = true
 
 [build-dependencies]

@@ -5,7 +5,7 @@ pub mod resources;
 
 use backend::audio::{AudioBackend, AudioBackendError};
 use backend::networking::NetworkingBackend;
-use backend::{graphics::GraphicsBackend, Backends};
+use backend::{Backends, graphics::GraphicsBackend};
 
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -19,7 +19,6 @@ extern crate self as let_engine_core;
 pub enum EngineError<B>
 where
     B: Backends,
-    <B::Kira as AudioBackend>::Error: std::fmt::Debug,
 {
     /// It is only possible to create the engine one time.
     #[error("Can not start another engine instance in the same application.")]

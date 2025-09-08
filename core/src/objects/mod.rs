@@ -427,11 +427,7 @@ pub struct NoLayerError;
 /// Errors that happen in object and layer functions.
 #[derive(Error, Debug)]
 pub enum ObjectError {
-    /// The move operation has failed.
-    #[error("This object can not be moved to this position:\n{0}")]
-    Move(String),
-
     /// The object you are trying to access is not initialized anymore.
     #[error("This object was removed from the objects list.")]
-    Uninit,
+    NoObject,
 }

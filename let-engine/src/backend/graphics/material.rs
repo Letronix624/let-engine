@@ -5,7 +5,7 @@ use concurrent_slotmap::{Key, SlotId};
 use foldhash::HashMap;
 use let_engine_core::resources::{
     buffer::Location,
-    material::{GraphicsShaders, MaterialSettings},
+    material::{GraphicsShaders, Material, MaterialSettings},
     model::Vertex,
 };
 
@@ -61,7 +61,7 @@ pub enum GpuMaterialError {
     ///
     /// Element `0` is a specified setting, which does not work with element `1`.
     #[error("Invalid combination of settings. {0} does not work with {1}.")]
-    InvalidSettings(String, String),
+    InvalidSettings(&'static str, String),
 }
 
 impl std::fmt::Debug for GpuMaterial {
@@ -79,12 +79,18 @@ impl std::fmt::Debug for GpuMaterial {
 impl GpuMaterial {
     /// Creates a new material using the given shaders, settings and write operations.
     pub(crate) fn new<V: Vertex>(
-        settings: MaterialSettings,
-        shaders: VulkanGraphicsShaders,
+        material: &Material,
+        vulkan: &Vulkan,
     ) -> Result<Self, GpuMaterialError> {
+        let settings = material.settings.clone();
+        let shaders = unsafe {
+            VulkanGraphicsShaders::from_bytes(material.graphics_shaders.clone(), vulkan)
+                .map_err(GpuMaterialError::Shader)?
+        };
+
         if settings.primitive_restart && settings.topology.is_list() {
             return Err(GpuMaterialError::InvalidSettings(
-                "`primitive_restart = true`".to_string(),
+                "`primitive_restart = true`",
                 format!("`topology = {:?}`", settings.topology),
             ));
         };

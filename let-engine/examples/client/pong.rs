@@ -38,7 +38,7 @@ fn main() {
         .inner_size(RESOLUTION)
         .title(env!("CARGO_CRATE_NAME"));
     // Initialize the engine.
-    Engine::<Game>::start(
+    let_engine::start(
         Game::new,
         EngineSettings::default()
             .window(window_builder)

@@ -23,7 +23,7 @@ fn main() {
         .title(env!("CARGO_CRATE_NAME"));
 
     // Now we run the engine
-    Engine::<Game>::start(
+    let_engine::start(
         Game::new,
         EngineSettings::default()
             .window(window_builder)

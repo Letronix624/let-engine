@@ -16,7 +16,7 @@ fn main() {
         .resizable(false)
         .title(env!("CARGO_CRATE_NAME"));
 
-    Engine::<Game>::start(
+    let_engine::start(
         Game::new,
         EngineSettings::default()
             .window(window_builder)

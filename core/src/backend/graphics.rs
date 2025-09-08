@@ -31,7 +31,7 @@ pub trait GraphicsBackend: Sized {
     ///
     /// Also returns the interfacer for user input to the graphics backend.
     fn new(
-        settings: &Self::Settings,
+        settings: Self::Settings,
         #[cfg(feature = "client")] event_loop: &winit::event_loop::EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error>;
 
@@ -239,7 +239,7 @@ impl GraphicsBackend for () {
     type LoadedTypes = ();
 
     fn new(
-        _settings: &Self::Settings,
+        _settings: Self::Settings,
         #[cfg(feature = "client")] _event_loop: &winit::event_loop::EventLoop<()>,
     ) -> Result<(Self, Self::Interface), Self::Error> {
         Ok(((), ()))

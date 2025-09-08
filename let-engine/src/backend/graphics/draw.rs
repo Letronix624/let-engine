@@ -166,13 +166,14 @@ impl Draw {
 
         let egui_system = EguiSystem::new(
             event_loop,
-            surface,
-            vulkan.queues.general().clone(),
-            vulkan.resources.clone(),
+            &surface,
+            vulkan.queues.general(),
+            &vulkan.resources,
             vulkan.graphics_flight,
             image_format,
             egui_winit_vulkano::EguiSystemConfig {
                 use_bindless: false,
+                debug_utils: None,
             },
         );
 
@@ -585,9 +586,7 @@ impl Task for DrawTask {
             write[0] = view.camera().make_view_matrix();
             write[1] = view.make_projection_matrix();
 
-            let texture_guard = vulkan.textures.pin();
-            let buffer_guard = vulkan.buffers.pin();
-            let model_guard = vulkan.models.pin();
+            let guard = unsafe { vulkan.collector.pin() };
 
             /* Draw Objects */
 
@@ -636,8 +635,7 @@ impl Task for DrawTask {
                         for (binding, descriptor) in set {
                             match descriptor {
                                 Descriptor::Texture(texture_id) => {
-                                    let texture =
-                                        vulkan.textures.get(*texture_id, &texture_guard).unwrap();
+                                    let texture = vulkan.textures.get(*texture_id, &guard).unwrap();
                                     let image_view = Some(texture.image_view().clone());
 
                                     let sampler = Some(
@@ -655,10 +653,8 @@ impl Task for DrawTask {
                                     ));
                                 }
                                 Descriptor::Buffer(buffer_id) => {
-                                    let buffer = vulkan
-                                        .buffers
-                                        .get(buffer_id.as_id(), &buffer_guard)
-                                        .unwrap();
+                                    let buffer =
+                                        vulkan.buffers.get(buffer_id.as_id(), &guard).unwrap();
                                     let buffer = tcx.buffer(buffer.buffer_id)?;
 
                                     let subbuffer =
@@ -698,7 +694,7 @@ impl Task for DrawTask {
                 // Bind everything to the command buffer.
                 let model = vulkan
                     .models
-                    .get(unsafe { appearance.model_id() }.as_id(), &model_guard)
+                    .get(unsafe { appearance.model_id() }.as_id(), &guard)
                     .unwrap();
 
                 unsafe { cbf.bind_pipeline_graphics(&graphics_pipeline)? };

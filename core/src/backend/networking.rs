@@ -24,7 +24,7 @@ pub trait NetworkingBackend: Sized {
     type ClientInterface: ClientInterface<Self::Connection>;
 
     /// Creates the networking backend with a callback method that should be called every time an event occurred.
-    fn new(settings: &Self::Settings) -> Result<Self, Self::Error>;
+    fn new(settings: Self::Settings) -> Result<Self, Self::Error>;
 
     fn server_interface(&self) -> &Self::ServerInterface;
     fn client_interface(&self) -> &Self::ClientInterface;
@@ -124,7 +124,7 @@ impl NetworkingBackend for () {
     type ServerInterface = ();
     type ClientInterface = ();
 
-    fn new(_settings: &Self::Settings) -> Result<Self, Self::Error> {
+    fn new(_settings: Self::Settings) -> Result<Self, Self::Error> {
         Ok(())
     }
 

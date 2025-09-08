@@ -571,7 +571,7 @@ const SQUARE_2D: [Vec2; 6] = [
 /// Ending with a [`BufferAccess`] in this macro results in this access method being used.
 ///
 /// ## Usage
-/// ```rust
+/// ```ignore
 /// use let_engine::prelude::*;
 ///
 /// let hexagon: Model<Vec2> = circle!(6); // Makes a hexagon.

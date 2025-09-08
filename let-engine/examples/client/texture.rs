@@ -22,7 +22,7 @@ fn main() {
         .inner_size(RES)
         .title(env!("CARGO_CRATE_NAME"));
 
-    Engine::<Game>::start(
+    let_engine::start(
         Game::new,
         EngineSettings::default()
             .window(window_builder)
