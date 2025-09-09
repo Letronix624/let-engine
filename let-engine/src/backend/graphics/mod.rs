@@ -23,9 +23,7 @@ use let_engine_core::{
         texture::LoadedTexture,
     },
 };
-use material::{
-    GpuMaterial, MaterialId, ShaderError, VulkanGraphicsShaders, eq_vertex_input_state,
-};
+use material::{GpuMaterial, MaterialId, ShaderError, eq_vertex_input_state};
 use model::{GpuModel, ModelId};
 use parking_lot::RwLock;
 use texture::{GpuTexture, TextureId, image_view_type_to_vulkano};
@@ -670,6 +668,11 @@ impl<'a> GraphicsInterface<'a> {
     /// Returns the settings of the graphics backend.
     pub fn settings(&self) -> Graphics {
         *self.settings.read()
+    }
+
+    pub fn settings_mut<F: FnMut(&mut Graphics)>(&self, mut f: F) {
+        let mut settings = self.settings.write();
+        f(&mut settings)
     }
 
     fn send_settings(&self, settings: Graphics) {
