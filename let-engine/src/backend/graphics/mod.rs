@@ -725,28 +725,6 @@ impl<'a> GraphicsInterface<'a> {
         settings.clear_color = clear_color;
         self.send_settings(*settings);
     }
-
-    // /// Sets the framerate limit as waiting time between frames.
-    // ///
-    // /// This should be able to be changed by the user in case they have a device with limited power capacity like a laptop with a battery.
-    // ///
-    // /// Setting the duration to no wait time at all will turn off the limit.
-    // pub fn set_framerate_limit(&self, limit: Duration) {
-    //     *self.framerate_limit.lock() = limit;
-    // }
-
-    // /// Sets the cap for the max frames per second the game should be able to output.
-    // ///
-    // /// This method is the same as setting the `set_framerate_limit` of this setting to `1.0 / cap` in seconds.
-    // ///
-    // /// Turns off the framerate cap if 0 was given.
-    // pub fn set_fps_cap(&self, cap: u64) {
-    //     if cap == 0 {
-    //         self.set_framerate_limit(Duration::from_secs(cap));
-    //         return;
-    //     }
-    //     self.set_framerate_limit(Duration::from_secs_f64(1.0 / cap as f64));
-    // }
 }
 
 /// Errors that originate from Vulkan and the backend is not responsible for.
@@ -864,7 +842,6 @@ pub struct Graphics {
     ///
     /// - `2`
     pub max_frames_in_flight: usize, // /// Time waited before each frame.
-                                     // pub framerate_limit: Duration,
 }
 
 impl Default for Graphics {

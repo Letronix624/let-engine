@@ -167,13 +167,6 @@ impl ObjectPhysics {
     ) {
         let id = id.0.as_ffi() as u128;
 
-        // dbg!(
-        //     self.collider.is_some(),
-        //     self.rigid_body.is_some(),
-        //     self.collider_handle.is_some(),
-        //     self.rigid_body_handle.is_some()
-        // );
-
         // What happens in every combination.
         match (
             self.collider.as_mut(),

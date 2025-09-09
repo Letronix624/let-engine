@@ -268,7 +268,7 @@ where
 
     fn window_event(
         &mut self,
-        _event_loop: &winit::event_loop::ActiveEventLoop,
+        event_loop: &winit::event_loop::ActiveEventLoop,
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
@@ -333,6 +333,16 @@ where
                 }
             }),
             WindowEvent::RedrawRequested => {
+                let framerate_limit = self.game.time.framerate_limit();
+
+                if framerate_limit == Duration::ZERO {
+                    event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+                } else {
+                    event_loop.set_control_flow(winit::event_loop::ControlFlow::wait_duration(
+                        framerate_limit,
+                    ));
+                }
+
                 #[cfg(feature = "egui")]
                 self.game.egui(self.graphics_backend.draw_egui());
 
@@ -358,9 +368,22 @@ where
         if self.game.exit.load(Relaxed) {
             event_loop.exit();
         }
+    }
 
-        if let Some(window) = self.game.window.get() {
-            window.request_redraw();
+    fn new_events(
+        &mut self,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
+        cause: winit::event::StartCause,
+    ) {
+        use winit::event::StartCause;
+
+        match cause {
+            StartCause::ResumeTimeReached { .. } | StartCause::Poll => {
+                if let Some(window) = self.game.window.get() {
+                    window.request_redraw();
+                }
+            }
+            _ => (),
         }
     }
 
@@ -701,6 +724,9 @@ pub struct Time {
     #[cfg(feature = "client")]
     delta_time: AtomicF64,
 
+    #[cfg(feature = "client")]
+    framerate_limit: AtomicCell<Duration>,
+
     /// Notification to time dependent tick systems that the time scale has reached zero, so stopped.
     pub(crate) zero_cvar: (Mutex<()>, Condvar),
 }
@@ -714,6 +740,8 @@ impl Default for Time {
             delta_instant: AtomicCell::new(Instant::now()),
             #[cfg(feature = "client")]
             delta_time: 0.0.into(),
+            #[cfg(feature = "client")]
+            framerate_limit: AtomicCell::new(Duration::ZERO),
             zero_cvar: (Mutex::new(()), Condvar::new()),
         }
     }
@@ -781,6 +809,39 @@ impl Time {
     #[inline]
     pub fn sleep(&self, duration: Duration) {
         spin_sleep::sleep(duration.mul_f64(self.time_scale.load(Relaxed)));
+    }
+
+    /// Sets the framerate limit as waiting time between frames.
+    ///
+    /// This should be able to be changed by the user in case they have a device with limited power capacity like a laptop with a battery.
+    ///
+    /// Setting the duration to no wait time at all will turn off the limit.
+    #[cfg(feature = "client")]
+    #[inline]
+    pub fn set_framerate_limit(&self, limit: Duration) {
+        self.framerate_limit.store(limit);
+    }
+
+    #[cfg(feature = "client")]
+    #[inline]
+    pub fn framerate_limit(&self) -> Duration {
+        self.framerate_limit.load()
+    }
+
+    /// Sets the cap for the max frames per second the game should be able to output.
+    ///
+    /// This method is the same as setting the `set_framerate_limit` of this setting to `1.0 / cap` in seconds.
+    ///
+    /// Warns when `fps` is not normal or smaller than `0`
+    #[cfg(feature = "client")]
+    #[inline]
+    pub fn set_fps_limit(&self, fps: f64) {
+        if !fps.is_normal() || fps < 0.0 {
+            log::warn!("Invalid FPS value: {}. Not changing FPS", fps);
+            return;
+        }
+
+        self.set_framerate_limit(Duration::from_secs_f64(1.0 / fps));
     }
 }
 

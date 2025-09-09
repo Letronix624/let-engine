@@ -19,7 +19,6 @@ pub struct EngineSettings<B: Backends> {
     pub tick_system: TickSettings,
 
     pub graphics: <B::Graphics as GraphicsBackend>::Settings,
-    // #[cfg(feature = "client")]
     pub audio: AudioSettings<B::Kira>,
     pub networking: <B::Networking as NetworkingBackend>::Settings,
 }
@@ -76,12 +75,12 @@ impl<B: Backends> EngineSettings<B> {
         self
     }
 
-    // /// Sets the value `networking` and returns self.
-    // pub fn networking(
-    //     mut self,
-    //     networking: <B::Networking as NetworkingBackend>::Settings,
-    // ) -> Self {
-    //     self.networking = networking;
-    //     self
-    // }
+    /// Sets the value `networking` and returns self.
+    pub fn networking(
+        mut self,
+        networking: <B::Networking as NetworkingBackend>::Settings,
+    ) -> Self {
+        self.networking = networking;
+        self
+    }
 }
