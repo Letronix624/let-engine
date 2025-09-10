@@ -2,9 +2,9 @@ use anyhow::Result;
 use concurrent_slotmap::Key;
 use crossbeam::channel::Receiver;
 
+#[cfg(feature = "egui")]
 use egui_winit_vulkano::{EguiSystem, RenderEguiWorld};
 
-use foldhash::HashSet;
 use std::{
     collections::BTreeMap,
     num::NonZero,
@@ -48,8 +48,6 @@ use let_engine_core::objects::{Descriptor, scenes::Scene};
 
 use glam::{UVec2, f32::Mat4};
 
-use crate::backend::graphics::vulkan::NewResource;
-
 use super::{
     Graphics, PresentMode, VulkanError, VulkanTypes,
     material::MaterialId,
@@ -70,16 +68,17 @@ pub struct Draw {
 
     task_graph: ExecutableTaskGraph<DrawWorld>,
     draw_node_id: NodeId,
-    resource_accesses: HashSet<Resource>,
 
     viewport: Viewport,
 
     view_proj_region: Region,
     view_proj_alignment: DeviceAlignment,
     view_proj_buffer_id: Id<Buffer>,
+    #[cfg(feature = "egui")]
     egui_system: EguiSystem<DrawWorld>,
 }
 
+#[cfg(feature = "egui")]
 impl RenderEguiWorld<DrawWorld> for DrawWorld {
     fn get_egui_system(&self) -> &EguiSystem<DrawWorld> {
         unsafe { &(&*self.draw).egui_system }
@@ -94,8 +93,8 @@ impl Draw {
     pub fn new(
         settings: Graphics,
         settings_receiver: Receiver<Graphics>,
-        present_modes: &OnceLock<Vec<PresentMode>>,
-        event_loop: &ActiveEventLoop,
+        present_modes: &OnceLock<Box<[PresentMode]>>,
+        _event_loop: &ActiveEventLoop,
         window: &Arc<winit::window::Window>,
     ) -> Result<Self> {
         let vulkan = VK.get().unwrap();
@@ -164,8 +163,9 @@ impl Draw {
         }
         .unwrap();
 
+        #[cfg(feature = "egui")]
         let egui_system = EguiSystem::new(
-            event_loop,
+            _event_loop,
             &surface,
             vulkan.queues.general(),
             &vulkan.resources,
@@ -186,12 +186,12 @@ impl Draw {
             viewport,
             task_graph,
             draw_node_id,
-            resource_accesses: HashSet::default(),
             settings,
             settings_receiver,
             view_proj_region,
             view_proj_alignment,
             view_proj_buffer_id,
+            #[cfg(feature = "egui")]
             egui_system,
         })
     }
@@ -233,8 +233,27 @@ impl Draw {
             AccessTypes::VERTEX_SHADER_UNIFORM_READ,
         );
 
-        for access in self.resource_accesses.iter() {
-            match *access {
+        let guard = unsafe { vulkan.collector.pin() };
+
+        let resources = vulkan
+            .buffers
+            .iter(&guard)
+            .flat_map(|(_, buffer)| buffer.resources())
+            .chain(
+                vulkan
+                    .textures
+                    .iter(&guard)
+                    .flat_map(|(_, texture)| texture.resources()),
+            )
+            .chain(
+                vulkan
+                    .models
+                    .iter(&guard)
+                    .flat_map(|(_, model)| model.resources()),
+            );
+
+        for access in resources {
+            match access {
                 Resource::Buffer { id, access_types } => {
                     builder.buffer_access(id, access_types);
                 }
@@ -250,13 +269,16 @@ impl Draw {
 
         self.draw_node_id = builder.build();
 
-        let egui_node = self.egui_system.render_egui(
-            &mut task_graph,
-            virtual_swapchain_id,
-            virtual_framebuffer_id,
-        );
+        #[cfg(feature = "egui")]
+        {
+            let egui_node = self.egui_system.render_egui(
+                &mut task_graph,
+                virtual_swapchain_id,
+                virtual_framebuffer_id,
+            );
 
-        task_graph.add_edge(self.draw_node_id, egui_node).unwrap();
+            task_graph.add_edge(self.draw_node_id, egui_node).unwrap();
+        }
 
         let drawing_queue = vulkan.queues.general();
 
@@ -269,6 +291,7 @@ impl Draw {
             })
         }?;
 
+        #[cfg(feature = "egui")]
         self.egui_system.create_task_pipeline(
             &mut self.task_graph,
             &vulkan.resources,
@@ -369,22 +392,13 @@ impl Draw {
 
         let vulkan = VK.get().unwrap();
 
-        if !vulkan.access_queue.1.is_empty() {
-            for event in vulkan.access_queue.1.try_iter() {
-                match event {
-                    NewResource::Add(resource) => {
-                        self.resource_accesses.insert(resource);
-                    }
-                    NewResource::Remove(resource) => {
-                        self.resource_accesses.remove(&resource);
-                    }
-                }
-            }
+        if vulkan.clean_resources() {
             self.recompile_task_graph(vulkan).unwrap();
         }
 
         self.recreate_swapchain(vulkan)?;
 
+        #[cfg(feature = "egui")]
         self.egui_system.update_task_draw_data(&mut self.task_graph);
 
         let resource_map = resource_map!(
@@ -655,7 +669,7 @@ impl Task for DrawTask {
                                 Descriptor::Buffer(buffer_id) => {
                                     let buffer =
                                         vulkan.buffers.get(buffer_id.as_id(), &guard).unwrap();
-                                    let buffer = tcx.buffer(buffer.buffer_id)?;
+                                    let buffer = tcx.buffer(buffer.buffer_id())?;
 
                                     let subbuffer =
                                         vulkano::buffer::Subbuffer::new(buffer.buffer().clone());

@@ -1,6 +1,9 @@
 use std::{
     marker::PhantomData,
-    sync::{Arc, atomic::AtomicU8},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering::Relaxed},
+    },
 };
 
 use concurrent_slotmap::{Key, SlotId};
@@ -22,87 +25,69 @@ use vulkano_taskgraph::{
     resource::{AccessTypes, HostAccessType},
 };
 
+use crate::backend::graphics::vulkan::Resource;
+
 use super::{
     VulkanError,
     vulkan::{VK, Vulkan},
 };
 
-#[derive(Clone)]
-enum AccessMethod {
-    Fixed,
+enum GpuBufferInner {
+    Fixed(Id<VkBuffer>),
     Staged {
+        buffer_id: Id<VkBuffer>,
         staging_id: Id<VkBuffer>,
     },
-    Pinned(PreferOperation),
+    Pinned {
+        buffer_id: Id<VkBuffer>,
+        prefer_operation: PreferOperation,
+    },
     RingBuffer {
-        buffers: Vec<Id<VkBuffer>>,
-        turn: Arc<AtomicU8>,
-        prefer: PreferOperation,
+        buffer_ids: Box<[Id<VkBuffer>]>,
+        turn: AtomicUsize,
     },
 }
 
-impl PartialEq for AccessMethod {
-    fn eq(&self, other: &Self) -> bool {
-        match self {
-            Self::Fixed => other == &Self::Fixed,
-            Self::Staged { staging_id } => {
-                if let Self::Staged {
-                    staging_id: otherid,
-                } = other
-                {
-                    staging_id == otherid
-                } else {
-                    false
-                }
-            }
-            Self::Pinned(a) => {
-                if let Self::Pinned(b) = other {
-                    a == b
-                } else {
-                    false
-                }
-            }
-            Self::RingBuffer {
-                buffers: b1,
-                turn: t1,
-                prefer: p1,
-            } => {
-                if let Self::RingBuffer {
-                    buffers: b2,
-                    turn: t2,
-                    prefer: p2,
-                } = other
-                {
-                    b1 == b2 && p1 == p2 && Arc::ptr_eq(t1, t2)
-                } else {
-                    false
-                }
-            }
-        }
-    }
-}
-
-impl From<AccessMethod> for BufferAccess {
-    fn from(value: AccessMethod) -> Self {
+impl From<&GpuBufferInner> for BufferAccess {
+    fn from(value: &GpuBufferInner) -> Self {
         match value {
-            AccessMethod::Fixed => BufferAccess::Fixed,
-            AccessMethod::Staged { .. } => BufferAccess::Staged,
-            AccessMethod::Pinned(prefer) => BufferAccess::Pinned(prefer),
-            AccessMethod::RingBuffer {
-                prefer, buffers, ..
+            GpuBufferInner::Fixed(_) => BufferAccess::Fixed,
+            GpuBufferInner::Staged { .. } => BufferAccess::Staged,
+            GpuBufferInner::Pinned {
+                prefer_operation, ..
+            } => BufferAccess::Pinned(*prefer_operation),
+            GpuBufferInner::RingBuffer {
+                buffer_ids: buffers,
+                ..
             } => BufferAccess::RingBuffer {
-                prefer_operation: prefer,
                 buffers: buffers.len(),
             },
         }
     }
 }
 
+#[derive(Debug, Error)]
+pub enum GpuBufferError {
+    /// Returns when a buffer is attempted to be created with an invalid size, either too big or too small.
+    #[error("Can not create a buffer: out of bounds size.")]
+    InvalidSize,
+
+    // TODO: make more errors
+    /// Returns if there was an error attempting to read or write to the buffer from or to the GPU.
+    #[error("{0}")]
+    HostAccess(HostAccessError),
+
+    /// Returns when the access operation is not supported with the currently set access setting.
+    #[error("Requested access operation not possible with current access setting: {0:?}")]
+    UnsupportedAccess(BufferAccess),
+
+    #[error("There was an error loading this buffer: {0}")]
+    Other(VulkanError),
+}
+
 /// A GPU loaded representation of a data buffer.
-#[derive(PartialEq)]
 pub struct GpuBuffer<T: Data> {
-    pub(crate) buffer_id: Id<VkBuffer>,
-    access_method: AccessMethod,
+    inner: GpuBufferInner,
 
     usage: BufferUsage,
     _phantom_data: PhantomData<Arc<T>>,
@@ -126,165 +111,103 @@ impl<T: Data> Key for BufferId<T> {
 impl<T: Data> GpuBuffer<T> {
     /// Creates a new buffer.
     pub(crate) fn new(buffer: &Buffer<T>, vulkan: &Vulkan) -> Result<Self, GpuBufferError> {
-        let buffer_usage = *buffer.usage();
-        let usage = match buffer_usage {
+        let usage = match buffer.usage() {
             BufferUsage::Uniform => VkBufferUsage::UNIFORM_BUFFER,
             BufferUsage::Storage => VkBufferUsage::STORAGE_BUFFER,
         };
 
-        let buffer_access = *buffer.optimisation();
-
-        let memory_type_filter = match buffer_access {
-            BufferAccess::Fixed | BufferAccess::Staged => MemoryTypeFilter::PREFER_DEVICE,
-
-            BufferAccess::Pinned(PreferOperation::Read) => {
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS
-            }
-            BufferAccess::Pinned(PreferOperation::Write) => {
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE
-            }
-            BufferAccess::RingBuffer {
-                prefer_operation: PreferOperation::Read,
-                ..
-            } => MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
-            BufferAccess::RingBuffer {
-                prefer_operation: PreferOperation::Write,
-                ..
-            } => MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            access => return Err(GpuBufferError::UnsupportedAccess(access)),
-        };
-
-        // Create data buffer
-        let buffer_id = vulkan
-            .resources
-            .create_buffer(
-                &BufferCreateInfo {
-                    usage: match buffer_access {
-                        BufferAccess::Fixed => usage | VkBufferUsage::TRANSFER_DST,
-                        // TODO: specialize staged to either one
-                        BufferAccess::Staged => {
-                            usage | VkBufferUsage::TRANSFER_SRC | VkBufferUsage::TRANSFER_DST
-                        }
-                        _ => usage,
-                    },
-                    ..Default::default()
-                },
-                &AllocationCreateInfo {
-                    memory_type_filter,
-                    ..Default::default()
-                },
-                DeviceLayout::new_sized::<T>(),
-            )
-            .unwrap();
-
-        let access_method = match buffer_access {
+        let buffer_inner = match *buffer.optimization() {
             BufferAccess::Fixed => {
-                Self::write_staging(vulkan, usage, buffer, buffer_id);
+                let (buffer_id, _) = GpuBuffer::write_staging(vulkan, usage, buffer);
 
-                AccessMethod::Fixed
+                GpuBufferInner::Fixed(buffer_id)
             }
             BufferAccess::Staged => {
-                let staging_id = Self::write_staging(vulkan, usage, buffer, buffer_id);
+                let (buffer_id, staging_id) = GpuBuffer::write_staging(vulkan, usage, buffer);
 
-                AccessMethod::Staged { staging_id }
-            }
-            BufferAccess::Pinned(prefer) => {
-                let flight = vulkan.transfer_flight().unwrap();
-
-                flight.wait(None).unwrap();
-                unsafe {
-                    vulkano_taskgraph::execute(
-                        vulkan.queues.transfer(),
-                        &vulkan.resources,
-                        vulkan.transfer_flight,
-                        |_, ctx| {
-                            let write = ctx.write_buffer::<T>(buffer_id, ..)?;
-
-                            *write = *buffer.data();
-
-                            Ok(())
-                        },
-                        [(buffer_id, HostAccessType::Write)],
-                        [],
-                        [],
-                    )
+                GpuBufferInner::Staged {
+                    buffer_id,
+                    staging_id,
                 }
-                .unwrap();
-
-                AccessMethod::Pinned(prefer)
             }
-            BufferAccess::RingBuffer {
-                prefer_operation: _,
-                buffers: _,
-            } => {
-                // let buffer_count = buffers - 1;
-
-                // let mut buffers = Vec::with_capacity(buffer_count);
-
-                // for _ in 0..buffer_count {
-                //     // Create other ring buffers
-                //     let data = vulkano::buffer::Buffer::new_sized::<T>(
-                //         memory_allocator.clone(),
-                //         BufferCreateInfo {
-                //             usage,
-                //             ..Default::default()
-                //         },
-                //         AllocationCreateInfo {
-                //             memory_type_filter,
-                //             ..Default::default()
-                //         },
-                //     )
-                //     .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
-
-                //     // Write data into this buffer
-                //     *data.write().unwrap() = *buffer;
-
-                //     let buffer_id = vulkan.resources.add_buffer(data.buffer().clone());
-
-                //     buffers.push(buffer_id);
-                // }
-
-                // let turn = Arc::new(0.into());
-
-                // AccessMethod::RingBuffer {
-                //     buffers,
-                //     turn,
-                //     prefer: prefer_operation,
-                // }
-                todo!();
+            BufferAccess::Pinned(prefer_operation) => {
+                Self::pinned(buffer, vulkan, usage, prefer_operation)
             }
+            BufferAccess::RingBuffer { buffers } => Self::ring(buffer, vulkan, usage, buffers)?,
             access => return Err(GpuBufferError::UnsupportedAccess(access)),
         };
+        vulkan.wait_transfer();
 
-        let access_types = match buffer.usage() {
-            BufferUsage::Uniform => {
-                AccessTypes::VERTEX_SHADER_UNIFORM_READ | AccessTypes::FRAGMENT_SHADER_UNIFORM_READ
-            }
-            BufferUsage::Storage => {
-                AccessTypes::FRAGMENT_SHADER_STORAGE_READ | AccessTypes::VERTEX_SHADER_STORAGE_READ
-            }
-        };
-
-        vulkan.add_resource(super::vulkan::Resource::Buffer {
-            id: buffer_id,
-            access_types,
-        });
+        vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(Self {
-            buffer_id,
-            access_method,
+            inner: buffer_inner,
 
             usage: *buffer.usage(),
             _phantom_data: PhantomData,
         })
     }
 
+    /// Creates a new buffer which can only be accessed in the shaders.
+    pub(crate) fn new_gpu_only(
+        size: DeviceSize,
+        usage: BufferUsage,
+        vulkan: &Vulkan,
+    ) -> Result<Self, GpuBufferError> {
+        let Some(size) = DeviceLayout::new_unsized::<T>(size) else {
+            return Err(GpuBufferError::InvalidSize);
+        };
+
+        let buffer_id = vulkan
+            .resources
+            .create_buffer(
+                &BufferCreateInfo {
+                    usage: match usage {
+                        BufferUsage::Uniform => VkBufferUsage::UNIFORM_BUFFER,
+                        BufferUsage::Storage => VkBufferUsage::STORAGE_BUFFER,
+                    },
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+                size,
+            )
+            .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
+
+        vulkan.flag_taskgraph_to_be_rebuilt();
+
+        Ok(Self {
+            inner: GpuBufferInner::Fixed(buffer_id),
+            usage,
+            _phantom_data: PhantomData,
+        })
+    }
+
+    /// Creates a device and host buffer writing the contents of the given buffer data.
+    ///
+    /// The first buffer is the GPU buffer, the second the CPU buffer.
     fn write_staging(
         vulkan: &super::Vulkan,
         usage: VkBufferUsage,
         buffer: &Buffer<T>,
-        buffer_id: Id<VkBuffer>,
-    ) -> Id<VkBuffer> {
+    ) -> (Id<VkBuffer>, Id<VkBuffer>) {
+        let buffer_id = vulkan
+            .resources
+            .create_buffer(
+                &BufferCreateInfo {
+                    usage: usage | VkBufferUsage::TRANSFER_SRC | VkBufferUsage::TRANSFER_DST,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+                DeviceLayout::new_sized::<T>(),
+            )
+            .unwrap();
+
         let staging_id = vulkan
             .resources
             .create_buffer(
@@ -301,9 +224,7 @@ impl<T: Data> GpuBuffer<T> {
             )
             .unwrap();
 
-        let flight = vulkan.resources.flight(vulkan.transfer_flight).unwrap();
-
-        flight.wait(None).unwrap();
+        vulkan.wait_transfer();
         // Copy staging buffer to data.
         unsafe {
             vulkano_taskgraph::execute(
@@ -335,57 +256,138 @@ impl<T: Data> GpuBuffer<T> {
         }
         .unwrap();
 
-        staging_id
+        (buffer_id, staging_id)
     }
+}
 
-    /// Creates a new buffer which can only be accessed in the shaders.
-    pub(crate) fn new_gpu_only(
-        size: DeviceSize,
-        usage: BufferUsage,
+// Access technique implementations
+impl<T: Data> GpuBuffer<T> {
+    fn pinned(
+        buffer: &Buffer<T>,
         vulkan: &Vulkan,
-    ) -> Result<Self, GpuBufferError> {
-        let Some(size) = DeviceLayout::new_unsized::<T>(size) else {
-            return Err(GpuBufferError::InvalidSize);
+        usage: VkBufferUsage,
+        prefer_operation: PreferOperation,
+    ) -> GpuBufferInner {
+        let memory_type_filter = match prefer_operation {
+            PreferOperation::Read => {
+                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS
+            }
+            PreferOperation::Write => {
+                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE
+            }
         };
-
+        // Create data buffer
         let buffer_id = vulkan
             .resources
             .create_buffer(
                 &BufferCreateInfo {
-                    usage: match usage {
-                        BufferUsage::Uniform => VkBufferUsage::UNIFORM_BUFFER,
-                        BufferUsage::Storage => VkBufferUsage::STORAGE_BUFFER,
-                    },
+                    usage,
                     ..Default::default()
                 },
                 &AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    memory_type_filter,
                     ..Default::default()
                 },
-                size,
+                DeviceLayout::new_sized::<T>(),
             )
-            .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
+            .unwrap();
+        vulkan.wait_transfer();
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    let write = ctx.write_buffer::<T>(buffer_id, ..)?;
 
-        let access_types = match usage {
-            BufferUsage::Uniform => {
-                AccessTypes::VERTEX_SHADER_UNIFORM_READ | AccessTypes::FRAGMENT_SHADER_UNIFORM_READ
-            }
-            BufferUsage::Storage => {
-                AccessTypes::FRAGMENT_SHADER_STORAGE_READ | AccessTypes::VERTEX_SHADER_STORAGE_READ
-            }
-        };
+                    *write = *buffer.data();
 
-        vulkan.add_resource(super::vulkan::Resource::Buffer {
-            id: buffer_id,
-            access_types,
-        });
+                    Ok(())
+                },
+                [(buffer_id, HostAccessType::Write)],
+                [],
+                [],
+            )
+        }
+        .unwrap();
 
-        Ok(Self {
+        GpuBufferInner::Pinned {
             buffer_id,
-            access_method: AccessMethod::Fixed,
-            usage,
-            _phantom_data: PhantomData,
+            prefer_operation,
+        }
+    }
+
+    fn ring(
+        buffer: &Buffer<T>,
+        vulkan: &Vulkan,
+        usage: VkBufferUsage,
+        buffers: usize,
+    ) -> Result<GpuBufferInner, GpuBufferError> {
+        let mut buffer_ids = Vec::with_capacity(buffers);
+
+        // Create other ring buffers
+        for _ in 0..buffers {
+            let buffer_id = vulkan
+                .resources
+                .create_buffer(
+                    &BufferCreateInfo {
+                        usage,
+                        ..Default::default()
+                    },
+                    &AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    DeviceLayout::new_sized::<T>(),
+                )
+                .map_err(|e| GpuBufferError::Other(e.unwrap().into()))?;
+
+            buffer_ids.push(buffer_id);
+        }
+
+        vulkan.wait_transfer();
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    for buffer_id in buffer_ids.iter() {
+                        let write = ctx.write_buffer::<T>(*buffer_id, ..)?;
+
+                        *write = *buffer.data();
+                    }
+
+                    Ok(())
+                },
+                buffer_ids
+                    .iter()
+                    .map(|buffer_id| (*buffer_id, HostAccessType::Write)),
+                [],
+                [],
+            )
+        }
+        .unwrap();
+
+        Ok(GpuBufferInner::RingBuffer {
+            buffer_ids: buffer_ids.into_boxed_slice(),
+            turn: 0.into(),
         })
+    }
+}
+
+impl<T: Data> GpuBuffer<T> {
+    /// Returns the current buffer ID
+    pub(crate) fn buffer_id(&self) -> Id<VkBuffer> {
+        match &self.inner {
+            GpuBufferInner::Fixed(buffer_id) => *buffer_id,
+            GpuBufferInner::Staged { buffer_id, .. } => *buffer_id,
+            GpuBufferInner::Pinned { buffer_id, .. } => *buffer_id,
+            GpuBufferInner::RingBuffer {
+                buffer_ids, turn, ..
+            } => buffer_ids[turn.load(Relaxed)],
+        }
     }
 
     pub(crate) fn descriptor_type(&self) -> DescriptorType {
@@ -405,25 +407,26 @@ impl<T: Data> GpuBuffer<T> {
             }
         }
     }
-}
 
-#[derive(Debug, Error)]
-pub enum GpuBufferError {
-    /// Returns when a buffer is attempted to be created with an invalid size, either too big or too small.
-    #[error("Can not create a buffer: out of bounds size.")]
-    InvalidSize,
-
-    // TODO: make more errors
-    /// Returns if there was an error attempting to read or write to the buffer from or to the GPU.
-    #[error("{0}")]
-    HostAccess(HostAccessError),
-
-    /// Returns when the access operation is not supported with the currently set access setting.
-    #[error("Requested access operation not possible with current access setting: {0:?}")]
-    UnsupportedAccess(BufferAccess),
-
-    #[error("There was an error loading this buffer: {0}")]
-    Other(VulkanError),
+    pub(crate) fn resources(&self) -> Vec<Resource> {
+        match &self.inner {
+            GpuBufferInner::Fixed(buffer_id)
+            | GpuBufferInner::Staged { buffer_id, .. }
+            | GpuBufferInner::Pinned { buffer_id, .. } => {
+                vec![Resource::Buffer {
+                    id: *buffer_id,
+                    access_types: self.access_types(),
+                }]
+            }
+            GpuBufferInner::RingBuffer { buffer_ids, .. } => buffer_ids
+                .iter()
+                .map(|buffer_id| Resource::Buffer {
+                    id: *buffer_id,
+                    access_types: self.access_types(),
+                })
+                .collect(),
+        }
+    }
 }
 
 impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
@@ -437,14 +440,12 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
 
         let queue = vulkan.queues.transfer();
 
-        let flight = vulkan.transfer_flight().unwrap();
-
-        match &self.access_method {
-            AccessMethod::Fixed => {
-                return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed));
-            }
-            AccessMethod::Staged { staging_id } => {
-                flight.wait(None).unwrap();
+        match &self.inner {
+            GpuBufferInner::Staged {
+                buffer_id,
+                staging_id,
+            } => {
+                vulkan.wait_transfer();
 
                 // Task 1: data -> staging
                 unsafe {
@@ -454,7 +455,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                         vulkan.transfer_flight,
                         |cb, _| {
                             cb.copy_buffer(&CopyBufferInfo {
-                                src_buffer: self.buffer_id,
+                                src_buffer: *buffer_id,
                                 dst_buffer: *staging_id,
                                 ..Default::default()
                             })?;
@@ -462,7 +463,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                         },
                         [],
                         [
-                            (self.buffer_id, AccessTypes::COPY_TRANSFER_READ),
+                            (*buffer_id, AccessTypes::COPY_TRANSFER_READ),
                             (*staging_id, AccessTypes::COPY_TRANSFER_WRITE),
                         ],
                         [],
@@ -470,7 +471,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                 }
                 .unwrap();
 
-                flight.wait(None).unwrap();
+                vulkan.wait_transfer();
 
                 // Task 2: read staging
                 unsafe {
@@ -492,30 +493,30 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                 }
                 .unwrap();
             }
-            AccessMethod::Pinned(..) => {
-                flight.wait(None).unwrap();
-
+            GpuBufferInner::Pinned { buffer_id, .. } => {
+                vulkan.wait_transfer();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
                         &vulkan.resources,
                         vulkan.transfer_flight,
                         |_, ctx| {
-                            let read = ctx.read_buffer(self.buffer_id, ..)?;
+                            let read = ctx.read_buffer(*buffer_id, ..)?;
                             f(read);
                             Ok(())
                         },
-                        [(self.buffer_id, HostAccessType::Read)],
+                        [(*buffer_id, HostAccessType::Read)],
                         [],
                         [],
                     )
                 }
                 .unwrap();
             }
-            AccessMethod::RingBuffer { .. } => {
-                todo!()
+            other => {
+                return Err(GpuBufferError::UnsupportedAccess(other.into()));
             }
         };
+        vulkan.wait_transfer();
 
         Ok(())
     }
@@ -525,16 +526,19 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
         F: FnOnce(&mut B),
     {
         let vulkan = VK.get().unwrap();
-        match &self.access_method {
-            AccessMethod::Fixed => {
+
+        match &self.inner {
+            GpuBufferInner::Fixed(_) => {
                 return Err(GpuBufferError::UnsupportedAccess(BufferAccess::Fixed));
             }
-            AccessMethod::Staged { staging_id } => {
+            GpuBufferInner::Staged {
+                buffer_id,
+                staging_id,
+            } => {
                 let queue = vulkan.queues.transfer();
-                let flight = vulkan.transfer_flight().unwrap();
 
-                flight.wait(None).unwrap();
-
+                vulkan.wait_transfer();
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -547,7 +551,7 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
 
                             cb.copy_buffer(&CopyBufferInfo {
                                 src_buffer: *staging_id,
-                                dst_buffer: self.buffer_id,
+                                dst_buffer: *buffer_id,
                                 ..Default::default()
                             })?;
 
@@ -556,41 +560,66 @@ impl<B: Data> LoadedBuffer<B> for GpuBuffer<B> {
                         [(*staging_id, HostAccessType::Write)],
                         [
                             (*staging_id, AccessTypes::COPY_TRANSFER_READ),
-                            (self.buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
+                            (*buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
                         ],
                         [],
                     )
                 }
                 .unwrap();
             }
-            AccessMethod::Pinned(..) => {
+            GpuBufferInner::Pinned { buffer_id, .. } => {
                 // Wait for buffer access
-                let flight = vulkan.transfer_flight().unwrap();
 
-                flight.wait(None).unwrap();
-
+                vulkan.wait_transfer();
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
                 unsafe {
                     vulkano_taskgraph::execute(
                         vulkan.queues.transfer(),
                         &vulkan.resources,
                         vulkan.transfer_flight,
                         |_, ctx| {
-                            let write = ctx.write_buffer(self.buffer_id, ..)?;
+                            let write = ctx.write_buffer(*buffer_id, ..)?;
                             f(write);
 
                             Ok(())
                         },
-                        [(self.buffer_id, HostAccessType::Write)],
+                        [(*buffer_id, HostAccessType::Write)],
                         [],
                         [],
                     )
                 }
                 .unwrap();
             }
-            AccessMethod::RingBuffer { .. } => {
-                todo!()
+            GpuBufferInner::RingBuffer {
+                buffer_ids, turn, ..
+            } => {
+                // Write to next turn that the GPU is not currently accessing
+                let index = (turn.load(Relaxed) + 1) % buffer_ids.len();
+                let buffer_id = buffer_ids[index];
+
+                vulkan.wait_transfer();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        vulkan.queues.transfer(),
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let write = ctx.write_buffer(buffer_id, ..)?;
+                            f(write);
+
+                            Ok(())
+                        },
+                        [(buffer_id, HostAccessType::Write)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
+
+                turn.store(index, Relaxed);
             }
         }
+        vulkan.wait_transfer();
 
         Ok(())
     }

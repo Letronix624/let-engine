@@ -1,7 +1,6 @@
 mod instance;
 use anyhow::Result;
 use concurrent_slotmap::{SlotId, SlotMap, hyaline::CollectorHandle};
-use crossbeam::channel::{Receiver, Sender};
 use foldhash::HashMap;
 pub use instance::Queues;
 use let_engine_core::resources::material::Topology;
@@ -29,7 +28,7 @@ use vulkano::{
     },
 };
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, atomic::AtomicBool};
 
 use super::{
     DefaultGraphicsBackendError, Graphics,
@@ -53,7 +52,8 @@ pub struct Vulkan {
     pub graphics_flight: Id<Flight>,
     pub transfer_flight: Id<Flight>,
 
-    pub access_queue: (Sender<NewResource>, Receiver<NewResource>),
+    resources_dirty: AtomicBool,
+
     pub vulkan_pipeline_cache: Arc<PipelineCache>,
     pub pipeline_cache: Mutex<HashMap<MaterialId, Arc<GraphicsPipeline>>>,
 
@@ -62,12 +62,6 @@ pub struct Vulkan {
     pub buffers: SlotMap<SlotId, GpuBuffer<u8>>,
     pub models: SlotMap<SlotId, GpuModel<u8>>,
     pub textures: SlotMap<TextureId, GpuTexture>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum NewResource {
-    Add(Resource),
-    Remove(Resource),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -117,8 +111,6 @@ impl Vulkan {
             .create_flight(1)
             .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.into()))?;
 
-        let access_queue = crossbeam::channel::unbounded();
-
         let vulkan_pipeline_cache =
             PipelineCache::new(&device, &PipelineCacheCreateInfo::default())
                 .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.unwrap().into()))?;
@@ -139,10 +131,10 @@ impl Vulkan {
             descriptor_set_allocator,
 
             resources,
+            resources_dirty: false.into(),
             graphics_flight,
             transfer_flight,
 
-            access_queue,
             vulkan_pipeline_cache,
             pipeline_cache,
 
@@ -158,22 +150,25 @@ impl Vulkan {
         self.resources.flight(self.graphics_flight)
     }
 
-    pub fn add_resource(&self, resource: Resource) {
-        self.access_queue
-            .0
-            .send(NewResource::Add(resource))
-            .unwrap()
+    /// Call when resources are modified
+    pub fn flag_taskgraph_to_be_rebuilt(&self) {
+        self.resources_dirty
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn remove_resource(&self, resource: Resource) {
-        self.access_queue
-            .0
-            .send(NewResource::Remove(resource))
-            .unwrap()
+    /// Call each frame to check if task graph has to be rebuilt
+    pub fn clean_resources(&self) -> bool {
+        self.resources_dirty
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn transfer_flight(&self) -> Result<Ref<'_, Flight>, InvalidSlotError> {
-        self.resources.flight(self.transfer_flight)
+    /// Wait for transfer operations to complete
+    pub fn wait_transfer(&self) {
+        self.resources
+            .flight(self.transfer_flight)
+            .unwrap()
+            .wait_idle()
+            .unwrap()
     }
 
     pub fn get_pipeline(&self, material: MaterialId) -> Option<Arc<GraphicsPipeline>> {

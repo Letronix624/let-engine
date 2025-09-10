@@ -27,6 +27,6 @@ This system will have many more features added like
 
 - Missing asset placeholders
 
-- Asset specific optimisations
+- Asset specific optimizations
 
 - Raw asset data retrieval

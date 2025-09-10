@@ -4,18 +4,8 @@ use image::{EncodableLayout, GenericImageView, ImageReader};
 
 use crate::objects::Color;
 
-use super::{buffer::BufferAccess, Format};
+use super::{Format, buffer::BufferAccess};
 pub use image::ImageFormat;
-
-/// An unloaded texture instance.
-///
-/// This does not contain a reference and is slow to clone, if textures are big.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Texture {
-    data: Vec<u8>,
-    dimensions: ViewTypeDim,
-    settings: TextureSettings,
-}
 
 pub trait LoadedTexture: Send + Sync {
     type Error: std::error::Error + Send + Sync;
@@ -42,6 +32,16 @@ impl LoadedTexture for () {
     fn dimensions(&self) -> &ViewTypeDim {
         &ViewTypeDim::D1 { x: 0 }
     }
+}
+
+/// An unloaded texture instance.
+///
+/// This does not contain a reference and is slow to clone, if textures are big.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Texture {
+    data: Box<[u8]>,
+    dimensions: ViewTypeDim,
+    settings: TextureSettings,
 }
 
 impl Texture {
@@ -112,7 +112,7 @@ impl Texture {
         };
 
         Ok(Texture {
-            data,
+            data: data.into_boxed_slice(),
             dimensions,
             settings,
         })
@@ -167,7 +167,7 @@ impl Texture {
         )
     }
 
-    /// Creates a texture from the bytes of a decoded image of the given image format.
+    /// Creates a texture from the bytes of an encoded image of the given image format.
     ///
     /// The image gets decoded as the provided format in `settings.format`. Supported formats are:
     /// R8Unorm, Sr8, Rg8Unorm, Srg8, Rgb8Unorm, Srgb8, Rgba8Unorm, Srgba8, R16Unorm, Rg16Unorm, Rgb16Unorm, Rgba16Unorm, Rgb32Float, Rgba32Float
@@ -222,12 +222,12 @@ impl Texture {
 
 impl Texture {
     /// Returns a texture data slice.
-    pub fn data(&self) -> &[u8] {
+    pub fn as_bytes(&self) -> &[u8] {
         &self.data
     }
 
     /// Returns a mutable slice containing the data of this texture.
-    pub fn data_mut(&mut self) -> &mut [u8] {
+    pub fn as_bytes_mut(&mut self) -> &mut [u8] {
         &mut self.data
     }
 
@@ -271,7 +271,7 @@ impl Texture {
             }
         }
 
-        self.data = new_texture;
+        self.data = new_texture.into_boxed_slice();
         self.dimensions = target_dimensions;
     }
 
@@ -306,7 +306,9 @@ pub enum TextureError {
     ZeroedDimension,
 
     /// Gets returned when trying to create a texture with a mip level not in valid range.
-    #[error("The provided mip level of {0} is not in the valid range of accepted levels. Min is 1, Max is {1}")]
+    #[error(
+        "The provided mip level of {0} is not in the valid range of accepted levels. Min is 1, Max is {1}"
+    )]
     InvalidMipLevel(u32, u32),
 }
 
@@ -531,7 +533,7 @@ impl Default for Sampler {
 ///
 /// This struct is can be created using a builder pattern like this:
 ///
-/// ```rust
+/// ```ignore
 /// let settings = TextureSettingsBuilder::default()
 ///     .sampler(my_sampler)
 ///     .format(my_format)
@@ -571,11 +573,13 @@ impl TextureSettingsBuilder {
     ) -> Result<Self, TextureSettingsBuilderError> {
         let pattern: BufferAccess = pattern.into();
         self.access_pattern = match pattern {
-            BufferAccess::Fixed | BufferAccess::Staged => Some(pattern),
+            BufferAccess::Fixed | BufferAccess::Staged | BufferAccess::RingBuffer { .. } => {
+                Some(pattern)
+            }
             _ => {
                 return Err(TextureSettingsBuilderError::ValidationError(
                     "Unsupported BufferAccess variant".to_string(),
-                ))
+                ));
             }
         };
         Ok(self)

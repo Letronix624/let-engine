@@ -8,12 +8,12 @@ pub struct Buffer<T: Data> {
 }
 
 impl<T: Data> Buffer<T> {
-    pub fn from_data(usage: BufferUsage, optimisation: BufferAccess, data: T) -> Self {
+    pub fn from_data(usage: BufferUsage, optimization: BufferAccess, data: T) -> Self {
         Self {
             data,
             // size: std::mem::size_of::<T>() as u64,
             usage,
-            buffer_access: optimisation,
+            buffer_access: optimization,
         }
     }
 
@@ -33,13 +33,13 @@ impl<T: Data> Buffer<T> {
     }
 
     /// Returns what this buffer is optimized for.
-    pub fn optimisation(&self) -> &BufferAccess {
+    pub fn optimization(&self) -> &BufferAccess {
         &self.buffer_access
     }
 
-    /// Sets the intended optimisation for this buffer.
-    pub fn set_optimisation(&mut self, optimisation: BufferAccess) {
-        self.buffer_access = optimisation;
+    /// Sets the intended optimization for this buffer.
+    pub fn set_optimization(&mut self, optimization: BufferAccess) {
+        self.buffer_access = optimization;
     }
 }
 
@@ -178,18 +178,18 @@ pub enum BufferAccess {
     /// This method avoids synchronisation issues when updating buffers per frame.
     /// Adds as much GPU overhead as a pinned buffer.
     ///
+    /// Because this stores multiple buffers, memory usage will be multiplied by the specified amount of buffers.
+    ///
     /// This is recommended for small data that changes every single frame.
     ///
-    /// Allows for reading and writing from buffers, where one can be preferred over the
-    /// other with the `PreferOperation`.
+    /// Data can not be read from this type.
+    /// Data provided when writing to this type is the next frame of this data, which is not
+    /// the last written data.
     ///
     /// # Examples
-    /// - Dynamic model that changes shape by the CPU or GPU each frame
-    /// - Dynamic buffer that gets read and written to by the CPU and GPU each frame
+    /// - Dynamic model that changes shape by the CPU each frame
+    /// - Dynamic buffer that gets written to by the CPU and read from the GPU each frame
     RingBuffer {
-        /// The access operation to prefer over the other.
-        prefer_operation: PreferOperation,
-
         /// The amount of buffers to allocate in the ring buffer.
         buffers: usize,
     },

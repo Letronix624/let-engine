@@ -57,7 +57,7 @@ impl Game {
 
         // Create a "circle" model with a default degree (amount of corners) of 15.
         let degree = 15;
-        let mut circle_model = circle!(degree, BufferAccess::Staged);
+        let mut circle_model = circle!(degree, BufferAccess::Pinned(PreferOperation::Write));
 
         // Raise maximum vertices and indices for growable model
         circle_model.set_max_vertices(MAX_DEGREE + 1);

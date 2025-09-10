@@ -1,6 +1,6 @@
 //! Texture related options.
 
-use concurrent_slotmap::{Key, SlotId};
+use concurrent_slotmap::declare_key;
 use let_engine_core::resources::{
     SampledFormatType,
     buffer::BufferAccess,
@@ -12,7 +12,10 @@ use vulkano_taskgraph::{
     resource::{AccessTypes, HostAccessType, ImageLayoutType},
 };
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering::Relaxed},
+};
 use vulkano::{
     DeviceSize,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
@@ -26,62 +29,209 @@ use vulkano::{
     sync::HostAccessError,
 };
 
+enum GpuTextureInner {
+    Fixed {
+        image_id: Id<Image>,
+        image_view: Arc<ImageView>,
+    },
+    Staged {
+        image_id: Id<Image>,
+        image_view: Arc<ImageView>,
+        staging_id: Id<Buffer>,
+    },
+    RingBuffer {
+        image_ids: Box<[Id<Image>]>,
+        image_views: Box<[Arc<ImageView>]>,
+        staging_id: Id<Buffer>,
+        turn: AtomicUsize,
+    },
+}
+
 /// A VRAM loaded instance of a texture.
-#[derive(Clone)]
 pub struct GpuTexture {
-    image_id: Id<Image>,
-    view: Arc<ImageView>,
+    inner: GpuTextureInner,
+
     settings: TextureSettings,
     dimensions: ViewTypeDim,
-
-    staging: Option<Id<Buffer>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TextureId(SlotId);
-
-impl Key for TextureId {
-    #[inline]
-    fn from_id(id: SlotId) -> Self {
-        Self(id)
-    }
-
-    #[inline]
-    fn as_id(self) -> SlotId {
-        self.0
-    }
-}
-
-impl PartialEq for GpuTexture {
-    fn eq(&self, other: &Self) -> bool {
-        self.image_id == other.image_id
-            && Arc::ptr_eq(&self.view, &other.view)
-            && self.settings == other.settings
-            && self.dimensions == other.dimensions
-            && self.staging == other.staging
-    }
+declare_key! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct TextureId
 }
 
 impl GpuTexture {
     pub(crate) fn new(texture: &Texture, vulkan: &Vulkan) -> Result<Self, GpuTextureError> {
         let settings = texture.settings();
-
-        let mip_levels = settings.mip_levels;
-
         let dimensions = texture.dimensions();
+
+        let inner = match texture.settings().access_pattern {
+            BufferAccess::Fixed => {
+                let (_, image_id, image_view) = Self::staged_write(vulkan, texture);
+
+                GpuTextureInner::Fixed {
+                    image_id,
+                    image_view,
+                }
+            }
+            BufferAccess::Staged => {
+                let (staging_id, image_id, image_view) = Self::staged_write(vulkan, texture);
+
+                GpuTextureInner::Staged {
+                    image_id,
+                    image_view,
+                    staging_id,
+                }
+            }
+            BufferAccess::RingBuffer { buffers } => Self::ring(vulkan, texture, buffers),
+            other => return Err(GpuTextureError::UnsupportedAccess(other)),
+        };
+
+        vulkan.flag_taskgraph_to_be_rebuilt();
+
+        Ok(Self {
+            inner,
+            settings: settings.clone(),
+            dimensions: *dimensions,
+        })
+    }
+
+    /// Creates a new image that can only be accessed on the GPU.
+    ///
+    /// `settings.access_pattern` will always be `Fixed`
+    pub(crate) fn new_gpu_only(
+        dimensions: ViewTypeDim,
+        mut settings: TextureSettings,
+        vulkan: &Vulkan,
+    ) -> Result<Self, GpuTextureError> {
+        settings.access_pattern = BufferAccess::Fixed;
 
         let format = format_to_vulkano(&settings.format);
 
-        let access = &settings.access_pattern;
+        // Create new image with given dimensions and settings
+        let image_id = vulkan
+            .resources
+            .create_image(
+                &ImageCreateInfo {
+                    image_type: image_type_to_vulkano(&dimensions),
+                    format,
+                    extent: dimensions.extent(),
+                    array_layers: dimensions.array_layers(),
+                    usage: ImageUsage::SAMPLED,
+                    mip_levels: settings.mip_levels,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo::default(),
+            )
+            .unwrap(); // TODO: unwraps
 
-        let buffer_id = Self::create_buffer(vulkan, settings, dimensions);
+        let image_state = vulkan.resources.image(image_id).unwrap();
 
-        let image_id = Self::create_image(vulkan, format, dimensions, mip_levels)?;
+        let view_type = image_view_type_to_vulkano(&dimensions);
 
-        let flight = vulkan.transfer_flight().unwrap();
-        flight.wait(None).unwrap();
+        let image_view = ImageView::new(
+            image_state.image(),
+            &ImageViewCreateInfo {
+                view_type,
+                ..ImageViewCreateInfo::from_image(image_state.image())
+            },
+        )
+        .unwrap();
+
+        vulkan.flag_taskgraph_to_be_rebuilt();
+
+        Ok(Self {
+            inner: GpuTextureInner::Fixed {
+                image_id,
+                image_view,
+            },
+            settings,
+            dimensions,
+        })
+    }
+
+    /// Returns the settings of this texture.
+    pub fn settings(&self) -> &TextureSettings {
+        &self.settings
+    }
+
+    pub(crate) fn image_view(&self) -> &Arc<ImageView> {
+        match &self.inner {
+            GpuTextureInner::Fixed { image_view, .. }
+            | GpuTextureInner::Staged { image_view, .. } => image_view,
+            GpuTextureInner::RingBuffer {
+                image_views, turn, ..
+            } => &image_views[turn.load(Relaxed)],
+        }
+    }
+
+    pub(crate) fn resources(&self) -> Vec<Resource> {
+        let access_types = AccessTypes::COLOR_ATTACHMENT_READ;
+        match &self.inner {
+            GpuTextureInner::Fixed { image_id, .. } | GpuTextureInner::Staged { image_id, .. } => {
+                vec![Resource::Image {
+                    id: *image_id,
+                    access_types,
+                }]
+            }
+            GpuTextureInner::RingBuffer { image_ids, .. } => image_ids
+                .iter()
+                .map(|id| Resource::Image {
+                    id: *id,
+                    access_types,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl GpuTexture {
+    fn staged_write(vulkan: &Vulkan, texture: &Texture) -> (Id<Buffer>, Id<Image>, Arc<ImageView>) {
+        let buffer_id = vulkan
+            .resources
+            .create_buffer(
+                &BufferCreateInfo {
+                    usage: BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                        | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                    ..Default::default()
+                },
+                DeviceLayout::new_unsized::<[u8]>(Texture::calculate_buffer_size(
+                    texture.dimensions(),
+                    texture.settings(),
+                ) as DeviceSize)
+                .unwrap(),
+            )
+            .unwrap();
+
+        let format = format_to_vulkano(&texture.settings().format);
+        let image_id = vulkan
+            .resources
+            .create_image(
+                &ImageCreateInfo {
+                    image_type: image_type_to_vulkano(texture.dimensions()),
+                    format,
+                    extent: texture.dimensions().extent(),
+                    array_layers: texture.dimensions().array_layers(),
+                    usage: ImageUsage::TRANSFER_SRC
+                        | ImageUsage::TRANSFER_DST
+                        | ImageUsage::SAMPLED,
+                    mip_levels: texture.settings().mip_levels,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| GpuTextureError::Other(e.unwrap().into()))
+            .unwrap();
 
         // Write texture data into GPU buffer & copy to texture
+        vulkan.wait_transfer();
         unsafe {
             vulkano_taskgraph::execute(
                 vulkan.queues.transfer(),
@@ -90,7 +240,7 @@ impl GpuTexture {
                 |cb, ctx| {
                     let write: &mut [u8] = ctx.write_buffer(buffer_id, ..)?;
 
-                    write.copy_from_slice(texture.data());
+                    write.copy_from_slice(texture.as_bytes());
 
                     cb.copy_buffer_to_image(
                         &vulkano_taskgraph::command_buffer::CopyBufferToImageInfo {
@@ -114,111 +264,22 @@ impl GpuTexture {
         }
         .unwrap();
 
-        let view_type = image_view_type_to_vulkano(dimensions);
-
         let image_state = vulkan.resources.image(image_id).unwrap();
 
-        let view = ImageView::new(
+        let image_view = ImageView::new(
             image_state.image(),
             &ImageViewCreateInfo {
-                view_type,
+                view_type: image_view_type_to_vulkano(texture.dimensions()),
                 ..ImageViewCreateInfo::from_image(image_state.image())
             },
         )
         .unwrap();
 
-        vulkan.add_resource(super::vulkan::Resource::Image {
-            id: image_id,
-            access_types: AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
-        });
-
-        Ok(Self {
-            image_id,
-            view,
-            settings: settings.clone(),
-            dimensions: *dimensions,
-
-            staging: match access {
-                BufferAccess::Fixed => None,
-                BufferAccess::Staged => Some(buffer_id),
-                _ => unreachable!(),
-            },
-        })
+        (buffer_id, image_id, image_view)
     }
 
-    /// Creates a new image that can only be accessed on the GPU.
-    ///
-    /// `settings.access_pattern` will always be `Fixed`
-    pub(crate) fn new_gpu_only(
-        dimensions: ViewTypeDim,
-        mut settings: TextureSettings,
-        vulkan: &Vulkan,
-    ) -> Result<Self, GpuTextureError> {
-        settings.access_pattern = BufferAccess::Fixed;
-
-        let format = format_to_vulkano(&settings.format);
-
-        // Create new image with given dimensions and settings
-        let image_id = vulkan
-            .resources
-            .create_image(
-                &ImageCreateInfo {
-                    image_type: Self::image_type(&dimensions),
-                    format,
-                    extent: dimensions.extent(),
-                    array_layers: dimensions.array_layers(),
-                    usage: ImageUsage::SAMPLED,
-                    mip_levels: settings.mip_levels,
-                    ..Default::default()
-                },
-                &AllocationCreateInfo::default(),
-            )
-            .unwrap(); // TODO: unwraps
-
-        let image_state = vulkan.resources.image(image_id).unwrap();
-
-        let view_type = image_view_type_to_vulkano(&dimensions);
-
-        let view = ImageView::new(
-            image_state.image(),
-            &ImageViewCreateInfo {
-                view_type,
-                ..ImageViewCreateInfo::from_image(image_state.image())
-            },
-        )
-        .unwrap();
-
-        vulkan.add_resource(super::vulkan::Resource::Image {
-            id: image_id,
-            access_types: AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
-        });
-
-        Ok(Self {
-            image_id,
-            view,
-            settings,
-            dimensions,
-            staging: None,
-        })
-    }
-
-    /// Returns the settings of this texture.
-    pub fn settings(&self) -> &TextureSettings {
-        &self.settings
-    }
-
-    pub(crate) fn image_id(&self) -> Id<Image> {
-        self.image_id
-    }
-}
-
-impl GpuTexture {
-    fn create_buffer(
-        vulkan: &Vulkan,
-        settings: &TextureSettings,
-        dimensions: &ViewTypeDim,
-    ) -> Id<Buffer> {
-        vulkan
+    fn ring(vulkan: &Vulkan, texture: &Texture, buffers: usize) -> GpuTextureInner {
+        let staging_id = vulkan
             .resources
             .create_buffer(
                 &BufferCreateInfo {
@@ -231,56 +292,94 @@ impl GpuTexture {
                     ..Default::default()
                 },
                 DeviceLayout::new_unsized::<[u8]>(Texture::calculate_buffer_size(
-                    dimensions, settings,
+                    texture.dimensions(),
+                    texture.settings(),
                 ) as DeviceSize)
                 .unwrap(),
             )
-            .unwrap()
-    }
+            .unwrap();
 
-    fn image_type(dimensions: &ViewTypeDim) -> ImageType {
-        match dimensions {
-            ViewTypeDim::D1 { .. } => ImageType::Dim1d,
-            ViewTypeDim::D2 { .. } => ImageType::Dim2d,
-            ViewTypeDim::D3 { .. } => ImageType::Dim3d,
-            ViewTypeDim::CubeMap { .. } => ImageType::Dim2d,
-            ViewTypeDim::D1Array { .. } => ImageType::Dim1d,
-            ViewTypeDim::D2Array { .. } => ImageType::Dim2d,
-            ViewTypeDim::CubeArray { .. } => ImageType::Dim2d,
-        }
-    }
+        let format = format_to_vulkano(&texture.settings().format);
 
-    fn create_image(
-        vulkan: &Vulkan,
-        format: vulkano::format::Format,
-        dimensions: &ViewTypeDim,
-        mip_levels: u32,
-    ) -> Result<Id<Image>, GpuTextureError> {
-        let usage = ImageUsage::TRANSFER_SRC | ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED;
+        let mut image_ids = Vec::with_capacity(buffers);
+        let mut image_views = Vec::with_capacity(buffers);
+        for _ in 0..buffers {
+            let image_id = vulkan
+                .resources
+                .create_image(
+                    &ImageCreateInfo {
+                        image_type: image_type_to_vulkano(texture.dimensions()),
+                        format,
+                        extent: texture.dimensions().extent(),
+                        array_layers: texture.dimensions().array_layers(),
+                        usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+                        mip_levels: texture.settings().mip_levels,
+                        ..Default::default()
+                    },
+                    &AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                )
+                .map_err(|e| GpuTextureError::Other(e.unwrap().into()))
+                .unwrap();
+            let image_state = vulkan.resources.image(image_id).unwrap();
 
-        // Create new image with given dimensions and settings
-        vulkan
-            .resources
-            .create_image(
-                &ImageCreateInfo {
-                    image_type: Self::image_type(dimensions),
-                    format,
-                    extent: dimensions.extent(),
-                    array_layers: dimensions.array_layers(),
-                    usage,
-                    mip_levels,
-                    ..Default::default()
-                },
-                &AllocationCreateInfo {
-                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
-                    ..Default::default()
+            let image_view = ImageView::new(
+                image_state.image(),
+                &ImageViewCreateInfo {
+                    view_type: image_view_type_to_vulkano(texture.dimensions()),
+                    ..ImageViewCreateInfo::from_image(image_state.image())
                 },
             )
-            .map_err(|e| GpuTextureError::Other(e.unwrap().into()))
-    }
+            .unwrap();
+            image_ids.push(image_id);
+            image_views.push(image_view);
+        }
 
-    pub(crate) fn image_view(&self) -> &Arc<ImageView> {
-        &self.view
+        vulkan.wait_transfer();
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |cb, ctx| {
+                    let write: &mut [u8] = ctx.write_buffer(staging_id, ..)?;
+
+                    write.copy_from_slice(texture.as_bytes());
+
+                    for image_id in image_ids.iter() {
+                        cb.copy_buffer_to_image(
+                            &vulkano_taskgraph::command_buffer::CopyBufferToImageInfo {
+                                src_buffer: staging_id,
+                                dst_image: *image_id,
+                                dst_image_layout: ImageLayoutType::Optimal,
+                                ..Default::default()
+                            },
+                        )?;
+                    }
+
+                    Ok(())
+                },
+                [(staging_id, HostAccessType::Write)],
+                [(staging_id, AccessTypes::COPY_TRANSFER_READ)],
+                image_ids.iter().map(|id| {
+                    (
+                        *id,
+                        AccessTypes::COPY_TRANSFER_WRITE,
+                        ImageLayoutType::Optimal,
+                    )
+                }),
+            )
+        }
+        .unwrap();
+
+        GpuTextureInner::RingBuffer {
+            image_ids: image_ids.into_boxed_slice(),
+            image_views: image_views.into_boxed_slice(),
+            staging_id,
+            turn: 0.into(),
+        }
     }
 
     pub(crate) fn vk_sampler(&self) -> vulkano::image::sampler::SamplerCreateInfo<'_> {
@@ -299,21 +398,27 @@ impl GpuTexture {
 impl LoadedTexture for GpuTexture {
     type Error = GpuTextureError;
 
-    /// Reads the texture from the GPU. Speed depends on Access preference set in the settings.
+    /// Reads the texture from the GPU.
+    ///
+    /// Only possible for staged textures.
     fn data<F: FnOnce(&[u8])>(&self, f: F) -> Result<(), Self::Error> {
-        let access = self.settings.access_pattern;
-        let Some(staging_id) = self.staging else {
-            return Err(GpuTextureError::UnsupportedAccess(access));
+        let GpuTextureInner::Staged {
+            image_id,
+            staging_id,
+            ..
+        } = &self.inner
+        else {
+            return Err(GpuTextureError::UnsupportedAccess(
+                self.settings.access_pattern,
+            ));
         };
 
         let vulkan = VK.get().unwrap();
 
         let queue = vulkan.queues.transfer();
-        let flight = vulkan.transfer_flight().unwrap();
-
-        flight.wait(None).unwrap();
 
         // Task 1: image -> staging
+        vulkan.wait_transfer();
         unsafe {
             vulkano_taskgraph::execute(
                 queue,
@@ -321,16 +426,16 @@ impl LoadedTexture for GpuTexture {
                 vulkan.transfer_flight,
                 |cb, _| {
                     cb.copy_image_to_buffer(&CopyImageToBufferInfo {
-                        src_image: self.image_id,
-                        dst_buffer: staging_id,
+                        src_image: *image_id,
+                        dst_buffer: *staging_id,
                         ..Default::default()
                     })?;
                     Ok(())
                 },
                 [],
-                [(staging_id, AccessTypes::COPY_TRANSFER_WRITE)],
+                [(*staging_id, AccessTypes::COPY_TRANSFER_WRITE)],
                 [(
-                    self.image_id,
+                    *image_id,
                     AccessTypes::COPY_TRANSFER_READ,
                     ImageLayoutType::Optimal,
                 )],
@@ -338,22 +443,21 @@ impl LoadedTexture for GpuTexture {
         }
         .unwrap();
 
-        flight.wait(None).unwrap();
-
         // Task 2: read staging
+        vulkan.wait_transfer();
         unsafe {
             vulkano_taskgraph::execute(
                 queue,
                 &vulkan.resources,
                 vulkan.transfer_flight,
                 |_, ctx| {
-                    let read: &[u8] = ctx.read_buffer(staging_id, ..)?;
+                    let read: &[u8] = ctx.read_buffer(*staging_id, ..)?;
 
                     f(read);
 
                     Ok(())
                 },
-                [(staging_id, HostAccessType::Read)],
+                [(*staging_id, HostAccessType::Read)],
                 [],
                 [],
             )
@@ -370,49 +474,100 @@ impl LoadedTexture for GpuTexture {
 
     /// Writes the modified bytes to the GPU. Speed depends on Access preference set in settings.
     fn write_data<F: FnOnce(&mut [u8])>(&self, f: F) -> Result<(), Self::Error> {
-        let Some(staging_id) = self.staging else {
-            return Err(GpuTextureError::UnsupportedAccess(
-                self.settings.access_pattern,
-            ));
-        };
-
         let vulkan = VK.get().unwrap();
         let queue = vulkan.queues.transfer();
 
-        let flight = vulkan.transfer_flight().unwrap();
+        match &self.inner {
+            GpuTextureInner::Staged {
+                image_id,
+                staging_id,
+                ..
+            } => {
+                vulkan.wait_transfer();
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |cb, ctx| {
+                            let write: &mut [u8] = ctx.write_buffer(*staging_id, ..)?;
+                            f(write);
 
-        flight.wait(None).unwrap();
+                            cb.copy_buffer_to_image(&CopyBufferToImageInfo {
+                                src_buffer: *staging_id,
+                                dst_image: *image_id,
+                                ..Default::default()
+                            })?;
 
-        unsafe {
-            vulkano_taskgraph::execute(
-                queue,
-                &vulkan.resources,
-                vulkan.transfer_flight,
-                |cb, ctx| {
-                    let write: &mut [u8] = ctx.write_buffer(staging_id, ..)?;
-                    f(write);
+                            Ok(())
+                        },
+                        [(*staging_id, HostAccessType::Write)],
+                        [
+                            (*staging_id, AccessTypes::COPY_TRANSFER_WRITE),
+                            (*staging_id, AccessTypes::COPY_TRANSFER_READ),
+                        ],
+                        [(
+                            *image_id,
+                            AccessTypes::COPY_TRANSFER_WRITE,
+                            ImageLayoutType::Optimal,
+                        )],
+                    )
+                }
+                .unwrap();
+            }
+            GpuTextureInner::RingBuffer {
+                image_ids,
+                staging_id,
+                turn,
+                ..
+            } => {
+                let index = (turn.load(Relaxed) + 1) % image_ids.len();
+                let image_id = image_ids[index];
 
-                    cb.copy_buffer_to_image(&CopyBufferToImageInfo {
-                        src_buffer: staging_id,
-                        dst_image: self.image_id,
-                        ..Default::default()
-                    })?;
+                vulkan.wait_transfer();
 
-                    Ok(())
-                },
-                [(staging_id, HostAccessType::Write)],
-                [
-                    (staging_id, AccessTypes::COPY_TRANSFER_WRITE),
-                    (staging_id, AccessTypes::COPY_TRANSFER_READ),
-                ],
-                [(
-                    self.image_id,
-                    AccessTypes::COPY_TRANSFER_WRITE,
-                    ImageLayoutType::Optimal,
-                )],
-            )
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |cb, ctx| {
+                            let write: &mut [u8] = ctx.write_buffer(*staging_id, ..)?;
+                            f(write);
+
+                            cb.copy_buffer_to_image(&CopyBufferToImageInfo {
+                                src_buffer: *staging_id,
+                                dst_image: image_id,
+                                ..Default::default()
+                            })?;
+
+                            Ok(())
+                        },
+                        [(*staging_id, HostAccessType::Write)],
+                        [
+                            (*staging_id, AccessTypes::COPY_TRANSFER_WRITE),
+                            (*staging_id, AccessTypes::COPY_TRANSFER_READ),
+                        ],
+                        [(
+                            image_id,
+                            AccessTypes::COPY_TRANSFER_WRITE,
+                            ImageLayoutType::Optimal,
+                        )],
+                    )
+                }
+                .unwrap();
+
+                turn.store(index, Relaxed);
+            }
+            _ => {
+                return Err(GpuTextureError::UnsupportedAccess(
+                    self.settings.access_pattern,
+                ));
+            }
         }
-        .unwrap();
+
+        vulkan.wait_transfer();
 
         Ok(())
     }
@@ -421,6 +576,8 @@ impl LoadedTexture for GpuTexture {
 // Texture based errors.
 
 use thiserror::Error;
+
+use crate::backend::graphics::vulkan::Resource;
 
 use super::{
     VulkanError, format_to_vulkano,
@@ -519,5 +676,17 @@ pub(crate) fn image_view_type_to_vulkano(dimensions: &ViewTypeDim) -> ImageViewT
         ViewTypeDim::D1Array { .. } => ImageViewType::Dim1dArray,
         ViewTypeDim::D2Array { .. } => ImageViewType::Dim2dArray,
         ViewTypeDim::CubeArray { .. } => ImageViewType::CubeArray,
+    }
+}
+
+fn image_type_to_vulkano(dimensions: &ViewTypeDim) -> ImageType {
+    match dimensions {
+        ViewTypeDim::D1 { .. } => ImageType::Dim1d,
+        ViewTypeDim::D2 { .. } => ImageType::Dim2d,
+        ViewTypeDim::D3 { .. } => ImageType::Dim3d,
+        ViewTypeDim::CubeMap { .. } => ImageType::Dim2d,
+        ViewTypeDim::D1Array { .. } => ImageType::Dim1d,
+        ViewTypeDim::D2Array { .. } => ImageType::Dim2d,
+        ViewTypeDim::CubeArray { .. } => ImageType::Dim2d,
     }
 }

@@ -15,7 +15,7 @@ use super::Vulkan;
 pub fn create_swapchain(
     device: &Arc<Device>,
     surface: Arc<Surface>,
-    present_modes: &OnceLock<Vec<crate::backend::graphics::PresentMode>>,
+    present_modes: &OnceLock<Box<[crate::backend::graphics::PresentMode]>>,
     vulkan: &Vulkan,
 ) -> Result<(Id<Swapchain>, UVec2, Format), VulkanError> {
     let surface_capabilities = device
@@ -46,9 +46,12 @@ pub fn create_swapchain(
         .into_iter()
         .map(|x| x.into())
         .collect();
+    available_present_modes.sort();
     available_present_modes.dedup();
 
-    present_modes.set(available_present_modes).unwrap();
+    present_modes
+        .set(available_present_modes.into_boxed_slice())
+        .unwrap();
 
     let create_info = SwapchainCreateInfo {
         min_image_count: surface_capabilities.min_image_count,

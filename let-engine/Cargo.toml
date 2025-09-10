@@ -125,7 +125,7 @@ default = [
 
 egui = ["dep:egui_winit_vulkano", "dep:egui", "client", "let-engine-core/egui"]
 client = ["dep:winit", "dep:image", "let-engine-core/client"]
-default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client", "dep:egui_winit_vulkano"]
+default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client"]
 default_networking_backend = ["dep:local-ip-address", "glam/rkyv", "glam/bytecheck"]
 vulkan_debug = ["default_graphics_backend"]
 physics = ["dep:rapier2d", "let-engine-core/physics"]

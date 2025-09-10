@@ -61,8 +61,7 @@ impl Game {
             .graphics
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
-                // We will only write to this object.
-                BufferAccess::Pinned(PreferOperation::Write),
+                BufferAccess::Fixed,
                 Color::RED,
             ))
             .unwrap();
@@ -88,8 +87,7 @@ impl Game {
             .graphics
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
-                // We will only write to this object.
-                BufferAccess::Pinned(PreferOperation::Write),
+                BufferAccess::Fixed,
                 Color::GREEN,
             ))
             .unwrap();
@@ -114,8 +112,8 @@ impl Game {
             .graphics
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
-                // We will only write to this object.
-                BufferAccess::Pinned(PreferOperation::Write),
+                // We will only write to this object. 2 buffers is sufficient for small data
+                BufferAccess::RingBuffer { buffers: 2 },
                 Color::BLUE,
             ))
             .unwrap();
@@ -221,13 +219,14 @@ impl let_engine::Game for Game {
         }
     }
 
+    // Gradually change color of circle
     fn update(&mut self, context: EngineContext) {
         let buffer = context.graphics.buffer(self.color_buffer).unwrap();
         buffer
             .write_data(|w| {
                 *w = w.lerp(
                     Color::from_rgb(1.0, 0.3, 0.5),
-                    (context.time.delta_time() * 0.03) as f32,
+                    (context.time.delta_time() * 0.04) as f32,
                 )
             })
             .unwrap();

@@ -17,7 +17,7 @@ use crate::backend::graphics::{
 #[derive(Debug)]
 pub struct Queues {
     general: Arc<Queue>,
-    compute: Option<Arc<Queue>>,
+    _compute: Option<Arc<Queue>>,
     transfer: Option<Arc<Queue>>,
 }
 
@@ -25,7 +25,7 @@ impl Queues {
     fn new(general: Arc<Queue>, compute: Option<Arc<Queue>>, transfer: Option<Arc<Queue>>) -> Self {
         Self {
             general,
-            compute,
+            _compute: compute,
             transfer,
         }
     }
@@ -36,8 +36,8 @@ impl Queues {
     }
 
     #[inline]
-    pub fn compute(&self) -> &Arc<Queue> {
-        self.compute.as_ref().unwrap_or(self.general())
+    pub fn _compute(&self) -> &Arc<Queue> {
+        self._compute.as_ref().unwrap_or(self.general())
     }
 
     #[inline]

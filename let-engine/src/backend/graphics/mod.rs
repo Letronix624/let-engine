@@ -40,7 +40,6 @@ use vulkano::{
     shader::spirv::SpirvBytesNotMultipleOf4,
 };
 
-use vulkano_taskgraph::resource::AccessTypes;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 
 pub use vulkano::DeviceSize;
@@ -304,7 +303,7 @@ pub struct GraphicsInterfacer {
     settings_sender: Sender<Graphics>,
 
     // Gets written to in swapchain.rs
-    available_present_modes: OnceLock<Vec<PresentMode>>,
+    available_present_modes: OnceLock<Box<[PresentMode]>>,
 }
 
 impl let_engine_core::backend::graphics::GraphicsInterfacer<VulkanTypes> for GraphicsInterfacer {
@@ -465,11 +464,8 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     fn remove_buffer<B: Data>(&self, id: BufferId<B>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        if let Some(buffer) = vulkan.buffers.remove(id.as_id(), &self.guard) {
-            vulkan.remove_resource(vulkan::Resource::Buffer {
-                id: buffer.buffer_id,
-                access_types: buffer.access_types(),
-            });
+        if vulkan.buffers.remove(id.as_id(), &self.guard).is_some() {
+            vulkan.flag_taskgraph_to_be_rebuilt();
         }
 
         Ok(())
@@ -478,17 +474,8 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     fn remove_model<V: Vertex>(&self, id: ModelId<V>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        if let Some(model) = vulkan.models.remove(id.as_id(), &self.guard) {
-            vulkan.remove_resource(vulkan::Resource::Buffer {
-                id: model.vertex_buffer_id(),
-                access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
-            });
-            if let Some(id) = model.index_buffer_id() {
-                vulkan.remove_resource(vulkan::Resource::Buffer {
-                    id,
-                    access_types: AccessTypes::INDEX_READ,
-                });
-            }
+        if vulkan.models.remove(id.as_id(), &self.guard).is_some() {
+            vulkan.flag_taskgraph_to_be_rebuilt();
         }
 
         Ok(())
@@ -497,11 +484,8 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     fn remove_texture(&self, id: <VulkanTypes as Loaded>::TextureId) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        if let Some(texture) = vulkan.textures.remove(id, &self.guard) {
-            vulkan.remove_resource(vulkan::Resource::Image {
-                id: texture.image_id(),
-                access_types: AccessTypes::FRAGMENT_SHADER_SAMPLED_READ,
-            });
+        if vulkan.textures.remove(id, &self.guard).is_some() {
+            vulkan.flag_taskgraph_to_be_rebuilt();
         };
 
         Ok(())
@@ -873,7 +857,7 @@ impl Graphics {
 /// The vsync options may include higher latency than the other ones.
 ///
 /// It is not recommended dynamically switching between those during the game, as they may cause visual artifacts or noticable changes.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum PresentMode {
     /// This one has no vsync and presents the image as soon as it is available.

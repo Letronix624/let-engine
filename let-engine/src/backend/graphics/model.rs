@@ -1,7 +1,9 @@
 use std::{
     marker::PhantomData,
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{Arc, atomic::AtomicUsize},
 };
+
+use std::sync::atomic::Ordering::Relaxed;
 
 use anyhow::Result;
 use concurrent_slotmap::{Key, SlotId};
@@ -12,58 +14,77 @@ use let_engine_core::resources::{
 };
 use thiserror::Error;
 use vulkano::{
+    DeviceSize,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
     memory::allocator::{AllocationCreateInfo, DeviceLayout, MemoryTypeFilter},
-    DeviceSize,
 };
 use vulkano_taskgraph::{
+    Id,
     command_buffer::CopyBufferInfo,
     resource::{AccessTypes, HostAccessType},
-    Id,
 };
 
-use super::{vulkan::VK, VulkanError};
+use crate::backend::graphics::vulkan::Resource;
 
-#[derive(Clone)]
-enum AccessMethod {
-    Fixed,
+use super::{VulkanError, vulkan::VK};
+
+enum GpuModelInner {
+    Fixed {
+        vertex_buffer_id: Id<Buffer>,
+        index_buffer_id: Option<Id<Buffer>>,
+    },
     Staged {
+        vertex_buffer_id: Id<Buffer>,
+        index_buffer_id: Option<Id<Buffer>>,
         vertex_staging_id: Id<Buffer>,
         index_staging_id: Option<Id<Buffer>>,
     },
-    Pinned(PreferOperation),
-    // RingBuffer {
-    //     buffers: Vec<Id<VkBuffer>>,
-    //     turn: Arc<AtomicU8>,
-    //     prefer: PreferOperation,
-    // },
+    Pinned {
+        vertex_buffer_id: Id<Buffer>,
+        index_buffer_id: Option<Id<Buffer>>,
+        prefer_operation: PreferOperation,
+    },
+    RingBuffer {
+        vertex_buffer_ids: Box<[Id<Buffer>]>,
+        index_buffer_ids: Box<[Id<Buffer>]>,
+        vertex_turn: AtomicUsize,
+        index_turn: AtomicUsize,
+    },
 }
 
-impl PartialEq for AccessMethod {
-    fn eq(&self, other: &Self) -> bool {
+impl GpuModelInner {
+    fn is_indexed(&self) -> bool {
         match self {
-            Self::Fixed => other == &Self::Fixed,
-            Self::Staged {
-                vertex_staging_id,
-                index_staging_id,
-            } => {
-                if let Self::Staged {
-                    vertex_staging_id: vertex,
-                    index_staging_id: index,
-                } = other
-                {
-                    vertex_staging_id == vertex && index_staging_id == index
-                } else {
-                    false
-                }
+            GpuModelInner::Fixed {
+                index_buffer_id, ..
             }
-            Self::Pinned(a) => {
-                if let Self::Pinned(b) = other {
-                    a == b
-                } else {
-                    false
-                }
+            | GpuModelInner::Staged {
+                index_buffer_id, ..
             }
+            | GpuModelInner::Pinned {
+                index_buffer_id, ..
+            } => index_buffer_id.is_some(),
+            GpuModelInner::RingBuffer {
+                index_buffer_ids, ..
+            } => !index_buffer_ids.is_empty(),
+        }
+    }
+}
+
+impl From<&GpuModelInner> for BufferAccess {
+    fn from(value: &GpuModelInner) -> Self {
+        match value {
+            GpuModelInner::Fixed { .. } => BufferAccess::Fixed,
+            GpuModelInner::Staged { .. } => BufferAccess::Staged,
+            GpuModelInner::Pinned {
+                prefer_operation, ..
+            } => BufferAccess::Pinned(*prefer_operation),
+            GpuModelInner::RingBuffer {
+                vertex_buffer_ids: vertex_buffers,
+                ..
+            } => BufferAccess::RingBuffer {
+                buffers: vertex_buffers.len(),
+            },
         }
     }
 }
@@ -72,16 +93,14 @@ impl PartialEq for AccessMethod {
 ///
 /// This structure does not contain any data but only handles to data stored on the GPU.
 pub struct GpuModel<V: Vertex = Vec2> {
-    vertex_buffer_id: Id<Buffer>,
-    index_buffer_id: Option<Id<Buffer>>,
+    inner: GpuModelInner,
+
     vertex_buffer_description: VertexBufferDescription,
 
     max_vertices: usize,
     max_indices: usize,
     vertex_len: AtomicUsize,
     index_len: AtomicUsize,
-
-    access_method: AccessMethod,
 
     _phantom: PhantomData<Arc<V>>,
 }
@@ -101,14 +120,6 @@ impl<T: Vertex> Key for ModelId<T> {
     }
 }
 
-impl<V: Vertex> PartialEq for GpuModel<V> {
-    fn eq(&self, other: &Self) -> bool {
-        self.vertex_buffer_id == other.vertex_buffer_id
-            && self.index_buffer_id == other.index_buffer_id
-            && other.access_method == self.access_method
-    }
-}
-
 impl<V: Vertex> GpuModel<V> {
     /// Loads the model into the GPU and returns an instance of this Model handle.
     pub(crate) fn new(model: &Model<V>) -> Result<Self, ModelError> {
@@ -123,156 +134,42 @@ impl<V: Vertex> GpuModel<V> {
 
         let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
-        let (usage, memory_type_filter) = match buffer_access {
-            BufferAccess::Fixed => (BufferUsage::TRANSFER_DST, MemoryTypeFilter::PREFER_DEVICE),
-            BufferAccess::Pinned(PreferOperation::Read) => (
-                BufferUsage::empty(),
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
-            ),
-            BufferAccess::Pinned(PreferOperation::Write) => (
-                BufferUsage::empty(),
-                MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ),
-            BufferAccess::Staged => (
-                BufferUsage::TRANSFER_SRC | BufferUsage::TRANSFER_DST,
-                MemoryTypeFilter::PREFER_HOST | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-            ),
-            access => return Err(ModelError::UnsupportedAccess(access)),
-        };
-
-        let vertex_layout = DeviceLayout::new_unsized::<[V]>(max_vertices as DeviceSize)
-            .ok_or(ModelError::EmptyModel)?;
-        let index_layout = DeviceLayout::new_unsized::<[u32]>(max_indices as DeviceSize);
-
-        // Create buffers
-        let vertex_buffer_id = vulkan
-            .resources
-            .create_buffer(
-                &BufferCreateInfo {
-                    usage: usage | BufferUsage::VERTEX_BUFFER,
-                    ..Default::default()
-                },
-                &AllocationCreateInfo {
-                    memory_type_filter,
-                    ..Default::default()
-                },
-                vertex_layout,
-            )
-            .unwrap();
-
-        let mut accesses = vec![(vertex_buffer_id, HostAccessType::Write)];
-
-        let index_buffer_id = if model.is_indexed() {
-            let index_buffer_id = vulkan
-                .resources
-                .create_buffer(
-                    &BufferCreateInfo {
-                        usage: usage | BufferUsage::INDEX_BUFFER,
-                        ..Default::default()
-                    },
-                    &AllocationCreateInfo {
-                        memory_type_filter,
-                        ..Default::default()
-                    },
-                    index_layout.unwrap(),
-                )
-                .unwrap();
-            accesses.push((index_buffer_id, HostAccessType::Write));
-
-            Some(index_buffer_id)
-        } else {
-            None
-        };
-
-        let flight = vulkan.transfer_flight().unwrap();
-
-        flight.wait(None).unwrap();
-
-        let access_method = match buffer_access {
+        let inner = match buffer_access {
             BufferAccess::Fixed => {
-                Self::staged_write(
-                    vulkan,
-                    vertex_layout,
-                    index_layout,
+                let [(vertex_buffer_id, index_buffer_id), _] = Self::write_staging(vulkan, model);
+
+                GpuModelInner::Fixed {
                     vertex_buffer_id,
                     index_buffer_id,
-                    model,
-                );
-
-                AccessMethod::Fixed
+                }
             }
             BufferAccess::Staged => {
-                let (vertex_staging_id, index_staging_id) = Self::staged_write(
-                    vulkan,
-                    vertex_layout,
-                    index_layout,
+                let [
+                    (vertex_buffer_id, index_buffer_id),
+                    (vertex_staging_id, index_staging_id),
+                ] = Self::write_staging(vulkan, model);
+
+                GpuModelInner::Staged {
                     vertex_buffer_id,
                     index_buffer_id,
-                    model,
-                );
-
-                AccessMethod::Staged {
                     vertex_staging_id,
                     index_staging_id,
                 }
             }
-            BufferAccess::Pinned(prefer_operation) => {
-                // Next up: write to the buffers
-                unsafe {
-                    vulkano_taskgraph::execute(
-                        vulkan.queues.transfer(),
-                        &vulkan.resources,
-                        vulkan.transfer_flight,
-                        |_, ctx| {
-                            let write: &mut [V] = ctx.write_buffer(
-                                vertex_buffer_id,
-                                0..(model.vertex_len() * std::mem::size_of::<V>()) as DeviceSize,
-                            )?;
-
-                            write.copy_from_slice(model.vertices());
-
-                            if let Some(index_buffer_id) = index_buffer_id {
-                                let write: &mut [u32] = ctx.write_buffer(
-                                    index_buffer_id,
-                                    0..(model.index_len() * 4) as DeviceSize,
-                                )?;
-
-                                write.copy_from_slice(model.indices());
-                            }
-                            Ok(())
-                        },
-                        accesses,
-                        [],
-                        [],
-                    )
-                }
-                .unwrap();
-
-                AccessMethod::Pinned(prefer_operation)
-            }
+            BufferAccess::Pinned(prefer_operation) => Self::pinned(vulkan, model, prefer_operation),
+            BufferAccess::RingBuffer { buffers } => Self::ring(vulkan, model, buffers),
             access => return Err(ModelError::UnsupportedAccess(access)),
         };
 
-        vulkan.add_resource(super::vulkan::Resource::Buffer {
-            id: vertex_buffer_id,
-            access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
-        });
-        if let Some(id) = index_buffer_id {
-            vulkan.add_resource(super::vulkan::Resource::Buffer {
-                id,
-                access_types: AccessTypes::INDEX_READ,
-            });
-        }
+        vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(Self {
-            vertex_buffer_id,
-            index_buffer_id,
+            inner,
             vertex_buffer_description: V::description(),
             max_vertices,
             max_indices,
             vertex_len: model.vertex_len().into(),
             index_len: model.index_len().into(),
-            access_method,
             _phantom: PhantomData,
         })
     }
@@ -321,38 +218,73 @@ impl<V: Vertex> GpuModel<V> {
                 .unwrap()
         });
 
-        vulkan.add_resource(super::vulkan::Resource::Buffer {
-            id: vertex_buffer_id,
-            access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
-        });
-        if let Some(id) = index_buffer_id {
-            vulkan.add_resource(super::vulkan::Resource::Buffer {
-                id,
-                access_types: AccessTypes::INDEX_READ,
-            });
-        }
+        vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(Self {
-            vertex_buffer_id,
-            index_buffer_id,
             vertex_buffer_description: V::description(),
             max_vertices: vertex_size as usize,
             max_indices: index_size as usize,
             vertex_len: (vertex_size as usize).into(),
             index_len: (index_size as usize).into(),
-            access_method: AccessMethod::Fixed,
+            inner: GpuModelInner::Fixed {
+                vertex_buffer_id,
+                index_buffer_id,
+            },
             _phantom: PhantomData,
         })
     }
 
-    fn staged_write(
+    fn write_staging(
         vulkan: &super::vulkan::Vulkan,
-        vertex_layout: DeviceLayout,
-        index_layout: Option<DeviceLayout>,
-        vertex_buffer_id: Id<Buffer>,
-        index_buffer_id: Option<Id<Buffer>>,
         model: &Model<V>,
-    ) -> (Id<Buffer>, Option<Id<Buffer>>) {
+    ) -> [(Id<Buffer>, Option<Id<Buffer>>); 2] {
+        let vertex_layout = DeviceLayout::new_unsized::<[V]>(model.max_vertices() as DeviceSize)
+            .ok_or(ModelError::EmptyModel)
+            .unwrap();
+        let index_layout = DeviceLayout::new_unsized::<[u32]>(model.max_indices() as DeviceSize);
+
+        // Create buffers for vertex and index
+        let vertex_buffer_id = vulkan
+            .resources
+            .create_buffer(
+                &BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER
+                        | BufferUsage::TRANSFER_SRC
+                        | BufferUsage::TRANSFER_DST,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                    ..Default::default()
+                },
+                vertex_layout,
+            )
+            .unwrap();
+
+        let index_buffer_id = if model.is_indexed() {
+            let index_buffer_id = vulkan
+                .resources
+                .create_buffer(
+                    &BufferCreateInfo {
+                        usage: BufferUsage::INDEX_BUFFER
+                            | BufferUsage::TRANSFER_SRC
+                            | BufferUsage::TRANSFER_DST,
+                        ..Default::default()
+                    },
+                    &AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_HOST
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    index_layout.unwrap(),
+                )
+                .unwrap();
+
+            Some(index_buffer_id)
+        } else {
+            None
+        };
+
         let vertex_staging_id = vulkan
             .resources
             .create_buffer(
@@ -407,6 +339,7 @@ impl<V: Vertex> GpuModel<V> {
             ]);
         }
 
+        vulkan.wait_transfer();
         unsafe {
             vulkano_taskgraph::execute(
                 vulkan.queues.transfer(),
@@ -444,24 +377,214 @@ impl<V: Vertex> GpuModel<V> {
             )
         }
         .unwrap();
+        vulkan.wait_transfer();
 
-        (vertex_staging_id, index_staging_id)
+        [
+            (vertex_buffer_id, index_buffer_id),
+            (vertex_staging_id, index_staging_id),
+        ]
+    }
+
+    fn pinned(
+        vulkan: &super::vulkan::Vulkan,
+        model: &Model<V>,
+        prefer_operation: PreferOperation,
+    ) -> GpuModelInner {
+        let vertex_layout = DeviceLayout::new_unsized::<[V]>(model.max_vertices() as DeviceSize)
+            .ok_or(ModelError::EmptyModel)
+            .unwrap();
+        let index_layout = DeviceLayout::new_unsized::<[u32]>(model.max_indices() as DeviceSize);
+
+        let memory_type_filter = match prefer_operation {
+            PreferOperation::Read => MemoryTypeFilter::HOST_RANDOM_ACCESS,
+            PreferOperation::Write => MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+        } | MemoryTypeFilter::PREFER_DEVICE;
+        let vertex_buffer_id = vulkan
+            .resources
+            .create_buffer(
+                &BufferCreateInfo {
+                    usage: BufferUsage::VERTEX_BUFFER,
+                    ..Default::default()
+                },
+                &AllocationCreateInfo {
+                    memory_type_filter,
+                    ..Default::default()
+                },
+                vertex_layout,
+            )
+            .unwrap();
+
+        let mut accesses = vec![(vertex_buffer_id, HostAccessType::Write)];
+
+        let index_buffer_id = if model.is_indexed() {
+            let index_buffer_id = vulkan
+                .resources
+                .create_buffer(
+                    &BufferCreateInfo {
+                        usage: BufferUsage::INDEX_BUFFER,
+                        ..Default::default()
+                    },
+                    &AllocationCreateInfo {
+                        memory_type_filter,
+                        ..Default::default()
+                    },
+                    index_layout.unwrap(),
+                )
+                .unwrap();
+            accesses.push((index_buffer_id, HostAccessType::Write));
+            Some(index_buffer_id)
+        } else {
+            None
+        };
+        vulkan.wait_transfer();
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    let write: &mut [V] = ctx.write_buffer(
+                        vertex_buffer_id,
+                        0..(model.vertex_len() * std::mem::size_of::<V>()) as DeviceSize,
+                    )?;
+
+                    write.copy_from_slice(model.vertices());
+
+                    if let Some(index_buffer_id) = index_buffer_id {
+                        let write: &mut [u32] = ctx.write_buffer(
+                            index_buffer_id,
+                            0..(model.index_len() * 4) as DeviceSize,
+                        )?;
+
+                        write.copy_from_slice(model.indices());
+                    }
+                    Ok(())
+                },
+                accesses,
+                [],
+                [],
+            )
+        }
+        .unwrap();
+
+        GpuModelInner::Pinned {
+            vertex_buffer_id,
+            index_buffer_id,
+            prefer_operation,
+        }
+    }
+
+    fn ring(vulkan: &super::vulkan::Vulkan, model: &Model<V>, buffers: usize) -> GpuModelInner {
+        let vertex_layout = DeviceLayout::new_unsized::<[V]>(model.max_vertices() as DeviceSize)
+            .ok_or(ModelError::EmptyModel)
+            .unwrap();
+        let index_layout = DeviceLayout::new_unsized::<[u32]>(model.max_indices() as DeviceSize);
+
+        let mut vertex_buffer_ids = Vec::with_capacity(buffers);
+        let mut index_buffer_ids = Vec::with_capacity(if model.is_indexed() { buffers } else { 0 });
+
+        // Create buffers
+        for _ in 0..buffers {
+            let vertex_buffer_id = vulkan
+                .resources
+                .create_buffer(
+                    &BufferCreateInfo {
+                        usage: BufferUsage::VERTEX_BUFFER,
+                        ..Default::default()
+                    },
+                    &AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                            | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
+                    vertex_layout,
+                )
+                .unwrap();
+
+            vertex_buffer_ids.push(vertex_buffer_id);
+        }
+
+        if let Some(index_layout) = index_layout {
+            for _ in 0..buffers {
+                let index_buffer_id = vulkan
+                    .resources
+                    .create_buffer(
+                        &BufferCreateInfo {
+                            usage: BufferUsage::INDEX_BUFFER,
+                            ..Default::default()
+                        },
+                        &AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        index_layout,
+                    )
+                    .unwrap();
+
+                index_buffer_ids.push(index_buffer_id);
+            }
+        }
+
+        // Write buffers
+        vulkan.wait_transfer();
+        unsafe {
+            vulkano_taskgraph::execute(
+                vulkan.queues.transfer(),
+                &vulkan.resources,
+                vulkan.transfer_flight,
+                |_, ctx| {
+                    for vertex_buffer_id in vertex_buffer_ids.iter() {
+                        let write = ctx.write_buffer::<[V]>(
+                            *vertex_buffer_id,
+                            0..(model.vertex_len() * std::mem::size_of::<V>()) as DeviceSize,
+                        )?;
+
+                        write.copy_from_slice(model.vertices());
+                    }
+
+                    if model.is_indexed() {
+                        for index_buffer_id in index_buffer_ids.iter() {
+                            let write = ctx.write_buffer::<[u32]>(
+                                *index_buffer_id,
+                                0..(model.index_len() * 4) as DeviceSize,
+                            )?;
+
+                            write.copy_from_slice(model.indices());
+                        }
+                    }
+
+                    Ok(())
+                },
+                vertex_buffer_ids
+                    .iter()
+                    .chain(index_buffer_ids.iter())
+                    .map(|buffer_id| (*buffer_id, HostAccessType::Write)),
+                [],
+                [],
+            )
+        }
+        .unwrap();
+
+        GpuModelInner::RingBuffer {
+            vertex_buffer_ids: vertex_buffer_ids.into_boxed_slice(),
+            index_buffer_ids: index_buffer_ids.into_boxed_slice(),
+            vertex_turn: 0.into(),
+            index_turn: 0.into(),
+        }
     }
 
     /// Returns the buffer access of this model.
     pub fn buffer_access(&self) -> BufferAccess {
-        match self.access_method {
-            AccessMethod::Fixed => BufferAccess::Fixed,
-            AccessMethod::Staged { .. } => BufferAccess::Staged,
-            AccessMethod::Pinned(prefer) => BufferAccess::Pinned(prefer),
-        }
+        (&self.inner).into()
     }
 
     /// Returns true if this object supports indices.
     ///
     /// This model must be created with indices in the first place to return true.
+    #[inline]
     pub fn is_indexed(&self) -> bool {
-        self.index_buffer_id.is_some()
+        self.inner.is_indexed()
     }
 
     /// Returns the size dimensions of this model.
@@ -489,7 +612,7 @@ impl<V: Vertex> GpuModel<V> {
 
     /// Writes the data from the given model into this model.
     pub fn write_model(&self, model: &Model<V>) -> Result<(), ModelError> {
-        if AccessMethod::Fixed == self.access_method {
+        if let GpuModelInner::Fixed { .. } = self.inner {
             return Err(ModelError::UnsupportedAccess(BufferAccess::Fixed));
         };
 
@@ -508,32 +631,33 @@ impl<V: Vertex> GpuModel<V> {
 
         let queue = vulkan.queues.transfer();
 
-        let flight = vulkan.transfer_flight().unwrap();
-
-        match self.access_method {
-            AccessMethod::Fixed => unreachable!(),
-            AccessMethod::Staged {
+        match &self.inner {
+            GpuModelInner::Fixed { .. } => unreachable!("Checked early"),
+            GpuModelInner::Staged {
+                vertex_buffer_id,
+                index_buffer_id,
                 vertex_staging_id,
                 index_staging_id,
             } => {
-                flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
-
-                let mut host_writes = vec![(vertex_staging_id, HostAccessType::Write)];
+                let mut host_writes = vec![(*vertex_staging_id, HostAccessType::Write)];
                 let mut buffer_writes = vec![
-                    (self.vertex_buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
-                    (vertex_staging_id, AccessTypes::COPY_TRANSFER_READ),
+                    (*vertex_buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
+                    (*vertex_staging_id, AccessTypes::COPY_TRANSFER_READ),
                 ];
 
                 if let (Some(index_buffer_id), Some(index_staging_id)) =
-                    (self.index_buffer_id, index_staging_id)
+                    (index_buffer_id, index_staging_id)
                 {
-                    host_writes.push((index_staging_id, HostAccessType::Write));
+                    host_writes.push((*index_staging_id, HostAccessType::Write));
                     buffer_writes.extend_from_slice(&[
-                        (index_buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
-                        (index_staging_id, AccessTypes::COPY_TRANSFER_READ),
+                        (*index_buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
+                        (*index_staging_id, AccessTypes::COPY_TRANSFER_READ),
                     ]);
                 };
 
+                vulkan.wait_transfer();
+                // Wait for graphics to complete before writing
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -541,30 +665,30 @@ impl<V: Vertex> GpuModel<V> {
                         vulkan.transfer_flight,
                         |cb, ctx| {
                             let vertices: &mut [V] = ctx.write_buffer(
-                                vertex_staging_id,
+                                *vertex_staging_id,
                                 0..std::mem::size_of_val(model.vertices()) as DeviceSize,
                             )?;
 
                             vertices.copy_from_slice(model.vertices());
 
                             cb.copy_buffer(&CopyBufferInfo {
-                                src_buffer: vertex_staging_id,
-                                dst_buffer: self.vertex_buffer_id,
+                                src_buffer: *vertex_staging_id,
+                                dst_buffer: *vertex_buffer_id,
                                 ..Default::default()
                             })?;
 
                             if let (Some(index_buffer_id), Some(index_staging_id)) =
-                                (self.index_buffer_id, index_staging_id)
+                                (*index_buffer_id, index_staging_id)
                             {
                                 let indices: &mut [u32] = ctx.write_buffer(
-                                    index_staging_id,
+                                    *index_staging_id,
                                     0..std::mem::size_of_val(model.indices()) as DeviceSize,
                                 )?;
 
                                 indices.copy_from_slice(model.indices());
 
                                 cb.copy_buffer(&CopyBufferInfo {
-                                    src_buffer: index_staging_id,
+                                    src_buffer: *index_staging_id,
                                     dst_buffer: index_buffer_id,
                                     ..Default::default()
                                 })?;
@@ -579,27 +703,34 @@ impl<V: Vertex> GpuModel<V> {
                 }
                 .unwrap();
             }
-            AccessMethod::Pinned(_) => {
-                flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
-                unsafe {
-                    let mut host_accesses = vec![(self.vertex_buffer_id, HostAccessType::Write)];
+            GpuModelInner::Pinned {
+                vertex_buffer_id,
+                index_buffer_id,
+                ..
+            } => {
+                let mut host_accesses = vec![(*vertex_buffer_id, HostAccessType::Write)];
 
-                    if let Some(index_buffer_id) = self.index_buffer_id {
-                        host_accesses.push((index_buffer_id, HostAccessType::Write));
-                    }
+                if let Some(index_buffer_id) = *index_buffer_id {
+                    host_accesses.push((index_buffer_id, HostAccessType::Write));
+                }
+
+                vulkan.wait_transfer();
+                // Wait for graphics to complete Before writing to model.
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
+                unsafe {
                     vulkano_taskgraph::execute(
                         queue,
                         &vulkan.resources,
                         vulkan.transfer_flight,
                         |_, ctx| {
                             let vertices: &mut [V] = ctx.write_buffer(
-                                self.vertex_buffer_id,
+                                *vertex_buffer_id,
                                 0..(std::mem::size_of_val(model.vertices())) as DeviceSize,
                             )?;
 
                             vertices.copy_from_slice(model.vertices());
 
-                            if let Some(index_buffer_id) = self.index_buffer_id {
+                            if let Some(index_buffer_id) = *index_buffer_id {
                                 let indices: &mut [u32] = ctx.write_buffer(
                                     index_buffer_id,
                                     0..std::mem::size_of_val(model.indices()) as DeviceSize,
@@ -617,12 +748,66 @@ impl<V: Vertex> GpuModel<V> {
                 }
                 .unwrap();
             }
+            GpuModelInner::RingBuffer {
+                vertex_buffer_ids,
+                index_buffer_ids,
+                vertex_turn,
+                index_turn,
+            } => {
+                // Next vertex and index ID
+                let vertex_index = (vertex_turn.load(Relaxed) + 1) % vertex_buffer_ids.len();
+                let index_index = (index_turn.load(Relaxed) + 1)
+                    .checked_rem(index_buffer_ids.len())
+                    .unwrap_or_default();
+
+                let vertex_buffer_id = vertex_buffer_ids[vertex_index];
+                let index_buffer_id = index_buffer_ids.get(index_index);
+
+                let mut host_accesses = vec![(vertex_buffer_id, HostAccessType::Write)];
+
+                if let Some(index_buffer_id) = index_buffer_id {
+                    host_accesses.push((*index_buffer_id, HostAccessType::Write));
+                }
+
+                vulkan.wait_transfer();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let vertices: &mut [V] = ctx.write_buffer(
+                                vertex_buffer_id,
+                                0..(std::mem::size_of_val(model.vertices())) as DeviceSize,
+                            )?;
+
+                            vertices.copy_from_slice(model.vertices());
+
+                            if let Some(index_buffer_id) = index_buffer_id {
+                                let indices: &mut [u32] = ctx.write_buffer(
+                                    *index_buffer_id,
+                                    0..std::mem::size_of_val(model.indices()) as DeviceSize,
+                                )?;
+
+                                indices.copy_from_slice(model.indices());
+                            }
+
+                            Ok(())
+                        },
+                        host_accesses,
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
+                vertex_turn.store(vertex_index, Relaxed);
+                index_turn.store(index_index, Relaxed);
+            }
         }
 
-        self.vertex_len
-            .store(new_vertex_len, std::sync::atomic::Ordering::Relaxed);
-        self.index_len
-            .store(new_index_len, std::sync::atomic::Ordering::Relaxed);
+        vulkan.wait_transfer();
+        self.vertex_len.store(new_vertex_len, Relaxed);
+        self.index_len.store(new_index_len, Relaxed);
 
         Ok(())
     }
@@ -630,23 +815,99 @@ impl<V: Vertex> GpuModel<V> {
 
 impl<V: Vertex> GpuModel<V> {
     pub(crate) fn vertex_buffer_id(&self) -> Id<Buffer> {
-        self.vertex_buffer_id
+        match &self.inner {
+            GpuModelInner::Fixed {
+                vertex_buffer_id, ..
+            }
+            | GpuModelInner::Staged {
+                vertex_buffer_id, ..
+            }
+            | GpuModelInner::Pinned {
+                vertex_buffer_id, ..
+            } => *vertex_buffer_id,
+            GpuModelInner::RingBuffer {
+                vertex_buffer_ids: vertex_buffers,
+                vertex_turn,
+                ..
+            } => vertex_buffers[vertex_turn.load(Relaxed)],
+        }
     }
 
     pub(crate) fn index_buffer_id(&self) -> Option<Id<Buffer>> {
-        self.index_buffer_id
+        match &self.inner {
+            GpuModelInner::Fixed {
+                index_buffer_id, ..
+            }
+            | GpuModelInner::Staged {
+                index_buffer_id, ..
+            }
+            | GpuModelInner::Pinned {
+                index_buffer_id, ..
+            } => *index_buffer_id,
+            GpuModelInner::RingBuffer {
+                index_buffer_ids: index_buffers,
+                index_turn,
+                ..
+            } => index_buffers.get(index_turn.load(Relaxed)).copied(),
+        }
     }
 
     pub(crate) fn vertex_len(&self) -> usize {
-        self.vertex_len.load(std::sync::atomic::Ordering::Relaxed)
+        self.vertex_len.load(Relaxed)
     }
 
     pub(crate) fn index_len(&self) -> usize {
-        self.index_len.load(std::sync::atomic::Ordering::Relaxed)
+        self.index_len.load(Relaxed)
     }
 
     pub(crate) fn vertex_buffer_description(&self) -> &VertexBufferDescription {
         &self.vertex_buffer_description
+    }
+
+    pub(crate) fn resources(&self) -> Vec<Resource> {
+        match &self.inner {
+            GpuModelInner::Fixed {
+                vertex_buffer_id,
+                index_buffer_id,
+            }
+            | GpuModelInner::Staged {
+                vertex_buffer_id,
+                index_buffer_id,
+                ..
+            }
+            | GpuModelInner::Pinned {
+                vertex_buffer_id,
+                index_buffer_id,
+                ..
+            } => {
+                let mut resources = vec![Resource::Buffer {
+                    id: *vertex_buffer_id,
+                    access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
+                }];
+                if let Some(id) = *index_buffer_id {
+                    resources.push(Resource::Buffer {
+                        id,
+                        access_types: AccessTypes::INDEX_READ,
+                    });
+                }
+                resources
+            }
+            GpuModelInner::RingBuffer {
+                vertex_buffer_ids: vertex_buffers,
+                index_buffer_ids: index_buffers,
+                ..
+            } => vertex_buffers
+                .iter()
+                .map(|id| Resource::Buffer {
+                    id: *id,
+                    access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
+                })
+                .chain(index_buffers.iter().map(|id| Resource::Buffer {
+                    id: *id,
+                    access_types: AccessTypes::INDEX_READ,
+                }))
+                .collect(),
+        }
     }
 }
 
@@ -657,7 +918,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
     ///
     /// Mind that reading from the GPU is slow.
     fn read_vertices<R: FnOnce(&[V])>(&self, f: R) -> Result<(), Self::Error> {
-        if AccessMethod::Fixed == self.access_method {
+        if let GpuModelInner::Fixed { .. } = self.inner {
             return Err(ModelError::UnsupportedAccess(BufferAccess::Fixed));
         };
 
@@ -665,16 +926,14 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
 
         let queue = vulkan.queues.transfer();
 
-        let flight = vulkan.transfer_flight().unwrap();
-
-        match &self.access_method {
-            AccessMethod::Fixed => unreachable!(),
-            AccessMethod::Staged {
+        match &self.inner {
+            GpuModelInner::Fixed { .. } => unreachable!(),
+            GpuModelInner::Staged {
+                vertex_buffer_id,
                 vertex_staging_id,
-                index_staging_id: _,
+                ..
             } => {
-                flight.wait(None).unwrap();
-
+                vulkan.wait_transfer();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -682,7 +941,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                         vulkan.transfer_flight,
                         |cb, _| {
                             cb.copy_buffer(&CopyBufferInfo {
-                                src_buffer: self.vertex_buffer_id,
+                                src_buffer: *vertex_buffer_id,
                                 dst_buffer: *vertex_staging_id,
                                 ..Default::default()
                             })?;
@@ -690,7 +949,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                         },
                         [],
                         [
-                            (self.vertex_buffer_id, AccessTypes::COPY_TRANSFER_READ),
+                            (*vertex_buffer_id, AccessTypes::COPY_TRANSFER_READ),
                             (*vertex_staging_id, AccessTypes::COPY_TRANSFER_WRITE),
                         ],
                         [],
@@ -698,8 +957,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                 }
                 .unwrap();
 
-                flight.wait(None).unwrap();
-
+                vulkan.wait_transfer();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -722,7 +980,10 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                 }
                 .unwrap();
             }
-            AccessMethod::Pinned(_) => {
+            GpuModelInner::Pinned {
+                vertex_buffer_id, ..
+            } => {
+                vulkan.wait_transfer();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -730,20 +991,22 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                         vulkan.transfer_flight,
                         |_, ctx| {
                             let read = ctx.read_buffer(
-                                self.vertex_buffer_id,
+                                *vertex_buffer_id,
                                 0..(self.vertex_count() * std::mem::size_of::<V>()) as DeviceSize,
                             )?;
                             f(read);
                             Ok(())
                         },
-                        [(self.vertex_buffer_id, HostAccessType::Read)],
+                        [(*vertex_buffer_id, HostAccessType::Read)],
                         [],
                         [],
                     )
                 }
                 .unwrap();
             }
+            method => return Err(ModelError::UnsupportedAccess(method.into())),
         }
+        vulkan.wait_transfer();
 
         Ok(())
     }
@@ -752,106 +1015,108 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
     ///
     /// Mind that reading from the GPU is slow.
     fn read_indices<R: FnOnce(&[u32])>(&self, f: R) -> Result<(), Self::Error> {
-        if AccessMethod::Fixed == self.access_method {
+        if let GpuModelInner::Fixed { .. } = self.inner {
             return Err(ModelError::UnsupportedAccess(BufferAccess::Fixed));
         };
+
+        if !self.inner.is_indexed() {
+            f(&[]);
+            return Ok(());
+        }
 
         let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
         let queue = vulkan.queues.transfer();
 
-        if let Some(index_buffer_id) = self.index_buffer_id {
-            let flight = vulkan.transfer_flight().unwrap();
-            match self.access_method {
-                AccessMethod::Fixed => unreachable!(),
-                AccessMethod::Staged {
-                    vertex_staging_id: _,
-                    index_staging_id,
-                } => {
-                    flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
-
-                    unsafe {
-                        vulkano_taskgraph::execute(
-                            queue,
-                            &vulkan.resources,
-                            vulkan.transfer_flight,
-                            |cb, _| {
-                                cb.copy_buffer(&CopyBufferInfo {
-                                    src_buffer: self.index_buffer_id.unwrap(),
-                                    dst_buffer: index_staging_id.unwrap(),
-                                    ..Default::default()
-                                })?;
-                                Ok(())
-                            },
-                            [],
-                            [
-                                (
-                                    self.index_buffer_id.unwrap(),
-                                    AccessTypes::COPY_TRANSFER_READ,
-                                ),
-                                (index_staging_id.unwrap(), AccessTypes::COPY_TRANSFER_WRITE),
-                            ],
-                            [],
-                        )
-                    }
-                    .unwrap();
-
-                    flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
-
-                    unsafe {
-                        vulkano_taskgraph::execute(
-                            queue,
-                            &vulkan.resources,
-                            vulkan.transfer_flight,
-                            |_, ctx| {
-                                let read: &[u32] = ctx.read_buffer(
-                                    index_staging_id.unwrap(),
-                                    0..(self.vertex_count() * 4) as DeviceSize,
-                                )?;
-
-                                f(read);
-
-                                Ok(())
-                            },
-                            [(index_staging_id.unwrap(), HostAccessType::Read)],
-                            [],
-                            [],
-                        )
-                    }
-                    .unwrap();
+        match &self.inner {
+            GpuModelInner::Fixed { .. } => unreachable!(),
+            GpuModelInner::Staged {
+                index_buffer_id,
+                index_staging_id,
+                ..
+            } => {
+                vulkan.wait_transfer();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |cb, _| {
+                            cb.copy_buffer(&CopyBufferInfo {
+                                src_buffer: index_buffer_id.unwrap(),
+                                dst_buffer: index_staging_id.unwrap(),
+                                ..Default::default()
+                            })?;
+                            Ok(())
+                        },
+                        [],
+                        [
+                            (index_buffer_id.unwrap(), AccessTypes::COPY_TRANSFER_READ),
+                            (index_staging_id.unwrap(), AccessTypes::COPY_TRANSFER_WRITE),
+                        ],
+                        [],
+                    )
                 }
-                AccessMethod::Pinned(_) => {
-                    unsafe {
-                        vulkano_taskgraph::execute(
-                            queue,
-                            &vulkan.resources,
-                            vulkan.transfer_flight,
-                            |_, ctx| {
-                                let read = ctx.read_buffer(
-                                    index_buffer_id,
-                                    0..(self.index_count() * 4) as DeviceSize,
-                                )?;
-                                f(read);
-                                Ok(())
-                            },
-                            [(index_buffer_id, HostAccessType::Read)],
-                            [],
-                            [],
-                        )
-                    }
-                    .unwrap();
+                .unwrap();
+
+                vulkan.wait_transfer();
+
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let read: &[u32] = ctx.read_buffer(
+                                index_staging_id.unwrap(),
+                                0..(self.vertex_count() * 4) as DeviceSize,
+                            )?;
+
+                            f(read);
+
+                            Ok(())
+                        },
+                        [(index_staging_id.unwrap(), HostAccessType::Read)],
+                        [],
+                        [],
+                    )
                 }
+                .unwrap();
             }
-        } else {
-            f(&[]);
-        };
+            GpuModelInner::Pinned {
+                index_buffer_id, ..
+            } => {
+                vulkan.wait_transfer();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let read = ctx.read_buffer(
+                                index_buffer_id.unwrap(),
+                                0..(self.index_count() * 4) as DeviceSize,
+                            )?;
+                            f(read);
+                            Ok(())
+                        },
+                        [(index_buffer_id.unwrap(), HostAccessType::Read)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
+            }
+            method => return Err(ModelError::UnsupportedAccess(method.into())),
+        }
+        vulkan.wait_transfer();
 
         Ok(())
     }
 
     /// Returns the number of elements present in the vertex buffer.
     fn vertex_count(&self) -> usize {
-        self.vertex_len.load(std::sync::atomic::Ordering::Relaxed)
+        self.vertex_len.load(Relaxed)
     }
 
     /// Returns the maximum amounts of vertices that can be written in this buffer.
@@ -863,7 +1128,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
     ///
     /// Returns 0 when this model is not indexed.
     fn index_count(&self) -> usize {
-        self.index_len.load(std::sync::atomic::Ordering::Relaxed)
+        self.index_len.load(Relaxed)
     }
 
     /// Returns the maximum amounts of indices that can be written in this buffer.
@@ -876,7 +1141,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
         f: W,
         new_vertex_size: usize,
     ) -> std::result::Result<(), Self::Error> {
-        if let AccessMethod::Fixed = self.access_method {
+        if let GpuModelInner::Fixed { .. } = self.inner {
             return Err(ModelError::UnsupportedAccess(BufferAccess::Fixed));
         };
 
@@ -890,14 +1155,16 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
 
         let queue = vulkan.queues.transfer();
 
-        let flight = vulkan.transfer_flight().unwrap();
-
-        match self.access_method {
-            AccessMethod::Fixed => unreachable!(),
-            AccessMethod::Staged {
-                vertex_staging_id, ..
+        match &self.inner {
+            GpuModelInner::Fixed { .. } => unreachable!(),
+            GpuModelInner::Staged {
+                vertex_buffer_id,
+                vertex_staging_id,
+                ..
             } => {
-                flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
+                vulkan.wait_transfer();
+                // Wait for graphics to complete Before writing to model.
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -905,32 +1172,36 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                         vulkan.transfer_flight,
                         |cb, ctx| {
                             let write = ctx.write_buffer(
-                                vertex_staging_id,
+                                *vertex_staging_id,
                                 0..(new_vertex_size * std::mem::size_of::<V>()) as DeviceSize,
                             )?;
 
                             f(write);
 
                             cb.copy_buffer(&CopyBufferInfo {
-                                src_buffer: vertex_staging_id,
-                                dst_buffer: self.vertex_buffer_id,
+                                src_buffer: *vertex_staging_id,
+                                dst_buffer: *vertex_buffer_id,
                                 ..Default::default()
                             })?;
 
                             Ok(())
                         },
-                        [(vertex_staging_id, HostAccessType::Write)],
+                        [(*vertex_staging_id, HostAccessType::Write)],
                         [
-                            (self.vertex_buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
-                            (vertex_staging_id, AccessTypes::COPY_TRANSFER_READ),
+                            (*vertex_buffer_id, AccessTypes::COPY_TRANSFER_WRITE),
+                            (*vertex_staging_id, AccessTypes::COPY_TRANSFER_READ),
                         ],
                         [],
                     )
                 }
                 .unwrap();
             }
-            AccessMethod::Pinned(_) => {
-                flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
+            GpuModelInner::Pinned {
+                vertex_buffer_id, ..
+            } => {
+                vulkan.wait_transfer();
+                // Wait for graphics to complete Before writing to model.
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
                 unsafe {
                     vulkano_taskgraph::execute(
                         queue,
@@ -938,7 +1209,7 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
                         vulkan.transfer_flight,
                         |_, ctx| {
                             let write: &mut [V] = ctx.write_buffer(
-                                self.vertex_buffer_id,
+                                *vertex_buffer_id,
                                 0..(new_vertex_size * std::mem::size_of::<V>()) as DeviceSize,
                             )?;
 
@@ -946,17 +1217,49 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
 
                             Ok(())
                         },
-                        [(self.vertex_buffer_id, HostAccessType::Write)],
+                        [(*vertex_buffer_id, HostAccessType::Write)],
                         [],
                         [],
                     )
                 }
                 .unwrap();
             }
+            GpuModelInner::RingBuffer {
+                vertex_buffer_ids,
+                vertex_turn,
+                ..
+            } => {
+                let vertex_index = (vertex_turn.load(Relaxed) + 1) % vertex_buffer_ids.len();
+                let vertex_buffer_id = vertex_buffer_ids[vertex_index];
+
+                vulkan.wait_transfer();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let write: &mut [V] = ctx.write_buffer(
+                                vertex_buffer_id,
+                                0..(new_vertex_size * std::mem::size_of::<V>()) as DeviceSize,
+                            )?;
+
+                            f(write);
+
+                            Ok(())
+                        },
+                        [(vertex_buffer_id, HostAccessType::Write)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
+                vertex_turn.store(vertex_index, Relaxed);
+            }
         }
 
-        self.vertex_len
-            .store(new_vertex_size, std::sync::atomic::Ordering::Relaxed);
+        vulkan.wait_transfer();
+        self.vertex_len.store(new_vertex_size, Relaxed);
 
         Ok(())
     }
@@ -966,9 +1269,14 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
         f: W,
         new_index_size: usize,
     ) -> std::result::Result<(), Self::Error> {
-        if let AccessMethod::Fixed = self.access_method {
+        if let GpuModelInner::Fixed { .. } = self.inner {
             return Err(ModelError::UnsupportedAccess(BufferAccess::Fixed));
         };
+
+        if !self.is_indexed() {
+            f(&mut []);
+            return Ok(());
+        }
 
         let vulkan = VK.get().ok_or(ModelError::BackendNotInitialized)?;
 
@@ -980,74 +1288,112 @@ impl<V: Vertex> LoadedModel<V> for GpuModel<V> {
             return Err(ModelError::EmptyModel);
         };
 
-        if let Some(id) = self.index_buffer_id {
-            let flight = vulkan.transfer_flight().unwrap();
-            flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
+        match &self.inner {
+            GpuModelInner::Fixed { .. } => unreachable!(),
+            GpuModelInner::Staged {
+                index_buffer_id,
+                index_staging_id,
+                ..
+            } => {
+                vulkan.wait_transfer();
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |cb, ctx| {
+                            let write = ctx.write_buffer(
+                                index_staging_id.unwrap(),
+                                0..(new_index_size * 4) as DeviceSize,
+                            )?;
 
-            match self.access_method {
-                AccessMethod::Fixed => unreachable!(),
-                AccessMethod::Staged {
-                    index_staging_id, ..
-                } => {
-                    let index_staging_id = index_staging_id.unwrap();
-                    flight.wait(None).map_err(|e| ModelError::Other(e.into()))?;
-                    unsafe {
-                        vulkano_taskgraph::execute(
-                            queue,
-                            &vulkan.resources,
-                            vulkan.transfer_flight,
-                            |cb, ctx| {
-                                let write = ctx.write_buffer(
-                                    index_staging_id,
-                                    0..(new_index_size * 4) as DeviceSize,
-                                )?;
+                            f(write);
 
-                                f(write);
+                            cb.copy_buffer(&CopyBufferInfo {
+                                src_buffer: index_staging_id.unwrap(),
+                                dst_buffer: index_buffer_id.unwrap(),
+                                ..Default::default()
+                            })?;
 
-                                cb.copy_buffer(&CopyBufferInfo {
-                                    src_buffer: index_staging_id,
-                                    dst_buffer: id,
-                                    ..Default::default()
-                                })?;
-
-                                Ok(())
-                            },
-                            [(index_staging_id, HostAccessType::Write)],
-                            [
-                                (id, AccessTypes::COPY_TRANSFER_WRITE),
-                                (index_staging_id, AccessTypes::COPY_TRANSFER_READ),
-                            ],
-                            [],
-                        )
-                    }
-                    .unwrap();
+                            Ok(())
+                        },
+                        [(index_staging_id.unwrap(), HostAccessType::Write)],
+                        [
+                            (index_buffer_id.unwrap(), AccessTypes::COPY_TRANSFER_WRITE),
+                            (index_staging_id.unwrap(), AccessTypes::COPY_TRANSFER_READ),
+                        ],
+                        [],
+                    )
                 }
-                AccessMethod::Pinned(_) => {
-                    unsafe {
-                        vulkano_taskgraph::execute(
-                            queue,
-                            &vulkan.resources,
-                            vulkan.transfer_flight,
-                            |_, ctx| {
-                                let write: &mut [u32] =
-                                    ctx.write_buffer(id, 0..(new_index_size * 4) as DeviceSize)?;
+                .unwrap();
+            }
+            GpuModelInner::Pinned {
+                index_buffer_id, ..
+            } => {
+                let index_buffer_id = index_buffer_id.unwrap();
 
-                                f(write);
+                vulkan.wait_transfer();
+                vulkan.graphics_flight().unwrap().wait_idle().unwrap();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let write: &mut [u32] = ctx.write_buffer(
+                                index_buffer_id,
+                                0..(new_index_size * 4) as DeviceSize,
+                            )?;
 
-                                Ok(())
-                            },
-                            [(id, HostAccessType::Write)],
-                            [],
-                            [],
-                        )
-                    }
-                    .unwrap();
+                            f(write);
+
+                            Ok(())
+                        },
+                        [(index_buffer_id, HostAccessType::Write)],
+                        [],
+                        [],
+                    )
                 }
+                .unwrap();
+            }
+            GpuModelInner::RingBuffer {
+                index_buffer_ids,
+                index_turn,
+                ..
+            } => {
+                let index_index = (index_turn.load(Relaxed) + 1) % index_buffer_ids.len();
+
+                let index_buffer_id = index_buffer_ids[index_index];
+
+                vulkan.wait_transfer();
+                unsafe {
+                    vulkano_taskgraph::execute(
+                        queue,
+                        &vulkan.resources,
+                        vulkan.transfer_flight,
+                        |_, ctx| {
+                            let write: &mut [u32] = ctx.write_buffer(
+                                index_buffer_id,
+                                0..(new_index_size * 4) as DeviceSize,
+                            )?;
+
+                            f(write);
+
+                            Ok(())
+                        },
+                        [(index_buffer_id, HostAccessType::Write)],
+                        [],
+                        [],
+                    )
+                }
+                .unwrap();
+                index_turn.store(index_index, Relaxed);
             }
         }
 
-        self.index_len
-            .store(new_index_size, std::sync::atomic::Ordering::Relaxed);
+        vulkan.wait_transfer();
+        self.index_len.store(new_index_size, Relaxed);
 
         Ok(())
     }

@@ -44,7 +44,7 @@ pub trait GraphicsBackend: Sized {
     );
 
     /// This is used for draws. A function `pre_present_notify` gets included,
-    /// which should be called right before presenting for optimisation.
+    /// which should be called right before presenting for optimization.
     #[cfg(feature = "client")]
     fn draw(
         &mut self,
