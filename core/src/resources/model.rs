@@ -1,6 +1,6 @@
 use bytemuck::AnyBitPattern;
-pub use engine_macros::Vertex;
 use foldhash::{HashMap, HashMapExt};
+pub use let_engine_macros::Vertex;
 
 use glam::{Vec2, Vec3, Vec4, vec2};
 pub use let_engine_core::{circle, model};

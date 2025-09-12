@@ -25,7 +25,7 @@ winit = {workspace = true, optional = true}
 egui = {workspace = true, optional = true}
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 half = { version = "2.6", features = ["bytemuck"] }
-engine-macros = { path = "../macros" }
+let-engine-macros = { path = "../macros" }
 paste = "1.0"
 kira = "0.10"
 slotmap = "1.0"

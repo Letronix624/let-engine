@@ -8,8 +8,8 @@ pub use color::Color;
 
 #[cfg(feature = "physics")]
 pub mod physics;
-use engine_macros::Vertex;
 use foldhash::HashSet;
+use let_engine_macros::Vertex;
 #[cfg(feature = "physics")]
 use physics::*;
 

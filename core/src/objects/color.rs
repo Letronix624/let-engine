@@ -1,6 +1,6 @@
-use engine_macros::Vertex;
 /// A struct that represents a color to use on objects, the clear color or labels.
 use glam::{Vec3, Vec4, vec3, vec4};
+use let_engine_macros::Vertex;
 
 /// Representation of a color in form of 4 `f32`'s for R, G, B and A.
 #[derive(Default, Clone, Copy, Debug, PartialEq, bytemuck::AnyBitPattern, Vertex)]

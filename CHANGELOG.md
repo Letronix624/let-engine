@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LayerView to have multiview of the same layer as textures
 - Root layer
 - EngineContext in events, to interface backends, retrieve debug info, set settings and delta time.
-- New `Vertex` macro from `engine-macros`
+- New `Vertex` macro from `let-engine-macros`
 - Constructors to `Transform`
 
 ### Changed

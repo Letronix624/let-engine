@@ -1,13 +1,15 @@
 [package]
-name = "asset-system"
-version = "0.1.0"
+name = "let-engine-asset-system"
 authors = ["let"]
-edition = "2024"
-description = "asset management and packing system for games"
+description = "asset management and packing system for let-engine"
 readme = "./README.md"
-repository = "https://github.com/Letronix624/let-engine"
 keywords = ["gamedev", "assets", "compression"]
-license = "Apache-2.0"
+
+version = { workspace = true }
+edition = { workspace = true }
+repository = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +18,7 @@ toml = "0.8"
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 foldhash = { workspace = true }
-bincode = { workspace = true, features = ["serde"]}
+bincode = { workspace = true, features = ["serde"] }
 parking_lot = { workspace = true }
 
 [dependencies.serde]
@@ -48,7 +50,7 @@ optional = true
 toml = "0.8"
 anyhow = { workspace = true }
 foldhash = { workspace = true }
-bincode = { workspace = true, features = ["serde"]}
+bincode = { workspace = true, features = ["serde"] }
 
 [build-dependencies.serde]
 workspace = true

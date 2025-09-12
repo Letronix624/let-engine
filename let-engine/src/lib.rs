@@ -11,9 +11,9 @@ pub mod input;
 pub mod settings;
 pub mod tick_system;
 
-#[cfg(feature = "asset_system")]
-pub use asset_system;
 pub use engine::*;
+#[cfg(feature = "asset_system")]
+pub use let_engine_asset_system;
 pub mod prelude;
 
 pub use glam;
@@ -32,5 +32,5 @@ pub fn clean_caches() {
     // crate::backend::networking::LAST_ORDS.lock().clear();
 
     #[cfg(feature = "asset_system")]
-    asset_system::clear_cache();
+    let_engine_asset_system::clear_cache();
 }

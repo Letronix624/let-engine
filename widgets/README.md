@@ -10,8 +10,3 @@ Right now this only includes labels but will have
 - sliders
 - combo boxes
 
-## Troubleshooting
-
-- "Help! My ui elements are not showing up!"
-
-Do not forget to run the `let_engine_widgets::update()` function at the start of every single update.

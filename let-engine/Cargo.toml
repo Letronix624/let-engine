@@ -80,8 +80,8 @@ workspace = true
 features = ["simd-stable"]
 optional = true
 
-[dependencies.asset-system]
-version = "0.1"
+[dependencies.let-engine-asset-system]
+version = "0.11.0"
 path = "../asset-system"
 optional = true
 
@@ -129,14 +129,14 @@ default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client"]
 default_networking_backend = ["dep:local-ip-address", "glam/rkyv", "glam/bytecheck"]
 vulkan_debug = ["default_graphics_backend"]
 physics = ["dep:rapier2d", "let-engine-core/physics"]
-asset_system = ["dep:asset-system"]
+asset_system = ["dep:let-engine-asset-system"]
 
 rand = ["glam/rand", "let-engine-core/rand"]
 fast-math = ["glam/fast-math", "let-engine-core/fast-math"]
 
 # asset system compression algorithms
-deflate = ["asset-system/deflate"]
-bzip2 = ["asset-system/bzip2"]
-zstd = ["asset-system/zstd"]
-lzma = ["asset-system/lzma"]
-lz4 = ["asset-system/lz4"]
+deflate = ["let-engine-asset-system/deflate"]
+bzip2 = ["let-engine-asset-system/bzip2"]
+zstd = ["let-engine-asset-system/zstd"]
+lzma = ["let-engine-asset-system/lzma"]
+lz4 = ["let-engine-asset-system/lz4"]

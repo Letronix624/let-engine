@@ -1,5 +1,5 @@
 [package]
-name = "engine-macros"
+name = "let-engine-macros"
 authors = ["let"]
 description = "Macros used by the let-engine"
 

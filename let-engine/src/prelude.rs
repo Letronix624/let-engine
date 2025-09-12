@@ -44,7 +44,7 @@ pub use core_backend::graphics::GraphicsInterface;
 
 // Asset system
 #[cfg(feature = "asset_system")]
-pub use asset_system::*;
+pub use let_engine_asset_system::*;
 
 // // Networking
 // #[cfg(feature = "default_networking_backend")]
@@ -57,5 +57,5 @@ pub use backend::graphics;
 // Other structs
 pub use crate::settings::*;
 pub use glam;
-pub use glam::{uvec2, vec2, UVec2, Vec2};
+pub use glam::{UVec2, Vec2, uvec2, vec2};
 pub use scenes::*;
