@@ -51,7 +51,8 @@ workspace = true
 optional = true
 
 [dependencies.egui_winit_vulkano]
-path = "../../egui-winit-vulkano"
+git = "https://github.com/LukeP0WERS/egui_winit_vulkano.git"
+branch = "master"  
 optional = true
 
 [dependencies.vulkano-taskgraph]
