@@ -25,15 +25,15 @@ where
     Recreation,
 
     /// An error given by the used graphics backend upon creation.
-    #[error("{0}")]
+    #[error("{0:?}")]
     GraphicsBackend(<B::Graphics as GraphicsBackend>::Error),
 
     // /// An error given by the used audio backend.
-    #[error("{0}")]
+    #[error("{0:?}")]
     AudioBackend(AudioBackendError<<B::Kira as AudioBackend>::Error>),
 
     /// An error given by the used networking backend upon creation.
-    #[error("{0}")]
+    #[error("{0:?}")]
     NetworkingBackend(<B::Networking as NetworkingBackend>::Error),
 }
 
