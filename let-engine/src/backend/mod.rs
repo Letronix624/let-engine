@@ -17,7 +17,7 @@ impl backend::Backends for DefaultBackends {
     #[cfg(not(feature = "default_graphics_backend"))]
     type Graphics = ();
 
-    type Kira = let_engine_core::backend::audio::DefaultAudioBackend;
+    type Kira = let_engine_core::backend::audio::MockBackend;
 
     type Networking = ();
 }

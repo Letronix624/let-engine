@@ -26,6 +26,18 @@ use std::{
 // A const that contains the constant window resolution.
 const RESOLUTION: UVec2 = uvec2(800, 600);
 
+struct PongBackends;
+
+impl core_backend::Backends for PongBackends {
+    type Graphics = graphics::DefaultGraphicsBackend;
+
+    type Kira = DefaultAudioBackend;
+
+    type Networking = ();
+}
+
+type EngineContext<'a> = let_engine::EngineContext<'a, PongBackends>;
+
 fn main() {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
@@ -239,7 +251,7 @@ impl Game {
     }
 }
 
-impl let_engine::Game for Game {
+impl let_engine::Game<PongBackends> for Game {
     fn update(&mut self, mut context: EngineContext) {
         // run the update functions of the paddles.
         self.left_paddle.update(&mut context);
