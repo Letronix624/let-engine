@@ -23,13 +23,13 @@ fn main() {
         .title(env!("CARGO_CRATE_NAME"));
 
     let_engine::start(
-        Game::new,
         EngineSettings::default()
             .window(window_builder)
             .graphics(graphics::Graphics {
                 present_mode: graphics::PresentMode::Fifo,
                 ..Default::default()
             }),
+        Game::new,
     )
     .unwrap();
 }

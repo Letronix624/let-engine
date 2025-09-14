@@ -11,11 +11,11 @@ use anyhow::Result;
 use foldhash::HashMap;
 use let_engine_core::backend::networking::ServerInterface as CoreServerInterface;
 use rkyv::{
+    Serialize,
     api::high::HighSerializer,
     rancor,
     ser::allocator::{Arena, ArenaHandle},
     util::AlignedVec,
-    Serialize,
 };
 use smol::{
     channel::Sender,
@@ -25,7 +25,7 @@ use smol::{
 };
 use thiserror::Error;
 
-use super::{Connection, Disconnected, NetworkingSettings, Warning, SAFE_MTU_SIZE};
+use super::{Connection, Disconnected, NetworkingSettings, SAFE_MTU_SIZE, Warning};
 
 #[derive(Clone)]
 struct Peer {
@@ -423,9 +423,9 @@ where
     fn spawn(
         &self,
         future: impl Future<
-                Output = Result<Option<(Connection, ServerMessage)>, (Connection, std::io::Error)>,
-            > + Send
-            + 'static,
+            Output = Result<Option<(Connection, ServerMessage)>, (Connection, std::io::Error)>,
+        > + Send
+        + 'static,
     ) {
         let sender = self.messages.clone();
         smol::spawn(async move {

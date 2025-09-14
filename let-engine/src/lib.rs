@@ -13,14 +13,14 @@ pub mod tick_system;
 
 pub use engine::*;
 #[cfg(feature = "asset_system")]
-pub use let_engine_asset_system;
+pub use let_engine_asset_system as asset_system;
 pub mod prelude;
 
 pub use glam;
 
 #[cfg(feature = "client")]
 pub use let_engine_core::resources;
-pub use let_engine_core::{camera, objects, Direction};
+pub use let_engine_core::{Direction, camera, objects};
 
 #[cfg(feature = "client")]
 pub mod window;
@@ -32,5 +32,5 @@ pub fn clean_caches() {
     // crate::backend::networking::LAST_ORDS.lock().clear();
 
     #[cfg(feature = "asset_system")]
-    let_engine_asset_system::clear_cache();
+    asset_system::clear_cache();
 }

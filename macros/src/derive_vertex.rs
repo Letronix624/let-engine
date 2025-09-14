@@ -2,9 +2,9 @@ use crate::bail;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
+    Data, DataStruct, Fields, Ident, LitStr, Result, Token,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    Data, DataStruct, Fields, Ident, LitStr, Result, Token,
 };
 
 pub fn derive_vertex(crate_ident: &Ident, ast: syn::DeriveInput) -> Result<TokenStream> {

@@ -3,9 +3,9 @@ use std::{sync::Arc, time::Duration};
 
 use kira::sound::static_sound::{StaticSoundData, StaticSoundSettings};
 pub use kira::{
-    clock, command, command_writers_and_readers, effect, info, interpolate_frame, listener,
-    modulator, sound, track, Decibels, Easing, Frame, Mapping, Mix, Panning, PlaybackRate,
-    Semitones, StartTime, Tween, Tweenable, Value,
+    Decibels, Easing, Frame, Mapping, Mix, Panning, PlaybackRate, Semitones, StartTime, Tween,
+    Tweenable, Value, clock, command, command_writers_and_readers, effect, info, interpolate_frame,
+    listener, modulator, sound, track,
 };
 
 /// Generates square wave sound data with length as seconds.

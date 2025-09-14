@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use vulkano::instance::{debug::*, Instance};
+use vulkano::instance::{Instance, debug::*};
 
 use log::{error, info, warn};
 

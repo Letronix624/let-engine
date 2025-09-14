@@ -51,7 +51,6 @@ fn main() {
         .title(env!("CARGO_CRATE_NAME"));
     // Initialize the engine.
     let_engine::start(
-        Game::new,
         EngineSettings::default()
             .window(window_builder)
             .tick_system(
@@ -60,6 +59,7 @@ fn main() {
                     .build()
                     .unwrap(),
             ),
+        Game::new,
     )
     .unwrap();
 }

@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
-use proc_macro_crate::{crate_name, FoundCrate};
-use syn::{parse_macro_input, DeriveInput, Error};
+use proc_macro_crate::{FoundCrate, crate_name};
+use syn::{DeriveInput, Error, parse_macro_input};
 
 mod derive_vertex;
 

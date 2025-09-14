@@ -41,29 +41,20 @@ type Connection<B> = <B as NetworkingBackend>::Connection;
 type ClientMessage<'a, B> = <B as NetworkingBackend>::ClientEvent<'a>;
 type ServerMessage<'a, B> = <B as NetworkingBackend>::ServerEvent<'a>;
 
-#[cfg_attr(
-    all(feature = "client"),
-    doc = "
-Represents the game application with essential methods for a game's lifetime.
-# Usage
-```
-use let_engine::prelude::*;
-struct Game;
-impl let_engine::Game<DefaultBackends> for Game {
-    fn update(&mut self, context: EngineContext) {
-        // runs every frame or every engine loop update.
-        //...
-    }
-}
-```
-        "
-)]
+/// The main event trait of the game engine.
+///
+/// All events emitted by backends or window updates with the client feature enabled get called in this trait.
+///
+/// Every trait has a default implementation that does nothing.
+///
+/// An event represents an update of the game state.
 #[allow(unused_variables)]
 pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
-    /// Runs every frame.
+    /// Runs before the frame is drawn.
     #[cfg(feature = "client")]
     fn update(&mut self, context: EngineContext<B>) {}
 
+    /// Runs before `update` method
     #[cfg(feature = "egui")]
     fn egui(&mut self, context: EngineContext<B>, egui_context: egui::Context) {}
 
@@ -74,7 +65,7 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     #[cfg(feature = "client")]
     fn window_ready(&mut self, context: EngineContext<B>) {}
 
-    /// Events captured in the window.
+    /// Events emitted by the window system.
     #[cfg(feature = "client")]
     fn window(&mut self, context: EngineContext<B>, event: events::WindowEvent) {}
 
@@ -82,7 +73,7 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     #[cfg(feature = "client")]
     fn input(&mut self, context: EngineContext<B>, event: events::InputEvent) {}
 
-    /// A network event received by the server.
+    /// An external networking event emitted by the set networking backends server.
     fn server_event(
         &mut self,
         context: EngineContext<B>,
@@ -91,21 +82,27 @@ pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
     ) {
     }
 
-    /// A network event received by the client.
+    /// An external networking event emitted by the set networking backends client.
     fn client_event(&mut self, context: EngineContext<B>, message: ClientMessage<B::Networking>) {}
 
-    /// Runs last after the game has been stopped using the context's stop method.
+    /// The last event ever emitted by this trait.
+    ///
+    /// Symbolizes a halt of the game engine, which can be initiated by the contexts `exit` method
+    /// or a Ctrl-C event.
     fn end(&mut self, context: EngineContext<B>) {}
 }
 
+/// The initial start method of the game engine.
+///
+/// Runs the game closure after the backends have started.
 pub fn start<G: Game<B>, B: Backends + 'static>(
-    game: impl FnOnce(EngineContext<B>) -> G,
     settings: impl Into<settings::EngineSettings<B>>,
+    game: impl FnOnce(EngineContext<B>) -> G,
 ) -> Result<(), EngineError<B>> {
     Engine::start(game, settings)
 }
 
-/// The struct that holds and executes all of the game data.
+/// The struct that holds and executes all backends and the game state.
 struct Engine<G, B = DefaultBackends>
 where
     G: Game<B>,
@@ -648,9 +645,11 @@ type GraphicsInterface<'a, B> =
         <<B as Backends>::Graphics as GraphicsBackend>::LoadedTypes,
     >>::Interface<'a>;
 
-/// Context interface connecting the event loop to the engine.
+/// The context of the game engine. It's the direct interface between the engine and game state
+/// updates.
 ///
-/// Allows receiving timing information, stored inputs and access to settings.
+/// It contains timing, the scene, an interface to each backend and if feature `client` is
+/// enabled, input, the window as well as the graphics backend.
 pub struct EngineContext<'a, B = DefaultBackends>
 where
     B: Backends,
@@ -870,7 +869,7 @@ mod tests {
             }
         }
 
-        crate::start(|_| Game::new(), EngineSettings::default())?;
+        crate::start(EngineSettings::default(), |_| Game::new())?;
 
         Ok(())
     }

@@ -2,7 +2,7 @@
 
 use super::model::Vertex;
 use bytemuck::AnyBitPattern;
-use glam::f32::{vec2, Vec2};
+use glam::f32::{Vec2, vec2};
 
 pub trait Data: AnyBitPattern + Send + Sync {}
 

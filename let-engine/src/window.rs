@@ -1,7 +1,7 @@
 //! General window stuff.
 //!
 //! Multiple structs to change the properties of a Window.
-use glam::{uvec2, vec2, IVec2, UVec2, Vec2};
+use glam::{IVec2, UVec2, Vec2, uvec2, vec2};
 use std::sync::Arc;
 pub use winit::window::{CursorGrabMode, CursorIcon, Icon, UserAttentionType, WindowLevel};
 use winit::{dpi::*, error::ExternalError, window::WindowButtons};

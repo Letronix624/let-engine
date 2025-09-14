@@ -29,7 +29,7 @@ Please contact me, let from [let.software](https://let.software/), if you requir
 
 To add `let-engine` to your project, run this in your project directory:
 ```bash
-cargo add let_engine
+cargo add let-engine
 ```
 ## Dependencies
 ### Debian based dependencies
