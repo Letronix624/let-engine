@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 use vulkano::{
-    DeviceSize, Validated,
+    DeviceSize,
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
     descriptor_set::{DescriptorSet, WriteDescriptorSet, sys::RawDescriptorSet},
     format::Format,
@@ -420,7 +420,7 @@ impl Draw {
         } {
             Ok(()) => Ok(()),
             Err(vulkano_taskgraph::graph::ExecuteError::Swapchain {
-                error: Validated::Error(vulkano::VulkanError::OutOfDate),
+                error: vulkano::VulkanError::OutOfDate,
                 ..
             }) => {
                 self.recreate_swapchain = true;

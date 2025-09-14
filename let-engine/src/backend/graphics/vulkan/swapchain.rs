@@ -70,7 +70,7 @@ pub fn create_swapchain(
     Ok((
         vulkan
             .resources
-            .create_swapchain(vulkan.graphics_flight, &surface, &create_info)
+            .create_swapchain(&surface, &create_info)
             .map_err(|e| VulkanError::from(e.unwrap()))?,
         inner_size,
         image_format,
