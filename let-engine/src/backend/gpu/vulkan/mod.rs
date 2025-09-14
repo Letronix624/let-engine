@@ -31,7 +31,7 @@ use vulkano::{
 use std::sync::{Arc, OnceLock, atomic::AtomicBool};
 
 use super::{
-    DefaultGraphicsBackendError, Graphics,
+    DefaultGpuBackendError, GpuSettings,
     buffer::GpuBuffer,
     material::{GpuMaterial, MaterialId},
     model::GpuModel,
@@ -79,8 +79,8 @@ pub enum Resource {
 impl Vulkan {
     pub fn init(
         event_loop: &EventLoop<()>,
-        settings: Graphics,
-    ) -> Result<Self, DefaultGraphicsBackendError> {
+        settings: GpuSettings,
+    ) -> Result<Self, DefaultGpuBackendError> {
         let instance = instance::create_instance(event_loop, settings.window_handle_retries)?;
 
         #[cfg(feature = "vulkan_debug")]
@@ -101,19 +101,19 @@ impl Vulkan {
         .into();
 
         let resources = Resources::new(&device, &Default::default())
-            .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.unwrap().into()))?;
+            .map_err(|e| DefaultGpuBackendError::Vulkan(e.unwrap().into()))?;
 
         let graphics_flight = resources
             .create_flight(settings.max_frames_in_flight as u32)
-            .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.into()))?;
+            .map_err(|e| DefaultGpuBackendError::Vulkan(e.into()))?;
 
         let transfer_flight = resources
             .create_flight(1)
-            .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.into()))?;
+            .map_err(|e| DefaultGpuBackendError::Vulkan(e.into()))?;
 
         let vulkan_pipeline_cache =
             PipelineCache::new(&device, &PipelineCacheCreateInfo::default())
-                .map_err(|e| DefaultGraphicsBackendError::Vulkan(e.unwrap().into()))?;
+                .map_err(|e| DefaultGpuBackendError::Vulkan(e.unwrap().into()))?;
 
         let pipeline_cache = Mutex::new(HashMap::default());
 

@@ -19,7 +19,7 @@ Please contact me, let from [let.software](https://let.software/), if you requir
 
 - Built in default networking protocol
 
-- Built in default graphics backend
+- Built in default gpu backend
 
 - Built in Rapier physics
 

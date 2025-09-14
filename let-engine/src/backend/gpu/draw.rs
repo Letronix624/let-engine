@@ -49,7 +49,7 @@ use let_engine_core::objects::{Descriptor, scenes::Scene};
 use glam::{UVec2, f32::Mat4};
 
 use super::{
-    Graphics, PresentMode, VulkanError, VulkanTypes,
+    GpuSettings, PresentMode, VulkanError, VulkanTypes,
     material::MaterialId,
     vulkan::{Resource, VK, Vulkan, swapchain::create_swapchain, topology_to_vulkan},
 };
@@ -61,8 +61,8 @@ pub struct Draw {
 
     recreate_swapchain: bool,
 
-    settings_receiver: Receiver<Graphics>,
-    settings: Graphics,
+    settings_receiver: Receiver<GpuSettings>,
+    settings: GpuSettings,
     dimensions: UVec2,
     image_format: Format,
 
@@ -91,8 +91,8 @@ impl RenderEguiWorld<DrawWorld> for DrawWorld {
 
 impl Draw {
     pub fn new(
-        settings: Graphics,
-        settings_receiver: Receiver<Graphics>,
+        settings: GpuSettings,
+        settings_receiver: Receiver<GpuSettings>,
         present_modes: &OnceLock<Box<[PresentMode]>>,
         _event_loop: &ActiveEventLoop,
         window: &Arc<winit::window::Window>,
@@ -514,7 +514,7 @@ impl Draw {
 
 struct DrawTask {
     swapchain_id: Id<Swapchain>,
-    settings: Graphics,
+    settings: GpuSettings,
 }
 
 // This is nothing but a hack arount the Rust and Vulkano limitation of one single world.

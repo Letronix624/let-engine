@@ -3,8 +3,8 @@
 //! # Controls
 //! - Scroll: change number of vertices
 
-use graphics::VulkanTypes;
-use let_engine::prelude::{graphics::model::ModelId, *};
+use gpu::VulkanTypes;
+use let_engine::prelude::{gpu::model::ModelId, *};
 use let_engine_core::circle;
 
 const MAX_DEGREE: usize = 1000;
@@ -26,8 +26,8 @@ fn main() {
     let_engine::start(
         EngineSettings::default()
             .window(window_builder)
-            .graphics(graphics::Graphics {
-                present_mode: graphics::PresentMode::Fifo,
+            .gpu(gpu::GpuSettings {
+                present_mode: gpu::PresentMode::Fifo,
                 ..Default::default()
             }),
         Game::new,
@@ -64,15 +64,15 @@ impl Game {
         circle_model.set_max_indices(MAX_DEGREE * 3);
 
         // Load circle model to the GPU.
-        let circle_model = context.graphics.load_model(&circle_model).unwrap();
+        let circle_model = context.gpu.load_model(&circle_model).unwrap();
 
         let default_material = context
-            .graphics
+            .gpu
             .load_material::<Vec2>(&Material::new_default())
             .unwrap();
 
         let color_buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -87,7 +87,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(color_buffer)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
 
         // Makes the circle in the middle.
@@ -122,7 +122,7 @@ impl let_engine::Game for Game {
 
                 let new_model = circle!(self.degree);
 
-                let model = context.graphics.model(self.model).unwrap();
+                let model = context.gpu.model(self.model).unwrap();
 
                 model.write_model(&new_model).unwrap();
             }

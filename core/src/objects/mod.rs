@@ -416,7 +416,7 @@ impl<T: Loaded> Object<T> {
 
 use thiserror::Error;
 
-use crate::backend::graphics::Loaded;
+use crate::backend::gpu::Loaded;
 
 /// This error gets returned when the layer that gets specified when an object needs to get added
 /// does not exit in the objects list anymore.

@@ -6,7 +6,7 @@ use let_engine_core::{
     backend::{
         Backends,
         audio::AudioInterface,
-        graphics::GraphicsBackend,
+        gpu::GpuBackend,
         networking::{NetEvent, NetworkingBackend},
     },
     objects::scenes::Scene,
@@ -28,7 +28,7 @@ use {
     crate::{events, input::Input},
     anyhow::Result,
     glam::{dvec2, uvec2, vec2},
-    let_engine_core::backend::graphics::GraphicsInterfacer,
+    let_engine_core::backend::gpu::GpuInterfacer,
     std::sync::OnceLock,
     winit::application::ApplicationHandler,
     winit::event::MouseScrollDelta,
@@ -109,7 +109,7 @@ where
     B: Backends,
 {
     #[cfg(feature = "client")]
-    graphics_backend: B::Graphics,
+    gpu_backend: B::Gpu,
     #[cfg(feature = "client")]
     window_settings: WindowBuilder,
 
@@ -130,11 +130,10 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
         #[cfg(feature = "client")]
         let event_loop = winit::event_loop::EventLoop::new().unwrap();
 
-        // Graphics backend
+        // Gpu backend
         #[cfg(feature = "client")]
-        let (graphics_backend, graphics_interface) =
-            B::Graphics::new(settings.graphics, &event_loop)
-                .map_err(EngineError::GraphicsBackend)?;
+        let (gpu_backend, gpu_interface) =
+            B::Gpu::new(settings.gpu, &event_loop).map_err(EngineError::GpuBackend)?;
 
         // Audio backend
         let audio_interface =
@@ -189,7 +188,7 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
             game,
             settings.tick_system.clone(),
             #[cfg(feature = "client")]
-            graphics_interface,
+            gpu_interface,
             audio_interface,
             server,
             client,
@@ -218,7 +217,7 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
         {
             let mut engine = Self {
                 #[cfg(feature = "client")]
-                graphics_backend,
+                gpu_backend,
                 #[cfg(feature = "client")]
                 window_settings: settings.window,
                 game,
@@ -249,7 +248,7 @@ where
 
         self.game.window.set(Window::new(window.clone())).unwrap();
 
-        self.graphics_backend.init_window(event_loop, &window);
+        self.gpu_backend.init_window(event_loop, &window);
 
         self.game.window_ready();
 
@@ -279,14 +278,14 @@ where
         self.game.input.lock().update(&event, window_size);
 
         #[cfg(feature = "egui")]
-        if self.graphics_backend.update_egui(&event) {
+        if self.gpu_backend.update_egui(&event) {
             return;
         }
 
         let window_event = match event {
             WindowEvent::Resized(size) => {
                 let size = uvec2(size.width, size.height);
-                self.graphics_backend.resize_event(size);
+                self.gpu_backend.resize_event(size);
                 *self.game.scene.lock().root_view_mut().extent_mut() = size;
                 events::WindowEvent::Resized(size)
             }
@@ -341,11 +340,11 @@ where
                 }
 
                 #[cfg(feature = "egui")]
-                self.game.egui(self.graphics_backend.draw_egui());
+                self.game.egui(self.gpu_backend.draw_egui());
 
                 self.game.update();
 
-                self.graphics_backend
+                self.gpu_backend
                     .draw(&self.game.scene.lock(), || {
                         let window = self.game.window.get().unwrap();
                         window.pre_present_notify();
@@ -420,7 +419,7 @@ where
 pub(crate) struct BackendInterfaces<B: Backends> {
     pub tick_system: Arc<TickSystem>,
     #[cfg(feature = "client")]
-    pub graphics: <B::Graphics as GraphicsBackend>::Interface,
+    pub gpu: <B::Gpu as GpuBackend>::Interface,
     pub audio: AudioInterface<B::Kira>,
     pub server: <B::Networking as NetworkingBackend>::ServerInterface,
     pub client: <B::Networking as NetworkingBackend>::ClientInterface,
@@ -441,7 +440,7 @@ where
     #[cfg(feature = "client")]
     pub(super) input: Mutex<Input>,
 
-    pub(super) scene: Mutex<Scene<<B::Graphics as GraphicsBackend>::LoadedTypes>>,
+    pub(super) scene: Mutex<Scene<<B::Gpu as GpuBackend>::LoadedTypes>>,
 
     #[cfg(feature = "client")]
     pub(super) window: OnceLock<Window>,
@@ -458,7 +457,7 @@ where
     pub fn new(
         game: impl FnOnce(EngineContext<B>) -> G,
         tick_settings: tick_system::TickSettings,
-        #[cfg(feature = "client")] graphics: <B::Graphics as GraphicsBackend>::Interface,
+        #[cfg(feature = "client")] gpu: <B::Gpu as GpuBackend>::Interface,
         audio: AudioInterface<<B as Backends>::Kira>,
         server: <B::Networking as NetworkingBackend>::ServerInterface,
         client: <B::Networking as NetworkingBackend>::ClientInterface,
@@ -474,7 +473,7 @@ where
         let backends = BackendInterfaces::<B> {
             tick_system: Arc::new(TickSystem::new(tick_settings)),
             #[cfg(feature = "client")]
-            graphics,
+            gpu,
             audio,
             server,
             client,
@@ -514,7 +513,7 @@ where
 
     pub fn context<'a>(
         &'a self,
-        scene: &'a mut Scene<<B::Graphics as GraphicsBackend>::LoadedTypes>,
+        scene: &'a mut Scene<<B::Gpu as GpuBackend>::LoadedTypes>,
         #[cfg(feature = "client")] input: &'a mut Input,
     ) -> EngineContext<'a, B> {
         EngineContext::new(
@@ -640,30 +639,29 @@ where
 }
 
 #[cfg(feature = "client")]
-type GraphicsInterface<'a, B> =
-    <<<B as Backends>::Graphics as GraphicsBackend>::Interface as GraphicsInterfacer<
-        <<B as Backends>::Graphics as GraphicsBackend>::LoadedTypes,
-    >>::Interface<'a>;
+type GpuInterface<'a, B> = <<<B as Backends>::Gpu as GpuBackend>::Interface as GpuInterfacer<
+    <<B as Backends>::Gpu as GpuBackend>::LoadedTypes,
+>>::Interface<'a>;
 
 /// The context of the game engine. It's the direct interface between the engine and game state
 /// updates.
 ///
 /// It contains timing, the scene, an interface to each backend and if feature `client` is
-/// enabled, input, the window as well as the graphics backend.
+/// enabled, input, the window as well as the gpu backend.
 pub struct EngineContext<'a, B = DefaultBackends>
 where
     B: Backends,
-    B::Graphics: 'a,
+    B::Gpu: 'a,
 {
     exit: &'a AtomicBool,
     pub time: &'a Time,
-    pub scene: &'a mut Scene<<B::Graphics as GraphicsBackend>::LoadedTypes>,
+    pub scene: &'a mut Scene<<B::Gpu as GpuBackend>::LoadedTypes>,
     #[cfg(feature = "client")]
     pub input: &'a mut Input,
     #[cfg(feature = "client")]
     pub(super) window: &'a OnceLock<Window>,
     #[cfg(feature = "client")]
-    pub graphics: GraphicsInterface<'a, B>,
+    pub gpu: GpuInterface<'a, B>,
     pub audio: &'a AudioInterface<B::Kira>,
     pub server: &'a <B::Networking as NetworkingBackend>::ServerInterface,
     pub client: &'a <B::Networking as NetworkingBackend>::ClientInterface,
@@ -673,7 +671,7 @@ impl<'a, B: Backends> EngineContext<'a, B> {
     fn new(
         exit: &'a AtomicBool,
         time: &'a Time,
-        scene: &'a mut Scene<<B::Graphics as GraphicsBackend>::LoadedTypes>,
+        scene: &'a mut Scene<<B::Gpu as GpuBackend>::LoadedTypes>,
         #[cfg(feature = "client")] input: &'a mut Input,
         #[cfg(feature = "client")] window: &'a OnceLock<Window>,
         backends: &'a BackendInterfaces<B>,
@@ -687,7 +685,7 @@ impl<'a, B: Backends> EngineContext<'a, B> {
             #[cfg(feature = "client")]
             window,
             #[cfg(feature = "client")]
-            graphics: backends.graphics.interface(),
+            gpu: backends.gpu.interface(),
             audio: &backends.audio,
             server: &backends.server,
             client: &backends.client,

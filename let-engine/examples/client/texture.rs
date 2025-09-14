@@ -2,9 +2,9 @@
 //!
 //! Press space to bitshift random pixels to make an interesting effect.
 
-use graphics::VulkanTypes;
+use gpu::VulkanTypes;
 use image::ImageBuffer;
-use let_engine::prelude::graphics::texture::TextureId;
+use let_engine::prelude::gpu::texture::TextureId;
 use let_engine::prelude::*;
 
 static RES: UVec2 = uvec2(1122, 821);
@@ -25,8 +25,8 @@ fn main() {
     let_engine::start(
         EngineSettings::default()
             .window(window_builder)
-            .graphics(graphics::Graphics {
-                present_mode: graphics::PresentMode::Fifo,
+            .gpu(gpu::GpuSettings {
+                present_mode: gpu::PresentMode::Fifo,
                 ..Default::default()
             }),
         Game::new,
@@ -49,7 +49,7 @@ impl Game {
 
         // A square model with textured vertices.
         let model = context
-            .graphics
+            .gpu
             .load_model(&Model::new_indexed(
                 vec![
                     tvert(1.0, 1.0, 1.0, 1.0),
@@ -75,15 +75,15 @@ impl Game {
         .unwrap();
 
         // Load the texture to the GPU
-        let gpu_texture = context.graphics.load_texture(&texture).unwrap();
+        let gpu_texture = context.gpu.load_texture(&texture).unwrap();
 
         let default_material = context
-            .graphics
+            .gpu
             .load_material::<TVert>(&Material::default_textured())
             .unwrap();
 
         let color_buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -102,7 +102,7 @@ impl Game {
                 (Location::new(1, 0), Descriptor::buffer(color_buffer)),
                 (Location::new(2, 0), Descriptor::Texture(gpu_texture)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
 
         let object = ObjectBuilder::new(appearance);
@@ -139,7 +139,7 @@ impl let_engine::Game for Game {
                 }
                 // Edit texture when space is pressed.
                 Key::Named(NamedKey::Space) => {
-                    let texture = context.graphics.texture(self.texture).unwrap();
+                    let texture = context.gpu.texture(self.texture).unwrap();
                     // Write data to the texture
                     texture
                         .write_data(|data| {

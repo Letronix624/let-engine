@@ -14,13 +14,13 @@ use crate::{
     },
 };
 
-/// Definition for a graphics backend for the let-engine.
-pub trait GraphicsBackend: Sized {
+/// Definition for a gpu backend for the let-engine.
+pub trait GpuBackend: Sized {
     type Error: std::error::Error + Send + Sync;
 
     /// Will be stored in the [`EngineContext`](crate::engine::EngineContext)
     /// to interface the backend from multiple threads.
-    type Interface: GraphicsInterfacer<Self::LoadedTypes>;
+    type Interface: GpuInterfacer<Self::LoadedTypes>;
 
     /// Settings used by the backend to define the functionality.
     type Settings: Default + Clone + Send + Sync;
@@ -29,7 +29,7 @@ pub trait GraphicsBackend: Sized {
 
     /// Constructor of the backend with required settings.
     ///
-    /// Also returns the interfacer for user input to the graphics backend.
+    /// Also returns the interfacer for user input to the gpu backend.
     fn new(
         settings: Self::Settings,
         #[cfg(feature = "client")] event_loop: &winit::event_loop::EventLoop<()>,
@@ -62,8 +62,8 @@ pub trait GraphicsBackend: Sized {
     fn resize_event(&mut self, new_size: UVec2);
 }
 
-pub trait GraphicsInterfacer<T: Loaded>: Clone + Send + Sync {
-    type Interface<'a>: GraphicsInterface<T>
+pub trait GpuInterfacer<T: Loaded>: Clone + Send + Sync {
+    type Interface<'a>: GpuInterface<T>
     where
         Self: 'a;
 
@@ -71,7 +71,7 @@ pub trait GraphicsInterfacer<T: Loaded>: Clone + Send + Sync {
     fn interface<'a>(&'a self) -> Self::Interface<'a>;
 }
 
-pub trait GraphicsInterface<T: Loaded> {
+pub trait GpuInterface<T: Loaded> {
     fn load_material<V: Vertex>(&self, material: &Material) -> Result<T::MaterialId>;
     fn load_buffer<B: Data>(&self, buffer: &Buffer<B>) -> Result<T::BufferId<B>>;
     fn load_model<V: Vertex>(&self, model: &Model<V>) -> Result<T::ModelId<V>>;
@@ -111,7 +111,7 @@ pub trait GraphicsInterface<T: Loaded> {
     ) -> Result<(), T::AppearanceCreationError>;
 }
 
-impl GraphicsInterface<()> for () {
+impl GpuInterface<()> for () {
     fn load_material<V: Vertex>(&self, _material: &Material) -> Result<()> {
         Ok(())
     }
@@ -190,7 +190,7 @@ impl GraphicsInterface<()> for () {
     }
 }
 
-/// Loaded version of types used by the graphics backend.
+/// Loaded version of types used by the gpu backend.
 pub trait Loaded: Clone + Default {
     /// The type of a material when it is loaded.
     type Material: Send + Sync;
@@ -231,7 +231,7 @@ impl Loaded for () {
     type AppearanceCreationError = std::io::Error;
 }
 
-impl GraphicsBackend for () {
+impl GpuBackend for () {
     type Error = std::io::Error;
     type Interface = ();
     type Settings = ();
@@ -275,7 +275,7 @@ impl GraphicsBackend for () {
     fn resize_event(&mut self, _new_size: UVec2) {}
 }
 
-impl GraphicsInterfacer<()> for () {
+impl GpuInterfacer<()> for () {
     type Interface<'a> = ();
     fn interface<'a>(&'a self) -> Self::Interface<'a> {}
 }

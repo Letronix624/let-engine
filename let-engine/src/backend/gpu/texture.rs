@@ -577,7 +577,7 @@ impl LoadedTexture for GpuTexture {
 
 use thiserror::Error;
 
-use crate::backend::graphics::vulkan::Resource;
+use crate::backend::gpu::vulkan::Resource;
 
 use super::{
     VulkanError, format_to_vulkano,

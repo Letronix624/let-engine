@@ -40,7 +40,7 @@ pub use joints::*;
 pub use physics::*;
 
 pub use backend::DefaultBackends;
-pub use core_backend::graphics::GraphicsInterface;
+pub use core_backend::gpu::GpuInterface;
 
 // Asset system
 #[cfg(feature = "asset_system")]
@@ -50,9 +50,8 @@ pub use let_engine_asset_system::*;
 // #[cfg(feature = "default_networking_backend")]
 // pub use backend::networking::*;
 
-// // Graphics
-#[cfg(feature = "default_graphics_backend")]
-pub use backend::graphics;
+#[cfg(feature = "default_gpu_backend")]
+pub use backend::gpu;
 
 // Other structs
 pub use crate::settings::*;

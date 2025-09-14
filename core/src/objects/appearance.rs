@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    backend::graphics::{GraphicsInterface, Loaded},
+    backend::gpu::{GpuInterface, Loaded},
     resources::{buffer::Location, data::Data, model::Vertex},
 };
 
@@ -84,7 +84,7 @@ impl<T: Loaded> AppearanceBuilder<T> {
     /// Builds this struct into an `Appearance`.
     pub fn build(
         self,
-        interface: &impl GraphicsInterface<T>,
+        interface: &impl GpuInterface<T>,
     ) -> Result<Appearance<T>, AppearanceBuilderError<T>> {
         let Some(material) = self.material else {
             return Err(AppearanceBuilderError::Uninitialized);
@@ -141,7 +141,7 @@ pub enum AppearanceBuilderError<T: Loaded> {
     #[error("Failed to build Appearance: Uninitialized fields.")]
     Uninitialized,
 
-    /// Gets returned when the combination of material, model and buffers is invalid for the graphics backend.
+    /// Gets returned when the combination of material, model and buffers is invalid for the gpu backend.
     #[error("Failed to build Appearance: {0}")]
     InvalidCombination(T::AppearanceCreationError),
 

@@ -1,7 +1,7 @@
 //! 3 Shapes, triangle, square and circle.
 
-use graphics::VulkanTypes;
-use let_engine::prelude::{graphics::buffer::BufferId, *};
+use gpu::VulkanTypes;
+use let_engine::prelude::{gpu::buffer::BufferId, *};
 use let_engine_core::circle;
 
 fn main() {
@@ -19,8 +19,8 @@ fn main() {
     let_engine::start(
         EngineSettings::default()
             .window(window_builder)
-            .graphics(graphics::Graphics {
-                present_mode: graphics::PresentMode::Fifo,
+            .gpu(gpu::GpuSettings {
+                present_mode: gpu::PresentMode::Fifo,
                 ..Default::default()
             }),
         Game::new,
@@ -49,16 +49,16 @@ impl Game {
 
         // All shapes are going to share the same material and color.
         let default_material = context
-            .graphics
+            .gpu
             .load_material::<Vec2>(&Material::new_default())
             .unwrap();
 
         let builder = AppearanceBuilder::<VulkanTypes>::default().material(default_material);
 
         // Shape 1: Triangle
-        let triangle_model = context.graphics.load_model(&model!(triangle)).unwrap();
+        let triangle_model = context.gpu.load_model(&model!(triangle)).unwrap();
         let triangle_buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -72,7 +72,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(triangle_buffer)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
         let mut triangle = ObjectBuilder::new(triangle_appearance);
         triangle.transform.position = vec2(-2.0, 0.21); // move triangle to the left
@@ -82,9 +82,9 @@ impl Game {
             .unwrap();
 
         // Shape 2: Square
-        let square_model = context.graphics.load_model(&model!(square)).unwrap();
+        let square_model = context.gpu.load_model(&model!(square)).unwrap();
         let square_buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -98,7 +98,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(square_buffer)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
         let square = ObjectBuilder::new(square_appearance);
         let square = context
@@ -107,9 +107,9 @@ impl Game {
             .unwrap();
 
         // Shape 3: Circle
-        let circle_model = context.graphics.load_model(&circle!(40)).unwrap();
+        let circle_model = context.gpu.load_model(&circle!(40)).unwrap();
         let circle_buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 buffer::BufferUsage::Uniform,
                 // We will only write to this object. 2 buffers is sufficient for small data
@@ -124,7 +124,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(circle_buffer)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
         let mut circle = ObjectBuilder::new(circle_appearance);
         circle.transform.position.x = 2.0; // move circle to the right
@@ -221,7 +221,7 @@ impl let_engine::Game for Game {
 
     // Gradually change color of circle
     fn update(&mut self, context: EngineContext) {
-        let buffer = context.graphics.buffer(self.color_buffer).unwrap();
+        let buffer = context.gpu.buffer(self.color_buffer).unwrap();
         buffer
             .write_data(|w| {
                 *w = w.lerp(

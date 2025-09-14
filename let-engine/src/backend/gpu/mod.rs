@@ -1,4 +1,4 @@
-//! Default graphics backend made with `Vulkano`
+//! Default gpu backend made with `Vulkano`
 
 use std::{
     cell::OnceCell,
@@ -13,7 +13,7 @@ use crossbeam::channel::{Receiver, Sender, bounded};
 use draw::Draw;
 use glam::UVec2;
 use let_engine_core::{
-    backend::graphics::{GraphicsBackend, Loaded},
+    backend::gpu::{GpuBackend, Loaded},
     objects::{Color, Descriptor, scenes::Scene},
     resources::{
         Format,
@@ -52,14 +52,14 @@ pub mod texture;
 mod draw;
 mod vulkan;
 
-pub struct DefaultGraphicsBackend {
+pub struct DefaultGpuBackend {
     draw: OnceCell<Draw>,
-    settings_receiver: Receiver<Graphics>,
-    interfacer: GraphicsInterfacer,
+    settings_receiver: Receiver<GpuSettings>,
+    interfacer: GpuInterfacer,
 }
 
 #[derive(Debug, Error)]
-pub enum DefaultGraphicsBackendError {
+pub enum DefaultGpuBackendError {
     /// Gets returned when the engine fails to find or load the vulkan library.
     #[error("Failed to load vulkan library: {0}")]
     Loading(LoadingError),
@@ -67,9 +67,9 @@ pub enum DefaultGraphicsBackendError {
     /// Gets returned when the device running the backend does not meet the backends requirements.
     #[error(
         "
-    This device does not support the requirements of this graphics backend:\n
+    This device does not support the requirements of this gpu backend:\n
     {0}\n
-    Make sure you have a Vulkan 1.2 capable device and the newest graphics drivers.
+    Make sure you have a Vulkan 1.2 capable device and the newest gpu drivers.
     "
     )]
     Unsupported(&'static str),
@@ -79,17 +79,17 @@ pub enum DefaultGraphicsBackendError {
     Vulkan(VulkanError),
 }
 
-impl From<VulkanError> for DefaultGraphicsBackendError {
+impl From<VulkanError> for DefaultGpuBackendError {
     fn from(value: VulkanError) -> Self {
         Self::Vulkan(value)
     }
 }
 
-impl GraphicsBackend for DefaultGraphicsBackend {
-    type Error = DefaultGraphicsBackendError;
+impl GpuBackend for DefaultGpuBackend {
+    type Error = DefaultGpuBackendError;
 
-    type Settings = Graphics;
-    type Interface = GraphicsInterfacer;
+    type Settings = GpuSettings;
+    type Interface = GpuInterfacer;
 
     type LoadedTypes = VulkanTypes;
 
@@ -106,7 +106,7 @@ impl GraphicsBackend for DefaultGraphicsBackend {
 
         let settings_channels = bounded(3);
 
-        let interfacer = GraphicsInterfacer {
+        let interfacer = GpuInterfacer {
             settings,
             settings_sender: settings_channels.0,
             available_present_modes: OnceLock::new(),
@@ -298,20 +298,20 @@ pub enum AppearanceCreationError {
 }
 
 #[derive(Debug, Clone)]
-pub struct GraphicsInterfacer {
-    settings: Arc<RwLock<Graphics>>,
-    settings_sender: Sender<Graphics>,
+pub struct GpuInterfacer {
+    settings: Arc<RwLock<GpuSettings>>,
+    settings_sender: Sender<GpuSettings>,
 
     // Gets written to in swapchain.rs
     available_present_modes: OnceLock<Box<[PresentMode]>>,
 }
 
-impl let_engine_core::backend::graphics::GraphicsInterfacer<VulkanTypes> for GraphicsInterfacer {
-    type Interface<'a> = GraphicsInterface<'a>;
+impl let_engine_core::backend::gpu::GpuInterfacer<VulkanTypes> for GpuInterfacer {
+    type Interface<'a> = GpuInterface<'a>;
 
     fn interface<'a>(&'a self) -> Self::Interface<'a> {
         let vulkan = VK.get().unwrap();
-        GraphicsInterface {
+        GpuInterface {
             settings: &self.settings,
             settings_sender: &self.settings_sender,
             present_modes: self.available_present_modes.get().map(|v| &**v),
@@ -321,17 +321,15 @@ impl let_engine_core::backend::graphics::GraphicsInterfacer<VulkanTypes> for Gra
 }
 
 #[derive(Debug)]
-pub struct GraphicsInterface<'a> {
-    settings: &'a RwLock<Graphics>,
-    settings_sender: &'a Sender<Graphics>,
+pub struct GpuInterface<'a> {
+    settings: &'a RwLock<GpuSettings>,
+    settings_sender: &'a Sender<GpuSettings>,
     present_modes: Option<&'a [PresentMode]>,
 
     guard: Guard<'a>,
 }
 
-impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
-    for GraphicsInterface<'a>
-{
+impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterface<'a> {
     fn load_material<V: let_engine_core::resources::model::Vertex>(
         &self,
         material: &let_engine_core::resources::material::Material,
@@ -648,23 +646,23 @@ impl<'a> let_engine_core::backend::graphics::GraphicsInterface<VulkanTypes>
     }
 }
 
-impl<'a> GraphicsInterface<'a> {
-    /// Returns the settings of the graphics backend.
-    pub fn settings(&self) -> Graphics {
+impl<'a> GpuInterface<'a> {
+    /// Returns the settings of the gpu backend.
+    pub fn settings(&self) -> GpuSettings {
         *self.settings.read()
     }
 
-    pub fn settings_mut<F: FnMut(&mut Graphics)>(&self, mut f: F) {
+    pub fn settings_mut<F: FnMut(&mut GpuSettings)>(&self, mut f: F) {
         let mut settings = self.settings.write();
         f(&mut settings)
     }
 
-    fn send_settings(&self, settings: Graphics) {
+    fn send_settings(&self, settings: GpuSettings) {
         let _ = self.settings_sender.try_send(settings);
     }
 
-    /// Sets the settings of this graphics backend
-    pub fn set_settings(&self, settings: Graphics) {
+    /// Sets the settings of this gpu backend
+    pub fn set_settings(&self, settings: GpuSettings) {
         *self.settings.write() = settings;
         self.send_settings(settings);
     }
@@ -679,7 +677,7 @@ impl<'a> GraphicsInterface<'a> {
         self.present_modes
     }
 
-    /// Sets the present mode of the graphics backend. Returns an error in case the present mode is not supported.
+    /// Sets the present mode of the gpu backend. Returns an error in case the present mode is not supported.
     pub fn set_present_mode(&self, present_mode: PresentMode) -> Result<()> {
         if self
             .present_modes
@@ -718,14 +716,14 @@ pub enum VulkanError {
     #[error("Not enough memory for this operation.")]
     OutOfHostMemory,
 
-    /// Returns when there is not enough VRAM for a graphics operation.
+    /// Returns when there is not enough VRAM for a gpu operation.
     #[error("Not enough VRAM for this operation.")]
     OutOfDeviceMemory,
 
     /// The GPU device was lost, likely to a crash, driver reset or system instability.
     ///
     /// This might occur sometimes
-    #[error("Lost access to the graphics device.")]
+    #[error("Lost access to the gpu device.")]
     DeviceLost,
 
     /// Your application has breached the boundaries of the amount of graphical objects
@@ -793,9 +791,9 @@ impl From<SpirvBytesNotMultipleOf4> for ShaderError {
     }
 }
 
-/// Backend wide Graphics settings.
+/// Backend wide Gpu settings.
 #[derive(Debug, Clone, Copy)]
-pub struct Graphics {
+pub struct GpuSettings {
     /// An option that determines something called "VSync".
     ///
     /// # Default
@@ -828,14 +826,14 @@ pub struct Graphics {
     pub max_frames_in_flight: usize, // /// Time waited before each frame.
 }
 
-impl Default for Graphics {
+impl Default for GpuSettings {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Graphics {
-    /// Creates a new graphics settings instance.
+impl GpuSettings {
+    /// Creates a new gpu settings instance.
     pub fn new() -> Self {
         Self {
             present_mode: PresentMode::Fifo,
@@ -852,7 +850,7 @@ impl Graphics {
 ///
 /// `Immediate` mode is the only one that does not have "VSync".
 ///
-/// When designing in game graphics settings this is the setting that gets changed when users select the VSync option.
+/// When designing in game gpu settings this is the setting that gets changed when users select the VSync option.
 ///
 /// The vsync options may include higher latency than the other ones.
 ///

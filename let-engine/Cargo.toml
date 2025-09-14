@@ -51,7 +51,7 @@ workspace = true
 optional = true
 
 [dependencies.egui_winit_vulkano]
-git = "https://github.com/LukeP0WERS/egui_winit_vulkano.git"
+git = "https://github.com/Letronix624/egui_winit_vulkano.git"
 branch = "master"  
 optional = true
 
@@ -120,15 +120,15 @@ required-features = ["client", "physics"]
 default = [
   "client",
   "physics",
-  "default_graphics_backend",
+  "default_gpu_backend",
   "default_networking_backend",
 ]
 
 egui = ["dep:egui_winit_vulkano", "dep:egui", "client", "let-engine-core/egui"]
 client = ["dep:winit", "dep:image", "let-engine-core/client"]
-default_graphics_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client"]
+default_gpu_backend = ["dep:vulkano", "dep:vulkano-taskgraph", "client"]
 default_networking_backend = ["dep:local-ip-address", "glam/rkyv", "glam/bytecheck"]
-vulkan_debug = ["default_graphics_backend"]
+vulkan_debug = ["default_gpu_backend"]
 physics = ["dep:rapier2d", "let-engine-core/physics"]
 asset_system = ["dep:let-engine-asset-system"]
 

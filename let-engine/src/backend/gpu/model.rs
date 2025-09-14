@@ -24,7 +24,7 @@ use vulkano_taskgraph::{
     resource::{AccessTypes, HostAccessType},
 };
 
-use crate::backend::graphics::vulkan::Resource;
+use crate::backend::gpu::vulkan::Resource;
 
 use super::{VulkanError, vulkan::VK};
 

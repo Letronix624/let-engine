@@ -1,12 +1,12 @@
 pub mod audio;
-pub mod graphics;
+pub mod gpu;
 pub mod networking;
 
 /// Backend types to be used during runtime of the game engine.
 ///
 /// Each backend must implement their respective trait to be able to be interfaced in the event loop by the user.
 pub trait Backends {
-    type Graphics: graphics::GraphicsBackend;
+    type Gpu: gpu::GpuBackend;
 
     type Kira: audio::AudioBackend;
 

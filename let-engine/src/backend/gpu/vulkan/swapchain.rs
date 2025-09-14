@@ -7,7 +7,7 @@ use vulkano::swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, Swapchain
 use vulkano_taskgraph::Id;
 use winit::window::Window;
 
-use crate::backend::graphics::VulkanError;
+use crate::backend::gpu::VulkanError;
 
 use super::Vulkan;
 
@@ -15,7 +15,7 @@ use super::Vulkan;
 pub fn create_swapchain(
     device: &Arc<Device>,
     surface: Arc<Surface>,
-    present_modes: &OnceLock<Box<[crate::backend::graphics::PresentMode]>>,
+    present_modes: &OnceLock<Box<[crate::backend::gpu::PresentMode]>>,
     vulkan: &Vulkan,
 ) -> Result<(Id<Swapchain>, UVec2, Format), VulkanError> {
     let surface_capabilities = device

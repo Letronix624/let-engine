@@ -11,7 +11,7 @@ use audio::{
     gen_square_wave,
     sound::static_sound::{StaticSoundData, StaticSoundSettings},
 };
-use graphics::VulkanTypes;
+use gpu::VulkanTypes;
 
 use let_engine::prelude::*;
 use let_engine_core::backend::audio::{AudioInterface, DefaultAudioBackend};
@@ -29,7 +29,7 @@ const RESOLUTION: UVec2 = uvec2(800, 600);
 struct PongBackends;
 
 impl core_backend::Backends for PongBackends {
-    type Graphics = graphics::DefaultGraphicsBackend;
+    type Gpu = gpu::DefaultGpuBackend;
 
     type Kira = DefaultAudioBackend;
 
@@ -117,7 +117,7 @@ impl Game {
         // Spawns a ball in the middle.
         let ball = Ball::new(&mut context);
 
-        let mut labelifier = Labelifier::new(&context.graphics).unwrap();
+        let mut labelifier = Labelifier::new(&context.gpu).unwrap();
 
         // Loading the font for the score.
         let font = labelifier
@@ -137,19 +137,14 @@ impl Game {
                 .scale(Vec2::splat(50.0))
                 .font(font),
             &mut labelifier,
-            &context.graphics,
+            &context.gpu,
         )
         .unwrap();
 
         // initialize this one to the ui
         context.scene.add_object(
             ui_layer,
-            ObjectBuilder::new(
-                left_score_label
-                    .appearance()
-                    .build(&context.graphics)
-                    .unwrap(),
-            ),
+            ObjectBuilder::new(left_score_label.appearance().build(&context.gpu).unwrap()),
         );
 
         // Making a default label for the right side.
@@ -165,7 +160,7 @@ impl Game {
                 .scale(Vec2::splat(50.0))
                 .font(font),
             &mut labelifier,
-            &context.graphics,
+            &context.gpu,
         )
         .unwrap();
 
@@ -173,17 +168,12 @@ impl Game {
             .scene
             .add_object(
                 ui_layer,
-                ObjectBuilder::new(
-                    right_score_label
-                        .appearance()
-                        .build(&context.graphics)
-                        .unwrap(),
-                ),
+                ObjectBuilder::new(right_score_label.appearance().build(&context.gpu).unwrap()),
             )
             .unwrap();
 
         // Submit label creation task in the end.
-        labelifier.update(&context.graphics).unwrap();
+        labelifier.update(&context.gpu).unwrap();
 
         /* Line in the middle */
 
@@ -195,7 +185,7 @@ impl Game {
             vec2(0.0, RESOLUTION.y as f32 * -0.8),
         ];
 
-        let middle_model = context.graphics.load_model(&model!(vertices)).unwrap();
+        let middle_model = context.gpu.load_model(&model!(vertices)).unwrap();
 
         // A description of how the line should look like.
         let line_material_settings = MaterialSettingsBuilder::default()
@@ -205,7 +195,7 @@ impl Game {
             .unwrap();
 
         let line_material = context
-            .graphics
+            .gpu
             .load_material::<Vec2>(&Material::new(
                 line_material_settings,
                 GraphicsShaders::new_default(),
@@ -214,7 +204,7 @@ impl Game {
 
         // The buffer is a Fixed Uniform here, because it's small and will never change.
         let middle_line_color = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -229,7 +219,7 @@ impl Game {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(middle_line_color)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
 
         // Add the line to the ui layer
@@ -268,7 +258,7 @@ impl let_engine::Game<PongBackends> for Game {
                 .unwrap();
 
             // Update the labelifier each frame to make the score update.
-            self.labelifier.update(&context.graphics).unwrap();
+            self.labelifier.update(&context.gpu).unwrap();
         };
     }
 
@@ -320,15 +310,15 @@ impl Paddle {
         // Next we describe the appearance of the paddle.
 
         // Here we make the pedal square and give it a default material
-        let model = context.graphics.load_model(&model!(square)).unwrap();
+        let model = context.gpu.load_model(&model!(square)).unwrap();
         let material = context
-            .graphics
+            .gpu
             .load_material::<Vec2>(&Material::new_default())
             .unwrap();
 
         // Make the paddle white
         let buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -343,7 +333,7 @@ impl Paddle {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(buffer)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
 
         let height = 0.05;
@@ -411,15 +401,15 @@ impl Ball {
     pub fn new(context: &mut EngineContext) -> Self {
         let lifetime = SystemTime::now();
 
-        let model = context.graphics.load_model(&model!(square)).unwrap();
+        let model = context.gpu.load_model(&model!(square)).unwrap();
         let material = context
-            .graphics
+            .gpu
             .load_material::<Vec2>(&Material::new_default())
             .unwrap();
 
         // Make the ball white
         let buffer = context
-            .graphics
+            .gpu
             .load_buffer(&Buffer::from_data(
                 BufferUsage::Uniform,
                 BufferAccess::Fixed,
@@ -434,7 +424,7 @@ impl Ball {
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(buffer)),
             ])
-            .build(&context.graphics)
+            .build(&context.gpu)
             .unwrap();
 
         let mut object = ObjectBuilder::new(appearance);

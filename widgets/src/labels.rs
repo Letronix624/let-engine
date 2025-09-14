@@ -9,7 +9,7 @@ use glyph_brush::{
     BrushAction, BrushError, FontId, GlyphBrush, GlyphBrushBuilder, HorizontalAlign, Layout,
     Section, SectionBuilder, Text, VerticalAlign, ab_glyph,
 };
-use let_engine_core::backend::graphics::{GraphicsInterface, Loaded};
+use let_engine_core::backend::gpu::{GpuInterface, Loaded};
 use let_engine_core::objects::{AppearanceBuilder, Color, Descriptor};
 use let_engine_core::resources::buffer::{
     Buffer, BufferAccess, BufferUsage, LoadedBuffer, Location,
@@ -161,7 +161,7 @@ impl<T: Loaded + 'static> Label<T> {
     pub fn new(
         create_info: LabelCreateInfo,
         labelifier: &mut Labelifier<T>,
-        graphics_interface: &impl GraphicsInterface<T>,
+        gpu_interface: &impl GpuInterface<T>,
     ) -> Result<Self> {
         use let_engine_core::resources::buffer::BufferAccess;
 
@@ -179,8 +179,8 @@ impl<T: Loaded + 'static> Label<T> {
         );
 
         let label = Self {
-            model_id: graphics_interface.load_model(&model)?,
-            buffer_id: graphics_interface.load_buffer(&buffer)?,
+            model_id: gpu_interface.load_model(&model)?,
+            buffer_id: gpu_interface.load_buffer(&buffer)?,
             material_id: labelifier.material_id,
             texture_id: labelifier.texture_id,
             font: create_info.font,
@@ -364,7 +364,7 @@ static TEXTURE_SETTINGS: LazyLock<TextureSettings> = LazyLock::new(|| {
 
 impl<T: Loaded + 'static> Labelifier<T> {
     /// Makes a new label maker.
-    pub fn new(interface: &impl GraphicsInterface<T>) -> Result<Self> {
+    pub fn new(interface: &impl GpuInterface<T>) -> Result<Self> {
         let glyph_brush = GlyphBrushBuilder::using_fonts(vec![])
             .section_hasher(foldhash::fast::RandomState::default())
             .build(); // beginning fonts
@@ -402,7 +402,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
     }
 
     /// Clears every glyph from the cache, resizing the texture cache back to 256x256 pixels.
-    pub fn clear_cache(&mut self, interface: &impl GraphicsInterface<T>) -> Result<()> {
+    pub fn clear_cache(&mut self, interface: &impl GpuInterface<T>) -> Result<()> {
         self.glyph_brush
             .to_builder()
             .initial_cache_size((256, 256))
@@ -439,7 +439,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
     fn update_models(
         mut queued: Vec<DrawTask<T>>,
         brush_action: BrushAction<TextVertex>,
-        interface: &impl GraphicsInterface<T>,
+        interface: &impl GpuInterface<T>,
     ) -> Result<()> {
         let BrushAction::Draw(text_vertices) = brush_action else {
             return Ok(());
@@ -467,7 +467,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
     /// Updates the texture and model of every single label queued to be updated.
     ///
     /// Should be called every frame.
-    pub fn update(&mut self, interface: &impl GraphicsInterface<T>) -> Result<()> {
+    pub fn update(&mut self, interface: &impl GpuInterface<T>) -> Result<()> {
         let mut queue = vec![];
         while let Ok(label) = self.receiver.try_recv() {
             let id = queue.len();

@@ -72,7 +72,7 @@ impl Texture {
 }
 
 impl Texture {
-    /// Creates a CPU-side texture definition that can be loaded by the graphics backend.
+    /// Creates a CPU-side texture definition that can be loaded by the gpu backend.
     ///
     /// # Parameters
     /// - `data`: A vector of raw bytes containing the texture data.

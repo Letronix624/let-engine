@@ -5,7 +5,7 @@ pub mod resources;
 
 use backend::audio::{AudioBackend, AudioBackendError};
 use backend::networking::NetworkingBackend;
-use backend::{Backends, graphics::GraphicsBackend};
+use backend::{Backends, gpu::GpuBackend};
 
 use parking_lot::Mutex;
 use thiserror::Error;
@@ -24,9 +24,9 @@ where
     #[error("Can not start another engine instance in the same application.")]
     Recreation,
 
-    /// An error given by the used graphics backend upon creation.
+    /// An error given by the used gpu backend upon creation.
     #[error("{0:?}")]
-    GraphicsBackend(<B::Graphics as GraphicsBackend>::Error),
+    GpuBackend(<B::Gpu as GpuBackend>::Error),
 
     // /// An error given by the used audio backend.
     #[error("{0:?}")]
@@ -50,7 +50,7 @@ where
                     "Can not start another engine instance in the same application."
                 )?;
             }
-            Self::GraphicsBackend(e) => {
+            Self::GpuBackend(e) => {
                 write!(f, "{e}")?;
             }
             Self::AudioBackend(e) => {

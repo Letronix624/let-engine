@@ -10,9 +10,7 @@ use vulkano::swapchain::Surface;
 use vulkano::{Version, library::VulkanLibrary};
 use winit::raw_window_handle::HasDisplayHandle;
 
-use crate::backend::graphics::{
-    DefaultGraphicsBackendError, DefaultGraphicsBackendError::Unsupported,
-};
+use crate::backend::gpu::{DefaultGpuBackendError, DefaultGpuBackendError::Unsupported};
 
 #[derive(Debug)]
 pub struct Queues {
@@ -50,8 +48,8 @@ impl Queues {
 pub fn create_instance(
     handle: &impl HasDisplayHandle,
     max_retries: usize,
-) -> Result<Arc<vulkano::instance::Instance>, DefaultGraphicsBackendError> {
-    let library = VulkanLibrary::new().map_err(DefaultGraphicsBackendError::Loading)?;
+) -> Result<Arc<vulkano::instance::Instance>, DefaultGpuBackendError> {
+    let library = VulkanLibrary::new().map_err(DefaultGpuBackendError::Loading)?;
 
     let mut required_extensions = None;
 
@@ -106,7 +104,7 @@ pub fn create_instance(
         vulkano::VulkanError::ExtensionNotPresent => {
             Unsupported("Your device does not support all Vulkan extensions required to run this application.")
         }
-        e => DefaultGraphicsBackendError::Vulkan(e.into()),
+        e => DefaultGpuBackendError::Vulkan(e.into()),
     })
 }
 
@@ -120,12 +118,12 @@ fn choose_physical_device(
     device_extensions: &DeviceExtensions,
     features: &DeviceFeatures,
     handle: &impl HasDisplayHandle,
-) -> Result<(Arc<PhysicalDevice>, [Option<usize>; 3]), DefaultGraphicsBackendError> {
+) -> Result<(Arc<PhysicalDevice>, [Option<usize>; 3]), DefaultGpuBackendError> {
     let devices = instance.enumerate_physical_devices().map_err(|e| {
         if let vulkano::VulkanError::InitializationFailed = e {
             Unsupported("The Vulkan implementation of your device is incomplete.")
         } else {
-            DefaultGraphicsBackendError::Vulkan(e.into())
+            DefaultGpuBackendError::Vulkan(e.into())
         }
     })?;
 
@@ -194,7 +192,7 @@ pub fn create_device_and_queues(
     instance: &Arc<Instance>,
     features: &DeviceFeatures,
     handle: &impl HasDisplayHandle,
-) -> Result<(Arc<Device>, Arc<Queues>), DefaultGraphicsBackendError> {
+) -> Result<(Arc<Device>, Arc<Queues>), DefaultGpuBackendError> {
     let device_extensions = DeviceExtensions {
         khr_swapchain: true,
         // ext_line_rasterization: true,
@@ -230,7 +228,7 @@ pub fn create_device_and_queues(
         vulkano::VulkanError::FeatureNotPresent => Unsupported(
             "Your device does not support all features required to run this application.",
         ),
-        e => DefaultGraphicsBackendError::Vulkan(e.into()),
+        e => DefaultGpuBackendError::Vulkan(e.into()),
     })?;
 
     let [general, compute, transfer] = queue_families.map(|x| x.map(|_| queues.next().unwrap()));

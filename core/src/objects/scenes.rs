@@ -1,7 +1,7 @@
 use std::collections::hash_set::Iter;
 
 use super::*;
-use crate::{backend::graphics::Loaded, camera::*};
+use crate::{backend::gpu::Loaded, camera::*};
 use foldhash::HashSet;
 use glam::UVec2;
 use slotmap::SlotMap;

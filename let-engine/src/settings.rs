@@ -3,7 +3,7 @@
 use let_engine_core::backend::{
     Backends,
     audio::{AudioBackend, AudioSettings},
-    graphics::GraphicsBackend,
+    gpu::GpuBackend,
     networking::NetworkingBackend,
 };
 
@@ -18,7 +18,7 @@ pub struct EngineSettings<B: Backends> {
     /// The initial settings of the tick system.
     pub tick_system: TickSettings,
 
-    pub graphics: <B::Graphics as GraphicsBackend>::Settings,
+    pub gpu: <B::Gpu as GpuBackend>::Settings,
     pub audio: AudioSettings<B::Kira>,
     pub networking: <B::Networking as NetworkingBackend>::Settings,
 }
@@ -32,7 +32,7 @@ where
             #[cfg(feature = "client")]
             window: crate::window::WindowBuilder::default(),
             tick_system: TickSettings::default(),
-            graphics: <B::Graphics as GraphicsBackend>::Settings::default(),
+            gpu: <B::Gpu as GpuBackend>::Settings::default(),
             audio: AudioSettings::default(),
             networking: <B::Networking as NetworkingBackend>::Settings::default(),
         }
@@ -48,7 +48,7 @@ where
             #[cfg(feature = "client")]
             window: self.window.clone(),
             tick_system: self.tick_system.clone(),
-            graphics: self.graphics.clone(),
+            gpu: self.gpu.clone(),
             audio: self.audio.clone(),
             networking: self.networking.clone(),
         }
@@ -69,9 +69,9 @@ impl<B: Backends> EngineSettings<B> {
         self
     }
 
-    /// Sets the value `graphics` and returns self.
-    pub fn graphics(mut self, graphics: <B::Graphics as GraphicsBackend>::Settings) -> Self {
-        self.graphics = graphics;
+    /// Sets the value `gpu` and returns self.
+    pub fn gpu(mut self, gpu: <B::Gpu as GpuBackend>::Settings) -> Self {
+        self.gpu = gpu;
         self
     }
 
