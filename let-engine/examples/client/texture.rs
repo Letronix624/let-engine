@@ -41,7 +41,7 @@ struct Game {
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(context: EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Result<Self, ()> {
         context
             .scene
             .root_view_mut()
@@ -113,22 +113,23 @@ impl Game {
             .add_object(context.scene.root_layer_id(), object)
             .unwrap();
 
-        Self {
+        Ok(Self {
             texture: gpu_texture,
-        }
+        })
     }
 }
 
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: EngineContext, event: events::WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: events::WindowEvent) -> Result<(), ()> {
         if let WindowEvent::CloseRequested = event {
             context.exit();
         }
+        Ok(())
     }
 
-    fn input(&mut self, context: EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: EngineContext, event: events::InputEvent) -> Result<(), ()> {
         if let InputEvent::KeyboardInput { input } = event
             && let ElementState::Pressed = input.state
         {
@@ -166,5 +167,6 @@ impl let_engine::Game for Game {
                 _ => (),
             }
         }
+        Ok(())
     }
 }

@@ -66,16 +66,16 @@ pub enum DefaultGpuBackendError {
 
     /// Gets returned when the device running the backend does not meet the backends requirements.
     #[error(
-        "
+        "\
     This device does not support the requirements of this gpu backend:\n
     {0}\n
-    Make sure you have a Vulkan 1.2 capable device and the newest gpu drivers.
+    Make sure you have a Vulkan 1.2 capable device and the newest gpu drivers.\
     "
     )]
     Unsupported(&'static str),
 
     /// Gets returned when Vulkan fails to execute an operation.
-    #[error("An error with Vulkan occured: {0}")]
+    #[error(transparent)]
     Vulkan(VulkanError),
 }
 
@@ -850,7 +850,7 @@ impl GpuSettings {
 ///
 /// `Immediate` mode is the only one that does not have "VSync".
 ///
-/// When designing in game gpu settings this is the setting that gets changed when users select the VSync option.
+/// When designing in game graphics settings this is the setting that gets changed when users select the VSync option.
 ///
 /// The vsync options may include higher latency than the other ones.
 ///

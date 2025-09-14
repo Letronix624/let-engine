@@ -1419,11 +1419,11 @@ pub enum ModelError {
     EmptyModel,
 
     /// Returns if a problem occurs when trying to access the data from the GPU.
-    #[error("{0}")]
+    #[error(transparent)]
     HostAccess(HostAccessError),
 
     /// Returns when there was a problem allocating a buffer.
-    #[error("{0}")]
+    #[error(transparent)]
     Allocation(AllocateBufferError),
 
     /// Returned when the data provided to a write method exceeds the buffer's capacity.

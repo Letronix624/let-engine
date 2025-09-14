@@ -600,7 +600,7 @@ pub enum GpuTextureError {
     UnsupportedAccess(BufferAccess),
 
     /// Returns if there was an error attempting to read or write a texture from and to the GPU.
-    #[error("{0}")]
+    #[error(transparent)]
     HostAccess(HostAccessError),
 
     /// If the texture for some other reason can not be made.

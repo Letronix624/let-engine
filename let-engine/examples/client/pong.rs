@@ -36,7 +36,7 @@ impl core_backend::Backends for PongBackends {
     type Networking = ();
 }
 
-type EngineContext<'a> = let_engine::EngineContext<'a, PongBackends>;
+type EngineContext<'a> = let_engine::EngineContext<'a, (), PongBackends>;
 
 fn main() {
     simple_logger::SimpleLogger::new()
@@ -50,7 +50,7 @@ fn main() {
         .inner_size(RESOLUTION)
         .title(env!("CARGO_CRATE_NAME"));
     // Initialize the engine.
-    let_engine::start(
+    let_engine::start::<Game, (), PongBackends>(
         EngineSettings::default()
             .window(window_builder)
             .tick_system(
@@ -74,8 +74,9 @@ struct Game {
     left_score_label: Label<VulkanTypes>,
     right_score_label: Label<VulkanTypes>,
 }
+
 impl Game {
-    pub fn new(mut context: EngineContext) -> Self {
+    pub fn new(mut context: EngineContext) -> Result<Game, ()> {
         // First we create a ui layer, the place where the text and middle line will be.
         let ui_layer = context
             .scene
@@ -228,7 +229,7 @@ impl Game {
             .add_object(ui_layer, ObjectBuilder::new(middle_line_appearance))
             .unwrap();
 
-        Self {
+        Ok(Self {
             labelifier,
 
             left_paddle,
@@ -237,12 +238,12 @@ impl Game {
 
             left_score_label,
             right_score_label,
-        }
+        })
     }
 }
 
 impl let_engine::Game<PongBackends> for Game {
-    fn update(&mut self, mut context: EngineContext) {
+    fn update(&mut self, mut context: EngineContext) -> Result<(), ()> {
         // run the update functions of the paddles.
         self.left_paddle.update(&mut context);
         self.right_paddle.update(&mut context);
@@ -260,16 +261,18 @@ impl let_engine::Game<PongBackends> for Game {
             // Update the labelifier each frame to make the score update.
             self.labelifier.update(&context.gpu).unwrap();
         };
+        Ok(())
     }
 
     // Exit when the X button is pressed.
-    fn window(&mut self, context: EngineContext, event: events::WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: events::WindowEvent) -> Result<(), ()> {
         if let WindowEvent::CloseRequested = event {
             context.exit();
         }
+        Ok(())
     }
 
-    fn input(&mut self, context: EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: EngineContext, event: events::InputEvent) -> Result<(), ()> {
         if let InputEvent::KeyboardInput { input } = event
             && input.state == ElementState::Pressed
         {
@@ -296,6 +299,7 @@ impl let_engine::Game<PongBackends> for Game {
                 _ => (),
             }
         }
+        Ok(())
     }
 }
 

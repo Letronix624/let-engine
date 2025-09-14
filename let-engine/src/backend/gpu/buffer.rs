@@ -74,7 +74,7 @@ pub enum GpuBufferError {
 
     // TODO: make more errors
     /// Returns if there was an error attempting to read or write to the buffer from or to the GPU.
-    #[error("{0}")]
+    #[error(transparent)]
     HostAccess(HostAccessError),
 
     /// Returns when the access operation is not supported with the currently set access setting.

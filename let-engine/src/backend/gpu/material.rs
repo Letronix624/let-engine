@@ -50,7 +50,7 @@ impl Key for MaterialId {
 #[derive(Debug, Error)]
 pub enum GpuMaterialError {
     /// An unexpected error which could occur.
-    #[error("{0}")]
+    #[error(transparent)]
     InvalidVertexType(Error),
 
     /// Error when attempting to create a default material.

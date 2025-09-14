@@ -3,6 +3,7 @@ use crossbeam::{atomic::AtomicCell, channel::bounded};
 use std::sync::atomic::Ordering::Relaxed;
 
 use let_engine_core::{
+    CustomError,
     backend::{
         Backends,
         audio::AudioInterface,
@@ -34,8 +35,8 @@ use {
     winit::event::MouseScrollDelta,
 };
 
+use std::time::Instant;
 use std::{sync::Arc, time::Duration};
-use std::{sync::atomic::AtomicBool, time::Instant};
 
 type Connection<B> = <B as NetworkingBackend>::Connection;
 type ClientMessage<'a, B> = <B as NetworkingBackend>::ClientEvent<'a>;
@@ -49,63 +50,114 @@ type ServerMessage<'a, B> = <B as NetworkingBackend>::ServerEvent<'a>;
 ///
 /// An event represents an update of the game state.
 #[allow(unused_variables)]
-pub trait Game<B: Backends = DefaultBackends>: Send + Sync + 'static {
+pub trait Game<B: Backends = DefaultBackends, E: CustomError = ()>: Send + Sync + 'static {
     /// Runs before the frame is drawn.
     #[cfg(feature = "client")]
-    fn update(&mut self, context: EngineContext<B>) {}
+    fn update(&mut self, context: EngineContext<E, B>) -> Result<(), E> {
+        Ok(())
+    }
 
     /// Runs before `update` method
     #[cfg(feature = "egui")]
-    fn egui(&mut self, context: EngineContext<B>, egui_context: egui::Context) {}
+    fn egui(&mut self, context: EngineContext<E, B>, egui_context: egui::Context) -> Result<(), E> {
+    }
 
     /// Runs based on the configured tick settings of the engine.
-    fn tick(&mut self, context: EngineContext<B>) {}
+    fn tick(&mut self, context: EngineContext<E, B>) -> Result<(), E> {
+        Ok(())
+    }
 
     /// Runs when the window is ready.
     #[cfg(feature = "client")]
-    fn window_ready(&mut self, context: EngineContext<B>) {}
+    fn window_ready(&mut self, context: EngineContext<E, B>) -> Result<(), E> {
+        Ok(())
+    }
 
     /// Events emitted by the window system.
     #[cfg(feature = "client")]
-    fn window(&mut self, context: EngineContext<B>, event: events::WindowEvent) {}
+    fn window(
+        &mut self,
+        context: EngineContext<E, B>,
+        event: events::WindowEvent,
+    ) -> Result<(), E> {
+        Ok(())
+    }
 
     /// Received input events.
     #[cfg(feature = "client")]
-    fn input(&mut self, context: EngineContext<B>, event: events::InputEvent) {}
+    fn input(&mut self, context: EngineContext<E, B>, event: events::InputEvent) -> Result<(), E> {
+        Ok(())
+    }
 
     /// An external networking event emitted by the set networking backends server.
     fn server_event(
         &mut self,
-        context: EngineContext<B>,
+        context: EngineContext<E, B>,
         connection: Connection<B::Networking>,
         message: ServerMessage<B::Networking>,
-    ) {
+    ) -> Result<(), E> {
+        Ok(())
     }
 
     /// An external networking event emitted by the set networking backends client.
-    fn client_event(&mut self, context: EngineContext<B>, message: ClientMessage<B::Networking>) {}
+    fn client_event(
+        &mut self,
+        context: EngineContext<E, B>,
+        message: ClientMessage<B::Networking>,
+    ) -> Result<(), E> {
+        Ok(())
+    }
+
+    /// An error has occured within the engine context.
+    ///
+    /// Last chance to gracefully handle errors.
+    ///
+    /// If an `Err` is returned from this event, this will be the return type of the `start` method.
+    ///
+    /// The default implementation passes the error to the return type like so:
+    /// ```ignore
+    /// fn error(
+    ///     &mut self,
+    ///     _context: EngineContext<E, B>,
+    ///     message: EngineError<E, B>,
+    /// ) -> Result<(), EngineError<E, B>> {
+    ///     Err(message)
+    /// }
+    /// ```
+    fn error(
+        &mut self,
+        context: EngineContext<E, B>,
+        message: EngineError<E, B>,
+    ) -> Result<(), EngineError<E, B>> {
+        Err(message)
+    }
 
     /// The last event ever emitted by this trait.
     ///
     /// Symbolizes a halt of the game engine, which can be initiated by the contexts `exit` method
     /// or a Ctrl-C event.
-    fn end(&mut self, context: EngineContext<B>) {}
+    fn end(&mut self, context: EngineContext<E, B>) -> Result<(), E> {
+        Ok(())
+    }
 }
 
 /// The initial start method of the game engine.
 ///
 /// Runs the game closure after the backends have started.
-pub fn start<G: Game<B>, B: Backends + 'static>(
+///
+/// If the game closure returns an error, this method returns an [`EngineError::Custom`]
+pub fn start<G: Game<B, E>, E: CustomError, B: Backends>(
     settings: impl Into<settings::EngineSettings<B>>,
-    game: impl FnOnce(EngineContext<B>) -> G,
-) -> Result<(), EngineError<B>> {
-    Engine::start(game, settings)
+    game: impl FnOnce(EngineContext<E, B>) -> Result<G, E>,
+) -> Result<(), EngineError<E, B>> {
+    Engine::<G, E, B>::start(game, settings)
 }
 
 /// The struct that holds and executes all backends and the game state.
-struct Engine<G, B = DefaultBackends>
+struct Engine<G, E, B = DefaultBackends>
 where
-    G: Game<B>,
+    G: Game<B, E>,
+    E: CustomError,
     B: Backends,
 {
     #[cfg(feature = "client")]
@@ -114,21 +166,24 @@ where
     window_settings: WindowBuilder,
 
     #[allow(dead_code)]
-    game: Arc<GameWrapper<G, B>>,
+    game: Arc<GameWrapper<G, E, B>>,
 }
 
 pub use let_engine_core::EngineError;
 
-impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
+impl<G: Game<B, E>, E: CustomError, B: Backends> Engine<G, E, B> {
     /// Starts the game engine with the given game.
     pub fn start(
-        game: impl FnOnce(EngineContext<B>) -> G,
+        game: impl FnOnce(EngineContext<E, B>) -> Result<G, E>,
         settings: impl Into<settings::EngineSettings<B>>,
-    ) -> Result<(), EngineError<B>> {
+    ) -> Result<(), EngineError<E, B>> {
         let settings: settings::EngineSettings<B> = settings.into();
 
         #[cfg(feature = "client")]
-        let event_loop = winit::event_loop::EventLoop::new().unwrap();
+        let Ok(event_loop) = winit::event_loop::EventLoop::new() else {
+            // TODO: Handle other errors
+            return Err(EngineError::Recreation);
+        };
 
         // Gpu backend
         #[cfg(feature = "client")]
@@ -144,7 +199,7 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
         let (game_send, game_recv) = bounded(0);
 
         let networking_settings = settings.networking;
-        std::thread::Builder::new()
+        let networking_join_handle = std::thread::Builder::new()
             .name("let-engine-networking-backend".to_string())
             .spawn(move || {
                 let mut networking_backend = match B::Networking::new(networking_settings) {
@@ -162,20 +217,19 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
                         return;
                     }
                 };
-                let game: Arc<GameWrapper<G, B>> = game_recv.recv().unwrap();
+                let game: Arc<GameWrapper<G, E, B>> = game_recv.recv().unwrap();
 
-                loop {
-                    networking_backend
-                        .receive(|message| {
-                            match message {
-                                NetEvent::Server { connection, event } => {
-                                    game.server_event(connection, event)
-                                }
-                                NetEvent::Client { event } => game.client_event(event),
-                                NetEvent::Error(e) => todo!("handle error: {e}"),
-                            };
-                        })
-                        .unwrap();
+                while game.exit.get().is_some() {
+                    if let Err(e) = networking_backend.receive(|message| {
+                        match message {
+                            NetEvent::Server { connection, event } => {
+                                game.server_event(connection, event)
+                            }
+                            NetEvent::Client { event } => game.client_event(event),
+                        };
+                    }) {
+                        game.error(EngineError::NetworkingBackend(e))
+                    }
                 }
             })
             .unwrap();
@@ -184,20 +238,25 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
 
         let (server, client) = result.map_err(EngineError::NetworkingBackend)?;
 
-        let game = Arc::new(GameWrapper::new(
-            game,
-            settings.tick_system.clone(),
-            #[cfg(feature = "client")]
-            gpu_interface,
-            audio_interface,
-            server,
-            client,
-        ));
+        let game = Arc::new(
+            GameWrapper::new(
+                game,
+                settings.tick_system.clone(),
+                #[cfg(feature = "client")]
+                gpu_interface,
+                audio_interface,
+                server,
+                client,
+            )
+            .map_err(|e| EngineError::Custom(e))?,
+        );
 
         {
-            let game = game.clone();
+            let game = Arc::downgrade(&game);
             ctrlc::set_handler(move || {
-                game.exit.store(true, Relaxed);
+                if let Some(game) = game.upgrade() {
+                    let _ = game.exit.set(Ok(()));
+                }
             })
             .unwrap();
         }
@@ -220,22 +279,37 @@ impl<G: Game<B>, B: Backends + 'static> Engine<G, B> {
                 gpu_backend,
                 #[cfg(feature = "client")]
                 window_settings: settings.window,
-                game,
+                game: game.clone(),
             };
 
+            let game_clone = game.clone();
+            let tick_system_join_thread = std::thread::Builder::new()
+                .name("let-engine-tick-system".to_string())
+                .spawn(move || {
+                    tick_system::run(game_clone);
+                })
+                .unwrap();
+
             event_loop.run_app(&mut engine).unwrap();
+
+            tick_system_join_thread.join().unwrap();
         }
 
-        Ok(())
+        networking_join_handle.join().unwrap();
+
+        let game = Arc::into_inner(game).unwrap();
+
+        game.exit.into_inner().unwrap()
     }
 }
 
 #[doc(hidden)]
 #[cfg(feature = "client")]
-impl<G, B> ApplicationHandler for Engine<G, B>
+impl<G, E, B> ApplicationHandler for Engine<G, E, B>
 where
-    G: Game<B>,
-    B: Backends + 'static,
+    G: Game<B, E>,
+    E: CustomError,
+    B: Backends,
 {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let window: Arc<winit::window::Window> = event_loop
@@ -251,15 +325,6 @@ where
         self.gpu_backend.init_window(event_loop, &window);
 
         self.game.window_ready();
-
-        // Start backend threads
-        let game_clone = self.game.clone();
-        std::thread::Builder::new()
-            .name("let-engine-tick-system".to_string())
-            .spawn(move || {
-                tick_system::run(game_clone);
-            })
-            .unwrap();
     }
 
     fn window_event(
@@ -344,12 +409,13 @@ where
 
                 self.game.update();
 
-                self.gpu_backend
-                    .draw(&self.game.scene.lock(), || {
-                        let window = self.game.window.get().unwrap();
-                        window.pre_present_notify();
-                    })
-                    .unwrap(); // TODO: Error handling events
+                if let Err(e) = self.gpu_backend.draw(&self.game.scene.lock(), || {
+                    let window = self.game.window.get().unwrap();
+                    window.pre_present_notify();
+                }) {
+                    self.game.error(EngineError::GpuBackend(e));
+                }
+
                 self.game.time.update();
 
                 return;
@@ -361,7 +427,7 @@ where
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.game.exit.load(Relaxed) {
+        if self.game.exit.get().is_some() {
             event_loop.exit();
         }
     }
@@ -428,13 +494,14 @@ pub(crate) struct BackendInterfaces<B: Backends> {
 unsafe impl<B: Backends> Send for BackendInterfaces<B> {}
 unsafe impl<B: Backends> Sync for BackendInterfaces<B> {}
 
-pub(crate) struct GameWrapper<G, B>
+pub(crate) struct GameWrapper<G, E, B>
 where
-    G: Game<B>,
+    G: Game<B, E>,
+    E: CustomError,
     B: Backends,
 {
     pub(super) game: Mutex<G>,
-    pub(super) exit: AtomicBool,
+    pub(super) exit: OnceLock<Result<(), EngineError<E, B>>>,
 
     pub(super) time: Time,
     #[cfg(feature = "client")]
@@ -448,21 +515,22 @@ where
     pub(super) backends: BackendInterfaces<B>,
 }
 
-impl<G, B> GameWrapper<G, B>
+impl<G, E, B> GameWrapper<G, E, B>
 where
-    G: Game<B>,
+    G: Game<B, E>,
+    E: CustomError,
     B: Backends,
 {
     // TODO: define settings inside of here.
     pub fn new(
-        game: impl FnOnce(EngineContext<B>) -> G,
+        game: impl FnOnce(EngineContext<E, B>) -> Result<G, E>,
         tick_settings: tick_system::TickSettings,
         #[cfg(feature = "client")] gpu: <B::Gpu as GpuBackend>::Interface,
         audio: AudioInterface<<B as Backends>::Kira>,
         server: <B::Networking as NetworkingBackend>::ServerInterface,
         client: <B::Networking as NetworkingBackend>::ClientInterface,
-    ) -> Self {
-        let exit: AtomicBool = false.into();
+    ) -> Result<Self, E> {
+        let exit = OnceLock::new();
 
         let time = Time::default();
         #[cfg(feature = "client")]
@@ -484,7 +552,7 @@ where
             #[cfg(feature = "client")]
             let mut input = input.lock();
 
-            let context = EngineContext::<B>::new(
+            let context = EngineContext::<E, B>::new(
                 &exit,
                 &time,
                 &mut scene,
@@ -495,10 +563,10 @@ where
                 &backends,
             );
 
-            Mutex::new(game(context))
+            Mutex::new(game(context)?)
         };
 
-        Self {
+        Ok(Self {
             game,
             exit,
             time,
@@ -508,14 +576,14 @@ where
             #[cfg(feature = "client")]
             window,
             backends,
-        }
+        })
     }
 
     pub fn context<'a>(
         &'a self,
         scene: &'a mut Scene<<B::Gpu as GpuBackend>::LoadedTypes>,
         #[cfg(feature = "client")] input: &'a mut Input,
-    ) -> EngineContext<'a, B> {
+    ) -> EngineContext<'a, E, B> {
         EngineContext::new(
             &self.exit,
             &self.time,
@@ -534,7 +602,9 @@ where
         let mut scene = self.scene.lock();
         let mut input = self.input.lock();
         let context = self.context(&mut scene, &mut input);
-        self.game.lock().update(context);
+        if let Err(e) = self.game.lock().update(context) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[inline]
@@ -543,7 +613,9 @@ where
         let mut scene = self.scene.lock();
         let mut input = self.input.lock();
         let context = self.context(&mut scene, &mut input);
-        self.game.lock().egui(context, egui_context);
+        if let Err(e) = self.game.lock().egui(context, egui_context) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[inline]
@@ -556,7 +628,9 @@ where
             #[cfg(feature = "client")]
             &mut input,
         );
-        self.game.lock().tick(context);
+        if let Err(e) = self.game.lock().tick(context) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[cfg(feature = "client")]
@@ -565,7 +639,9 @@ where
         let mut scene = self.scene.lock();
         let mut input = self.input.lock();
         let context = self.context(&mut scene, &mut input);
-        self.game.lock().window_ready(context);
+        if let Err(e) = self.game.lock().window_ready(context) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[cfg(feature = "client")]
@@ -574,7 +650,9 @@ where
         let mut scene = self.scene.lock();
         let mut input = self.input.lock();
         let context = self.context(&mut scene, &mut input);
-        self.game.lock().window(context, event);
+        if let Err(e) = self.game.lock().window(context, event) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[cfg(feature = "client")]
@@ -583,7 +661,9 @@ where
         let mut scene = self.scene.lock();
         let mut input = self.input.lock();
         let context = self.context(&mut scene, &mut input);
-        self.game.lock().input(context, event);
+        if let Err(e) = self.game.lock().input(context, event) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[inline]
@@ -600,7 +680,9 @@ where
             #[cfg(feature = "client")]
             &mut input,
         );
-        self.game.lock().server_event(context, connection, message);
+        if let Err(e) = self.game.lock().server_event(context, connection, message) {
+            self.error(EngineError::Custom(e));
+        }
     }
 
     #[inline]
@@ -616,12 +698,28 @@ where
             #[cfg(feature = "client")]
             &mut input,
         );
-        self.game.lock().client_event(context, message);
+        if let Err(e) = self.game.lock().client_event(context, message) {
+            self.error(EngineError::Custom(e));
+        }
+    }
+
+    pub fn error(&self, message: EngineError<E, B>) {
+        let mut scene = self.scene.lock();
+        #[cfg(feature = "client")]
+        let mut input = self.input.lock();
+        let context = self.context(
+            &mut scene,
+            #[cfg(feature = "client")]
+            &mut input,
+        );
+
+        if let Err(message) = self.game.lock().error(context, message) {
+            let _ = self.exit.set(Err(message));
+        }
     }
 
     #[inline]
     pub fn end(&self) {
-        // TODO: handle error
         use let_engine_core::backend::networking::{ClientInterface, ServerInterface};
         let _ = self.backends.server.stop();
         let _ = self.backends.client.disconnect();
@@ -634,7 +732,9 @@ where
             #[cfg(feature = "client")]
             &mut input,
         );
-        self.game.lock().end(context);
+        if let Err(e) = self.game.lock().end(context) {
+            self.error(EngineError::Custom(e));
+        }
     }
 }
 
@@ -648,12 +748,13 @@ type GpuInterface<'a, B> = <<<B as Backends>::Gpu as GpuBackend>::Interface as G
 ///
 /// It contains timing, the scene, an interface to each backend and if feature `client` is
 /// enabled, input, the window as well as the gpu backend.
-pub struct EngineContext<'a, B = DefaultBackends>
+pub struct EngineContext<'a, E = (), B = DefaultBackends>
 where
+    E: CustomError,
     B: Backends,
     B::Gpu: 'a,
 {
-    exit: &'a AtomicBool,
+    exit: &'a OnceLock<Result<(), EngineError<E, B>>>,
     pub time: &'a Time,
     pub scene: &'a mut Scene<<B::Gpu as GpuBackend>::LoadedTypes>,
     #[cfg(feature = "client")]
@@ -667,9 +768,9 @@ where
     pub client: &'a <B::Networking as NetworkingBackend>::ClientInterface,
 }
 
-impl<'a, B: Backends> EngineContext<'a, B> {
+impl<'a, E: CustomError, B: Backends> EngineContext<'a, E, B> {
     fn new(
-        exit: &'a AtomicBool,
+        exit: &'a OnceLock<Result<(), EngineError<E, B>>>,
         time: &'a Time,
         scene: &'a mut Scene<<B::Gpu as GpuBackend>::LoadedTypes>,
         #[cfg(feature = "client")] input: &'a mut Input,
@@ -700,12 +801,7 @@ impl<'a, B: Backends> EngineContext<'a, B> {
 
     /// Stops the game and lastly runs the exit function of `Game`.
     pub fn exit(&self) {
-        self.exit.store(true, Relaxed);
-    }
-
-    /// Returns true if the loop is exiting.
-    pub fn exiting(&self) -> bool {
-        self.exit.load(Relaxed)
+        let _ = self.exit.set(Ok(()));
     }
 }
 

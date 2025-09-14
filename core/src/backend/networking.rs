@@ -8,7 +8,6 @@ pub enum NetEvent<'a, B: NetworkingBackend> {
     Client {
         event: B::ClientEvent<'a>,
     },
-    Error(B::Error),
 }
 
 pub trait NetworkingBackend: Sized {

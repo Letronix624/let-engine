@@ -43,7 +43,7 @@ struct Game {
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(context: EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Result<Self, ()> {
         {
             let root_view = context.scene.root_view_mut();
 
@@ -96,17 +96,17 @@ impl Game {
         // Initializes the object to the layer
         context.scene.add_object(root_layer.id(), circle).unwrap();
 
-        Self {
+        Ok(Self {
             model: circle_model,
             degree,
-        }
+        })
     }
 }
 
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: EngineContext, event: WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: WindowEvent) -> Result<(), ()> {
         match event {
             WindowEvent::CloseRequested => context.exit(),
             WindowEvent::MouseWheel(ScrollDelta::LineDelta(delta)) => {
@@ -128,15 +128,17 @@ impl let_engine::Game for Game {
             }
             _ => (),
         }
+        Ok(())
     }
 
     // Exit when the escape key is pressed.
-    fn input(&mut self, context: EngineContext, event: InputEvent) {
+    fn input(&mut self, context: EngineContext, event: InputEvent) -> Result<(), ()> {
         if let InputEvent::KeyboardInput { input } = event
             && let ElementState::Pressed = input.state
             && let Key::Named(NamedKey::Escape) = input.key
         {
             context.exit();
         }
+        Ok(())
     }
 }

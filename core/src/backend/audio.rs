@@ -14,7 +14,7 @@ pub use kira::{
 use thiserror::Error;
 
 #[derive(Error)]
-#[error("{0}")]
+#[error(transparent)]
 pub struct AudioBackendError<B>(B);
 
 impl<B: std::fmt::Debug> std::fmt::Debug for AudioBackendError<B> {

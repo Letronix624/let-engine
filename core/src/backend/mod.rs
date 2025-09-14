@@ -5,7 +5,7 @@ pub mod networking;
 /// Backend types to be used during runtime of the game engine.
 ///
 /// Each backend must implement their respective trait to be able to be interfaced in the event loop by the user.
-pub trait Backends {
+pub trait Backends: 'static {
     type Gpu: gpu::GpuBackend;
 
     type Kira: audio::AudioBackend;

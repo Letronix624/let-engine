@@ -823,6 +823,6 @@ pub enum ServerError {
     #[error("This user is not connected to the server.")]
     UserNotFound,
     /// Returns if an IO or OS error has occured.
-    #[error("{0}")]
+    #[error(transparent)]
     Io(std::io::Error),
 }

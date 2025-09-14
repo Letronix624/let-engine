@@ -146,7 +146,7 @@ where
 
         match event {
             Event::Server((connection, message)) => match message {
-                ServerMessage::Error(e) => f(NetEvent::Error(NetworkingError::Io(e))),
+                ServerMessage::Error(e) => return Err(NetworkingError::Server(ServerError::Io(e))),
                 ServerMessage::Warning(w) => f(NetEvent::Server {
                     connection,
                     event: RemoteMessage::Warning(w),
@@ -190,7 +190,7 @@ where
                 }
             },
             Event::Client(message) => match message {
-                ClientMessage::Error(e) => f(NetEvent::Error(NetworkingError::Client(e))),
+                ClientMessage::Error(e) => return Err(NetworkingError::Client(e)),
                 ClientMessage::Warning(w) => f(NetEvent::Client {
                     event: RemoteMessage::Warning(w),
                 }),
@@ -234,10 +234,13 @@ where
 #[derive(Debug, Error)]
 pub enum NetworkingError {
     /// An IO error from the system.
-    #[error("{0}")]
+    #[error(transparent)]
     Io(std::io::Error),
 
-    #[error("{0}")]
+    #[error(transparent)]
+    Server(ServerError),
+
+    #[error(transparent)]
     Client(ClientError),
 }
 
@@ -380,7 +383,7 @@ pub enum Disconnected {
     MisbehavingPeer,
 
     /// An unexplainable error has occured.
-    #[error("{0}")]
+    #[error(transparent)]
     Other(io::Error),
 }
 

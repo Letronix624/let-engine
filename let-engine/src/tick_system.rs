@@ -5,7 +5,7 @@ use std::{
 
 use crossbeam::atomic::AtomicCell;
 use derive_builder::Builder;
-use let_engine_core::backend::Backends;
+use let_engine_core::{CustomError, backend::Backends};
 use parking_lot::Mutex;
 
 use crate::{Game, GameWrapper};
@@ -27,7 +27,7 @@ impl TickSystem {
 }
 
 /// Runs the games `tick` function after every iteration.
-pub(super) fn run<G: Game<B>, B: Backends>(game: Arc<GameWrapper<G, B>>) {
+pub(super) fn run<G: Game<B, E>, E: CustomError, B: Backends>(game: Arc<GameWrapper<G, E, B>>) {
     let mut index: usize = 0;
 
     loop {
@@ -95,7 +95,7 @@ pub(super) fn run<G: Game<B>, B: Backends>(game: Arc<GameWrapper<G, B>>) {
 
         index += 1;
 
-        if game.exit.load(std::sync::atomic::Ordering::Relaxed) {
+        if game.exit.get().is_some() {
             break;
         }
     }

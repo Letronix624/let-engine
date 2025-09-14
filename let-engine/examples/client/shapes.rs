@@ -40,7 +40,7 @@ struct Game {
 
 impl Game {
     /// Constructor for this scene.
-    pub fn new(context: EngineContext) -> Self {
+    pub fn new(context: EngineContext) -> Result<Self, ()> {
         {
             let root_view = context.scene.root_view_mut();
             *root_view.camera_mut() = Transform::with_size(Vec2::splat(1.0 / 500.0));
@@ -133,27 +133,28 @@ impl Game {
             .add_object(context.scene.root_layer_id(), circle)
             .unwrap();
 
-        Self {
+        Ok(Self {
             color_buffer: circle_buffer,
             view_cycle: 0,
 
             triangle,
             square,
             circle,
-        }
+        })
     }
 }
 
 /// Implement the Game trait into the Game struct.
 impl let_engine::Game for Game {
     // Exit when the X button on the window is pressed.
-    fn window(&mut self, context: EngineContext, event: events::WindowEvent) {
+    fn window(&mut self, context: EngineContext, event: events::WindowEvent) -> Result<(), ()> {
         if let WindowEvent::CloseRequested = event {
             context.exit();
         }
+        Ok(())
     }
 
-    fn input(&mut self, context: EngineContext, event: events::InputEvent) {
+    fn input(&mut self, context: EngineContext, event: events::InputEvent) -> Result<(), ()> {
         if let InputEvent::KeyboardInput { input } = event
             && let ElementState::Pressed = input.state
         {
@@ -217,10 +218,11 @@ impl let_engine::Game for Game {
                 _ => (),
             }
         }
+        Ok(())
     }
 
     // Gradually change color of circle
-    fn update(&mut self, context: EngineContext) {
+    fn update(&mut self, context: EngineContext) -> Result<(), ()> {
         let buffer = context.gpu.buffer(self.color_buffer).unwrap();
         buffer
             .write_data(|w| {
@@ -230,5 +232,6 @@ impl let_engine::Game for Game {
                 )
             })
             .unwrap();
+        Ok(())
     }
 }
