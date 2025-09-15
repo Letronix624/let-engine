@@ -30,10 +30,11 @@ use {
     anyhow::Result,
     glam::{dvec2, uvec2, vec2},
     let_engine_core::backend::gpu::GpuInterfacer,
-    std::sync::OnceLock,
     winit::application::ApplicationHandler,
     winit::event::MouseScrollDelta,
 };
+
+use std::sync::OnceLock;
 
 use std::time::Instant;
 use std::{sync::Arc, time::Duration};
@@ -60,6 +61,7 @@ pub trait Game<B: Backends = DefaultBackends, E: CustomError = ()>: Send + Sync 
     /// Runs before `update` method
     #[cfg(feature = "egui")]
     fn egui(&mut self, context: EngineContext<E, B>, egui_context: egui::Context) -> Result<(), E> {
+        Ok(())
     }
 
     /// Runs based on the configured tick settings of the engine.
@@ -944,7 +946,7 @@ mod tests {
     use crate::prelude::*;
 
     #[test]
-    fn start_engine() -> anyhow::Result<()> {
+    fn start_engine() {
         struct Game {
             number: u32,
         }
@@ -955,16 +957,15 @@ mod tests {
         }
 
         impl crate::Game for Game {
-            fn tick(&mut self, context: EngineContext) {
+            fn tick(&mut self, context: EngineContext) -> Result<(), ()> {
                 self.number += 1;
                 if self.number > 62 {
                     context.exit();
                 }
+                Ok(())
             }
         }
 
-        crate::start(EngineSettings::default(), |_| Game::new())?;
-
-        Ok(())
+        crate::start(EngineSettings::default(), |_| Ok(Game::new())).unwrap();
     }
 }
