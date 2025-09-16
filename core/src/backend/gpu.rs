@@ -92,6 +92,16 @@ pub trait GpuInterface<T: Loaded> {
         settings: TextureSettings,
     ) -> Result<T::TextureId>;
 
+    fn add_virtual_material(&self, id: T::MaterialId) -> Result<T::MaterialId>;
+    fn add_virtual_buffer<B: Data>(&self, id: T::BufferId<B>) -> Result<T::BufferId<B>>;
+    fn add_virtual_model<V: Vertex>(&self, id: T::ModelId<V>) -> Result<T::ModelId<V>>;
+    fn add_virtual_texture(&self, id: T::TextureId) -> Result<T::TextureId>;
+
+    fn map_virtual_material(&self, from: T::MaterialId, to: T::MaterialId) -> Result<()>;
+    fn map_virtual_buffer<B: Data>(&self, from: T::BufferId<B>, to: T::BufferId<B>) -> Result<()>;
+    fn map_virtual_model<V: Vertex>(&self, from: T::ModelId<V>, to: T::ModelId<V>) -> Result<()>;
+    fn map_virtual_texture(&self, from: T::TextureId, to: T::TextureId) -> Result<()>;
+
     fn material(&self, id: T::MaterialId) -> Option<&T::Material>;
     fn buffer<B: Data>(&self, id: T::BufferId<B>) -> Option<&T::Buffer<B>>;
     fn model<V: Vertex>(&self, id: T::ModelId<V>) -> Option<&T::Model<V>>;
@@ -109,6 +119,18 @@ pub trait GpuInterface<T: Loaded> {
         model: T::ModelId<u8>,
         descriptors: &BTreeMap<Location, Descriptor<T>>,
     ) -> Result<(), T::AppearanceCreationError>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ResourceType {
+    Material,
+    Buffer,
+    Model,
+    Texture,
+}
+
+pub trait ResourceId {
+    fn resource_type(&self) -> ResourceType;
 }
 
 impl GpuInterface<()> for () {
@@ -145,6 +167,32 @@ impl GpuInterface<()> for () {
         _dimensions: ViewTypeDim,
         _settings: TextureSettings,
     ) -> Result<()> {
+        Ok(())
+    }
+
+    fn add_virtual_material(&self, _id: ()) -> Result<()> {
+        Ok(())
+    }
+    fn add_virtual_buffer<B: Data>(&self, _id: ()) -> Result<()> {
+        Ok(())
+    }
+    fn add_virtual_model<V: Vertex>(&self, _id: ()) -> Result<()> {
+        Ok(())
+    }
+    fn add_virtual_texture(&self, _id: ()) -> Result<()> {
+        Ok(())
+    }
+
+    fn map_virtual_material(&self, _from: (), _to: ()) -> Result<()> {
+        Ok(())
+    }
+    fn map_virtual_buffer<B: Data>(&self, _from: (), _to: ()) -> Result<()> {
+        Ok(())
+    }
+    fn map_virtual_model<V: Vertex>(&self, _from: (), _to: ()) -> Result<()> {
+        Ok(())
+    }
+    fn map_virtual_texture(&self, _from: (), _to: ()) -> Result<()> {
         Ok(())
     }
 

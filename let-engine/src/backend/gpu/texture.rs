@@ -60,6 +60,14 @@ declare_key! {
     pub struct TextureId
 }
 
+impl TextureId {
+    pub const TAG_BIT: u32 = 1 << 3;
+
+    pub fn is_virtual(&self) -> bool {
+        self.0.tag() & VIRTUAL_TAG_BIT != 0
+    }
+}
+
 impl GpuTexture {
     pub(crate) fn new(texture: &Texture, vulkan: &Vulkan) -> Result<Self, GpuTextureError> {
         let settings = texture.settings();
@@ -165,18 +173,18 @@ impl GpuTexture {
         }
     }
 
-    pub(crate) fn resources(&self) -> Vec<Resource> {
+    pub(crate) fn resources(&self) -> Vec<ResourceAccess> {
         let access_types = AccessTypes::COLOR_ATTACHMENT_READ;
         match &self.inner {
             GpuTextureInner::Fixed { image_id, .. } | GpuTextureInner::Staged { image_id, .. } => {
-                vec![Resource::Image {
+                vec![ResourceAccess::Image {
                     id: *image_id,
                     access_types,
                 }]
             }
             GpuTextureInner::RingBuffer { image_ids, .. } => image_ids
                 .iter()
-                .map(|id| Resource::Image {
+                .map(|id| ResourceAccess::Image {
                     id: *id,
                     access_types,
                 })
@@ -577,7 +585,7 @@ impl LoadedTexture for GpuTexture {
 
 use thiserror::Error;
 
-use crate::backend::gpu::vulkan::Resource;
+use crate::backend::gpu::vulkan::{ResourceAccess, VIRTUAL_TAG_BIT};
 
 use super::{
     VulkanError, format_to_vulkano,

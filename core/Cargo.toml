@@ -21,8 +21,8 @@ parking_lot = { workspace = true }
 foldhash = { workspace = true }
 rkyv = { workspace = true }
 image = { workspace = true }
-winit = {workspace = true, optional = true}
-egui = {workspace = true, optional = true}
+winit = { workspace = true, optional = true }
+egui = { workspace = true, optional = true }
 bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 half = { version = "2.6", features = ["bytemuck"] }
 let-engine-macros = { path = "../macros" }

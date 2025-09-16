@@ -254,6 +254,7 @@ impl<G: Game<B, E>, E: CustomError, B: Backends> Engine<G, E, B> {
         );
 
         {
+            // Downgrade to avoid closing already closed game
             let game = Arc::downgrade(&game);
             ctrlc::set_handler(move || {
                 if let Some(game) = game.upgrade() {

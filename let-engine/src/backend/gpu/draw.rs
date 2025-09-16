@@ -1,5 +1,4 @@
 use anyhow::Result;
-use concurrent_slotmap::Key;
 use crossbeam::channel::Receiver;
 
 #[cfg(feature = "egui")]
@@ -51,7 +50,7 @@ use glam::{UVec2, f32::Mat4};
 use super::{
     GpuSettings, PresentMode, VulkanError, VulkanTypes,
     material::MaterialId,
-    vulkan::{Resource, VK, Vulkan, swapchain::create_swapchain, topology_to_vulkan},
+    vulkan::{ResourceAccess, VK, Vulkan, swapchain::create_swapchain, topology_to_vulkan},
 };
 
 /// Responsible for drawing on the surface.
@@ -235,29 +234,14 @@ impl Draw {
 
         let guard = unsafe { vulkan.collector.pin() };
 
-        let resources = vulkan
-            .buffers
-            .iter(&guard)
-            .flat_map(|(_, buffer)| buffer.resources())
-            .chain(
-                vulkan
-                    .textures
-                    .iter(&guard)
-                    .flat_map(|(_, texture)| texture.resources()),
-            )
-            .chain(
-                vulkan
-                    .models
-                    .iter(&guard)
-                    .flat_map(|(_, model)| model.resources()),
-            );
+        let resources = vulkan.iter_resource_access(&guard);
 
         for access in resources {
             match access {
-                Resource::Buffer { id, access_types } => {
+                ResourceAccess::Buffer { id, access_types } => {
                     builder.buffer_access(id, access_types);
                 }
-                Resource::Image { id, access_types } => {
+                ResourceAccess::Image { id, access_types } => {
                     builder.image_access(
                         id,
                         access_types,
@@ -439,8 +423,8 @@ impl Draw {
         material_id: MaterialId,
         vulkan: &Vulkan,
     ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
-        let guard = vulkan.materials.pin();
-        let material = vulkan.materials.get(material_id, &guard).unwrap();
+        let guard = unsafe { vulkan.collector.pin() };
+        let material = vulkan.material(material_id, &guard).unwrap();
 
         let shaders = material.graphics_shaders();
         let settings = material.settings();
@@ -649,7 +633,7 @@ impl Task for DrawTask {
                         for (binding, descriptor) in set {
                             match descriptor {
                                 Descriptor::Texture(texture_id) => {
-                                    let texture = vulkan.textures.get(*texture_id, &guard).unwrap();
+                                    let texture = vulkan.texture(*texture_id, &guard).unwrap();
                                     let image_view = Some(texture.image_view().clone());
 
                                     let sampler = Some(
@@ -667,8 +651,7 @@ impl Task for DrawTask {
                                     ));
                                 }
                                 Descriptor::Buffer(buffer_id) => {
-                                    let buffer =
-                                        vulkan.buffers.get(buffer_id.as_id(), &guard).unwrap();
+                                    let buffer = vulkan.buffer(*buffer_id, &guard).unwrap();
                                     let buffer = tcx.buffer(buffer.buffer_id())?;
 
                                     let subbuffer =
@@ -707,8 +690,7 @@ impl Task for DrawTask {
 
                 // Bind everything to the command buffer.
                 let model = vulkan
-                    .models
-                    .get(unsafe { appearance.model_id() }.as_id(), &guard)
+                    .model(unsafe { appearance.model_id() }, &guard)
                     .unwrap();
 
                 unsafe { cbf.bind_pipeline_graphics(&graphics_pipeline)? };

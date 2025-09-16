@@ -24,7 +24,7 @@ use vulkano_taskgraph::{
     resource::{AccessTypes, HostAccessType},
 };
 
-use crate::backend::gpu::vulkan::Resource;
+use crate::backend::gpu::vulkan::{ResourceAccess, VIRTUAL_TAG_BIT};
 
 use super::{VulkanError, vulkan::VK};
 
@@ -117,6 +117,14 @@ impl<T: Vertex> Key for ModelId<T> {
     #[inline]
     fn as_id(self) -> SlotId {
         self.0
+    }
+}
+
+impl<T: Vertex> ModelId<T> {
+    pub const TAG_BIT: u32 = 1 << 4;
+
+    pub fn is_virtual(&self) -> bool {
+        self.0.tag() & VIRTUAL_TAG_BIT != 0
     }
 }
 
@@ -864,7 +872,7 @@ impl<V: Vertex> GpuModel<V> {
         &self.vertex_buffer_description
     }
 
-    pub(crate) fn resources(&self) -> Vec<Resource> {
+    pub(crate) fn resources(&self) -> Vec<ResourceAccess> {
         match &self.inner {
             GpuModelInner::Fixed {
                 vertex_buffer_id,
@@ -880,12 +888,12 @@ impl<V: Vertex> GpuModel<V> {
                 index_buffer_id,
                 ..
             } => {
-                let mut resources = vec![Resource::Buffer {
+                let mut resources = vec![ResourceAccess::Buffer {
                     id: *vertex_buffer_id,
                     access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
                 }];
                 if let Some(id) = *index_buffer_id {
-                    resources.push(Resource::Buffer {
+                    resources.push(ResourceAccess::Buffer {
                         id,
                         access_types: AccessTypes::INDEX_READ,
                     });
@@ -898,11 +906,11 @@ impl<V: Vertex> GpuModel<V> {
                 ..
             } => vertex_buffers
                 .iter()
-                .map(|id| Resource::Buffer {
+                .map(|id| ResourceAccess::Buffer {
                     id: *id,
                     access_types: AccessTypes::VERTEX_ATTRIBUTE_READ,
                 })
-                .chain(index_buffers.iter().map(|id| Resource::Buffer {
+                .chain(index_buffers.iter().map(|id| ResourceAccess::Buffer {
                     id: *id,
                     access_types: AccessTypes::INDEX_READ,
                 }))

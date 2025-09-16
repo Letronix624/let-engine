@@ -25,7 +25,7 @@ use vulkano_taskgraph::{
     resource::{AccessTypes, HostAccessType},
 };
 
-use crate::backend::gpu::vulkan::Resource;
+use crate::backend::gpu::vulkan::{ResourceAccess, VIRTUAL_TAG_BIT};
 
 use super::{
     VulkanError,
@@ -105,6 +105,14 @@ impl<T: Data> Key for BufferId<T> {
     #[inline]
     fn as_id(self) -> SlotId {
         self.0
+    }
+}
+
+impl<T: Data> BufferId<T> {
+    pub const TAG_BIT: u32 = 1 << 5;
+
+    pub fn is_virtual(&self) -> bool {
+        self.0.tag() & VIRTUAL_TAG_BIT != 0
     }
 }
 
@@ -408,19 +416,19 @@ impl<T: Data> GpuBuffer<T> {
         }
     }
 
-    pub(crate) fn resources(&self) -> Vec<Resource> {
+    pub(crate) fn resources(&self) -> Vec<ResourceAccess> {
         match &self.inner {
             GpuBufferInner::Fixed(buffer_id)
             | GpuBufferInner::Staged { buffer_id, .. }
             | GpuBufferInner::Pinned { buffer_id, .. } => {
-                vec![Resource::Buffer {
+                vec![ResourceAccess::Buffer {
                     id: *buffer_id,
                     access_types: self.access_types(),
                 }]
             }
             GpuBufferInner::RingBuffer { buffer_ids, .. } => buffer_ids
                 .iter()
-                .map(|buffer_id| Resource::Buffer {
+                .map(|buffer_id| ResourceAccess::Buffer {
                     id: *buffer_id,
                     access_types: self.access_types(),
                 })

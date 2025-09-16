@@ -1,7 +1,6 @@
 //! Material related settings that determine the way the scene gets rendered.
 
 use anyhow::{Error, Result};
-use concurrent_slotmap::{Key, SlotId};
 use foldhash::HashMap;
 use let_engine_core::resources::{
     buffer::Location,
@@ -20,6 +19,8 @@ use vulkano::{
     },
 };
 
+use crate::backend::gpu::vulkan::VIRTUAL_TAG_BIT;
+
 use super::{VulkanError, vertex_buffer_description_to_vulkano, vulkan::Vulkan};
 
 /// A material holding the way an object should be drawn.
@@ -31,18 +32,16 @@ pub struct GpuMaterial {
     pub(crate) vertex_input_state: VertexInputState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MaterialId(SlotId);
+concurrent_slotmap::declare_key! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    pub struct MaterialId
+}
 
-impl Key for MaterialId {
-    #[inline]
-    fn from_id(id: SlotId) -> Self {
-        Self(id)
-    }
+impl MaterialId {
+    pub const TAG_BIT: u32 = 1 << 6;
 
-    #[inline]
-    fn as_id(self) -> SlotId {
-        self.0
+    pub fn is_virtual(&self) -> bool {
+        self.0.tag() & VIRTUAL_TAG_BIT != 0
     }
 }
 

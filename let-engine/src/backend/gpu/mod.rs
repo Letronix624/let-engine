@@ -337,7 +337,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         let vulkan = VK.get().context("Vulkan uninitialized")?;
         let material = GpuMaterial::new::<V>(material, vulkan).expect("failed to load material");
 
-        Ok(vulkan.materials.insert(material, &self.guard))
+        Ok(vulkan.add_material(material, &self.guard))
     }
 
     fn load_buffer<B: Data>(
@@ -347,11 +347,8 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         let vulkan = VK.get().context("Vulkan uninitialized")?;
 
         let buffer = GpuBuffer::new(buffer, vulkan).context("failed to load buffer")?;
-        let buffer = unsafe { std::mem::transmute::<GpuBuffer<B>, GpuBuffer<u8>>(buffer) };
 
-        Ok(BufferId::from_id(
-            vulkan.buffers.insert(buffer, &self.guard),
-        ))
+        Ok(vulkan.add_buffer(buffer, &self.guard))
     }
 
     fn load_model<V: let_engine_core::resources::model::Vertex>(
@@ -361,9 +358,8 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         let vulkan = VK.get().context("Vulkan uninitialized")?;
 
         let model = GpuModel::new(model).context("failed to load model")?;
-        let model = unsafe { std::mem::transmute::<GpuModel<V>, GpuModel<u8>>(model) };
 
-        Ok(ModelId::from_id(vulkan.models.insert(model, &self.guard)))
+        Ok(vulkan.add_model(model, &self.guard))
     }
 
     fn load_texture(
@@ -374,7 +370,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
 
         let texture = GpuTexture::new(texture, vulkan).context("failed to load texture")?;
 
-        Ok(vulkan.textures.insert(texture, &self.guard))
+        Ok(vulkan.add_texture(texture, &self.guard))
     }
 
     fn load_buffer_gpu_only<B: Data>(
@@ -386,11 +382,8 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
 
         let buffer = GpuBuffer::new_gpu_only(size as DeviceSize, usage, vulkan)
             .context("failed to load buffer")?;
-        let buffer = unsafe { std::mem::transmute::<GpuBuffer<B>, GpuBuffer<u8>>(buffer) };
 
-        Ok(BufferId::from_id(
-            vulkan.buffers.insert(buffer, &self.guard),
-        ))
+        Ok(vulkan.add_buffer(buffer, &self.guard))
     }
 
     fn load_model_gpu_only<V: Vertex>(
@@ -402,9 +395,8 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
 
         let model = GpuModel::new_gpu_only(vertex_size as DeviceSize, index_size as DeviceSize)
             .context("failed to load model")?;
-        let model = unsafe { std::mem::transmute::<GpuModel<V>, GpuModel<u8>>(model) };
 
-        Ok(ModelId::from_id(vulkan.models.insert(model, &self.guard)))
+        Ok(vulkan.add_model(model, &self.guard))
     }
 
     fn load_texture_gpu_only(
@@ -417,7 +409,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         let texture = GpuTexture::new_gpu_only(dimensions, settings, vulkan)
             .context("failed to load texture")?;
 
-        Ok(vulkan.textures.insert(texture, &self.guard))
+        Ok(vulkan.add_texture(texture, &self.guard))
     }
 
     fn material(
@@ -426,45 +418,39 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     ) -> Option<&<VulkanTypes as Loaded>::Material> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.materials.get(id, &self.guard)
+        vulkan.material(id, &self.guard)
     }
 
     fn buffer<B: Data>(&self, id: BufferId<B>) -> Option<&GpuBuffer<B>> {
         let vulkan = VK.get().unwrap();
 
-        // SAFETY: transmute is safe here, because the generic is not present in the byte representation and drop logic.
-        unsafe { std::mem::transmute(vulkan.buffers.get(id.as_id(), &self.guard)) }
+        vulkan.buffer(id, &self.guard)
     }
 
     fn model<V: Vertex>(&self, id: ModelId<V>) -> Option<&<VulkanTypes as Loaded>::Model<V>> {
         let vulkan = VK.get().unwrap();
 
-        // SAFETY: transmute is safe here, because the generic is not present in the byte representation and drop logic.
-        //         The vertex type might mismatch to the original format, but this is only possible if the user used unsafe
-        //         logic to reinterpret the vertex type of an ID to a non-compatible type, which is totally on them.
-        unsafe { std::mem::transmute(vulkan.models.get(id.as_id(), &self.guard)) }
+        vulkan.model(id, &self.guard)
     }
 
     fn texture(&self, id: TextureId) -> Option<&<VulkanTypes as Loaded>::Texture> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.textures.get(id, &self.guard)
+        vulkan.texture(id, &self.guard)
     }
 
     fn remove_material(&self, id: <VulkanTypes as Loaded>::MaterialId) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.materials.remove(id, &self.guard);
-
+        vulkan.remove_resource(id.as_id(), &self.guard);
         Ok(())
     }
 
     fn remove_buffer<B: Data>(&self, id: BufferId<B>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        if vulkan.buffers.remove(id.as_id(), &self.guard).is_some() {
-            vulkan.flag_taskgraph_to_be_rebuilt();
-        }
+        vulkan.remove_resource(id.as_id(), &self.guard);
+        vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(())
     }
@@ -472,9 +458,8 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     fn remove_model<V: Vertex>(&self, id: ModelId<V>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        if vulkan.models.remove(id.as_id(), &self.guard).is_some() {
-            vulkan.flag_taskgraph_to_be_rebuilt();
-        }
+        vulkan.remove_resource(id.as_id(), &self.guard);
+        vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(())
     }
@@ -482,11 +467,94 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     fn remove_texture(&self, id: <VulkanTypes as Loaded>::TextureId) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        if vulkan.textures.remove(id, &self.guard).is_some() {
-            vulkan.flag_taskgraph_to_be_rebuilt();
-        };
+        vulkan.remove_resource(id.as_id(), &self.guard);
+        vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(())
+    }
+
+    fn add_virtual_material(
+        &self,
+        id: <VulkanTypes as Loaded>::MaterialId,
+    ) -> Result<<VulkanTypes as Loaded>::MaterialId> {
+        let vulkan = VK.get().unwrap();
+
+        Ok(MaterialId::from_id(
+            vulkan.add_virtual_id(id.as_id(), &self.guard)?,
+        ))
+    }
+
+    fn add_virtual_buffer<B: Data>(
+        &self,
+        id: <VulkanTypes as Loaded>::BufferId<B>,
+    ) -> Result<<VulkanTypes as Loaded>::BufferId<B>> {
+        let vulkan = VK.get().unwrap();
+
+        Ok(BufferId::from_id(
+            vulkan.add_virtual_id(id.as_id(), &self.guard)?,
+        ))
+    }
+
+    fn add_virtual_model<V: Vertex>(
+        &self,
+        id: <VulkanTypes as Loaded>::ModelId<V>,
+    ) -> Result<<VulkanTypes as Loaded>::ModelId<V>> {
+        let vulkan = VK.get().unwrap();
+
+        Ok(ModelId::from_id(
+            vulkan.add_virtual_id(id.as_id(), &self.guard)?,
+        ))
+    }
+
+    fn add_virtual_texture(
+        &self,
+        id: <VulkanTypes as Loaded>::TextureId,
+    ) -> Result<<VulkanTypes as Loaded>::TextureId> {
+        let vulkan = VK.get().unwrap();
+
+        Ok(TextureId::from_id(
+            vulkan.add_virtual_id(id.as_id(), &self.guard)?,
+        ))
+    }
+
+    fn map_virtual_material(
+        &self,
+        from: <VulkanTypes as Loaded>::MaterialId,
+        to: <VulkanTypes as Loaded>::MaterialId,
+    ) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.remap_virtual_id(from.as_id(), to.as_id(), &self.guard)
+    }
+
+    fn map_virtual_buffer<B: Data>(
+        &self,
+        from: <VulkanTypes as Loaded>::BufferId<B>,
+        to: <VulkanTypes as Loaded>::BufferId<B>,
+    ) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.remap_virtual_id(from.as_id(), to.as_id(), &self.guard)
+    }
+
+    fn map_virtual_model<V: Vertex>(
+        &self,
+        from: <VulkanTypes as Loaded>::ModelId<V>,
+        to: <VulkanTypes as Loaded>::ModelId<V>,
+    ) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.remap_virtual_id(from.as_id(), to.as_id(), &self.guard)
+    }
+
+    fn map_virtual_texture(
+        &self,
+        from: <VulkanTypes as Loaded>::TextureId,
+        to: <VulkanTypes as Loaded>::TextureId,
+    ) -> Result<()> {
+        let vulkan = VK.get().unwrap();
+
+        vulkan.remap_virtual_id(from.as_id(), to.as_id(), &self.guard)
     }
 
     fn validate_appearance(
@@ -500,12 +568,10 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         let guard = unsafe { vulkan.collector.pin() };
 
         let material = vulkan
-            .materials
-            .get(material_id, &guard)
+            .material(material_id, &guard)
             .ok_or(AppearanceCreationError::InvalidMaterialId)?;
         let model = vulkan
-            .models
-            .get(model_id.as_id(), &guard)
+            .model(model_id, &guard)
             .ok_or(AppearanceCreationError::InvalidModelId)?;
 
         let requirements = &material.graphics_shaders().requirements;
@@ -552,8 +618,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
             match buffer {
                 Descriptor::Texture(texture_id) => {
                     let texture = vulkan
-                        .textures
-                        .get(*texture_id, &guard)
+                        .texture(*texture_id, &guard)
                         .ok_or(AppearanceCreationError::InvalidTextureId)?;
                     let types = &requirement.descriptor_types;
                     let texture_type = texture.descriptor_type();
@@ -613,8 +678,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
 
                 Descriptor::Buffer(buffer_id) => {
                     let buffer = vulkan
-                        .buffers
-                        .get(buffer_id.as_id(), &guard)
+                        .buffer(*buffer_id, &guard)
                         .ok_or(AppearanceCreationError::InvalidBufferId)?;
                     let types = &requirement.descriptor_types;
                     let buffer_type = buffer.descriptor_type();

@@ -182,7 +182,7 @@ impl<T: Loaded + 'static> Label<T> {
             model_id: gpu_interface.load_model(&model)?,
             buffer_id: gpu_interface.load_buffer(&buffer)?,
             material_id: labelifier.material_id,
-            texture_id: labelifier.texture_id,
+            texture_id: labelifier.virtual_texture_id,
             font: create_info.font,
             transform: create_info.transform,
             text: create_info.text,
@@ -344,7 +344,8 @@ struct TextVertex {
 pub struct Labelifier<T: Loaded + 'static> {
     material_id: T::MaterialId,
 
-    texture_id: T::TextureId,
+    current_texture_id: T::TextureId,
+    virtual_texture_id: T::TextureId,
 
     /// glyph brush font cache,
     glyph_brush: GlyphBrush<TextVertex, usize, FontArc, foldhash::fast::RandomState>,
@@ -363,6 +364,7 @@ static TEXTURE_SETTINGS: LazyLock<TextureSettings> = LazyLock::new(|| {
 });
 
 impl<T: Loaded + 'static> Labelifier<T> {
+    // TODO: Add configuration struct
     /// Makes a new label maker.
     pub fn new(interface: &impl GpuInterface<T>) -> Result<Self> {
         let glyph_brush = GlyphBrushBuilder::using_fonts(vec![])
@@ -387,14 +389,17 @@ impl<T: Loaded + 'static> Labelifier<T> {
         // Make the cache a texture.
         let texture = Texture::new_empty(dimensions.into(), TEXTURE_SETTINGS.to_owned())?;
 
-        let material = interface.load_material::<TVert>(&material)?;
-        let texture = interface.load_texture(&texture)?;
+        let material_id = interface.load_material::<TVert>(&material)?;
+        let texture_id = interface.load_texture(&texture)?;
+
+        let virtual_texture_id = interface.add_virtual_texture(texture_id)?;
 
         let (sender, receiver) = unbounded();
 
         Ok(Self {
-            material_id: material,
-            texture_id: texture,
+            material_id,
+            current_texture_id: texture_id,
+            virtual_texture_id,
             glyph_brush,
             sender,
             receiver,
@@ -410,7 +415,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let dims = self.glyph_brush.texture_dimensions();
         let new_texture = Texture::new_empty(dims.into(), TEXTURE_SETTINGS.to_owned())?;
 
-        self.texture_id = interface.load_texture(&new_texture)?;
+        self.virtual_texture_id = interface.load_texture(&new_texture)?;
 
         Ok(())
     }
@@ -492,7 +497,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
         let brush_action: glyph_brush::BrushAction<TextVertex> = loop {
             let result = self.glyph_brush.process_queued(
                 |rect, src_data| {
-                    let texture = interface.texture(self.texture_id).unwrap();
+                    let texture = interface.texture(self.virtual_texture_id).unwrap();
                     let ViewTypeDim::D2 {
                         x: texture_width, ..
                     } = texture.dimensions()
@@ -528,9 +533,34 @@ impl<T: Loaded + 'static> Labelifier<T> {
                 Err(BrushError::TextureTooSmall {
                     suggested: (width, height),
                 }) => {
+                    let texture_id = {
+                        // TEMP: As long as there is no blitting yet
+                        //       Loading from GPU to CPU back to GPU here
+                        let old_dims = self.glyph_brush.texture_dimensions();
+                        let mut old_texture = vec![0; (old_dims.0 * old_dims.1) as usize];
+                        interface
+                            .texture(self.virtual_texture_id)
+                            .unwrap()
+                            .data(|data| old_texture.copy_from_slice(data))?;
+                        let mut new_texture = Texture::from_raw(
+                            old_texture,
+                            (old_dims.0, old_dims.1).into(),
+                            TEXTURE_SETTINGS.to_owned(),
+                        )?;
+                        new_texture.resize((width, height).into());
+                        interface.load_texture(&new_texture)?
+                    };
+                    // Map virtual texture to new ID
+                    interface.map_virtual_texture(self.virtual_texture_id, texture_id)?;
+
+                    // unload old texture
+                    interface.remove_texture(self.current_texture_id)?;
+                    // set virtual ID to new
+                    self.current_texture_id = texture_id;
+
                     self.glyph_brush.resize_texture(width, height);
-                    todo!("resize glyph map texture"); // TODO
-                    // self.texture.resize((width, height).into())?;
+
+                    dbg!("Resized");
                 }
             }
         };
@@ -547,7 +577,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
 
     /// Returns the global shared texture of all labels.
     pub fn texture_id(&self) -> &T::TextureId {
-        &self.texture_id
+        &self.virtual_texture_id
     }
 }
 

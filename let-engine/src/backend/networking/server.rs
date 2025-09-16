@@ -260,7 +260,7 @@ where
             {
                 let socket = socket.as_mut().unwrap();
                 let peer = socket.peers.get_mut(&conn).unwrap();
-                data[0..4].copy_from_slice(&(peer.order_number() as u32).to_le_bytes());
+                data[0..4].copy_from_slice(&peer.order_number().to_le_bytes());
             }
 
             let chunks = data.chunks(SAFE_MTU_SIZE);

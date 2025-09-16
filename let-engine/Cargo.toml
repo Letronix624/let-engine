@@ -121,7 +121,6 @@ default = [
   "client",
   "physics",
   "default_gpu_backend",
-  "default_networking_backend",
 ]
 
 egui = ["dep:egui_winit_vulkano", "dep:egui", "client", "let-engine-core/egui"]
