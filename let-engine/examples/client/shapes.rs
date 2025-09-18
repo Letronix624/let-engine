@@ -43,8 +43,8 @@ impl Game {
     pub fn new(context: EngineContext) -> Result<Self, ()> {
         {
             let root_view = context.scene.root_view_mut();
-            *root_view.camera_mut() = Transform::with_size(Vec2::splat(1.0 / 500.0));
-            root_view.set_scaling(CameraScaling::Expand);
+            root_view.transform = Transform::with_size(Vec2::splat(1.0 / 500.0));
+            root_view.scaling = CameraScaling::Expand;
         }
 
         // All shapes are going to share the same material and color.

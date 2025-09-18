@@ -125,7 +125,12 @@ impl GpuTexture {
                     format,
                     extent: dimensions.extent(),
                     array_layers: dimensions.array_layers(),
-                    usage: ImageUsage::SAMPLED,
+                    usage: ImageUsage::SAMPLED
+                        | if settings.render_target {
+                            ImageUsage::COLOR_ATTACHMENT
+                        } else {
+                            ImageUsage::empty()
+                        },
                     mip_levels: settings.mip_levels,
                     ..Default::default()
                 },
@@ -173,8 +178,19 @@ impl GpuTexture {
         }
     }
 
+    pub(crate) fn image_id(&self) -> Id<Image> {
+        match &self.inner {
+            GpuTextureInner::Fixed { image_id, .. } | GpuTextureInner::Staged { image_id, .. } => {
+                *image_id
+            }
+            GpuTextureInner::RingBuffer {
+                image_ids, turn, ..
+            } => image_ids[turn.load(Relaxed)],
+        }
+    }
+
     pub(crate) fn resources(&self) -> Vec<ResourceAccess> {
-        let access_types = AccessTypes::COLOR_ATTACHMENT_READ;
+        let access_types = AccessTypes::FRAGMENT_SHADER_SAMPLED_READ;
         match &self.inner {
             GpuTextureInner::Fixed { image_id, .. } | GpuTextureInner::Staged { image_id, .. } => {
                 vec![ResourceAccess::Image {
@@ -226,7 +242,12 @@ impl GpuTexture {
                     array_layers: texture.dimensions().array_layers(),
                     usage: ImageUsage::TRANSFER_SRC
                         | ImageUsage::TRANSFER_DST
-                        | ImageUsage::SAMPLED,
+                        | ImageUsage::SAMPLED
+                        | if texture.settings().render_target {
+                            ImageUsage::COLOR_ATTACHMENT
+                        } else {
+                            ImageUsage::empty()
+                        },
                     mip_levels: texture.settings().mip_levels,
                     ..Default::default()
                 },
@@ -254,7 +275,6 @@ impl GpuTexture {
                         &vulkano_taskgraph::command_buffer::CopyBufferToImageInfo {
                             src_buffer: buffer_id,
                             dst_image: image_id,
-                            dst_image_layout: ImageLayoutType::Optimal,
                             ..Default::default()
                         },
                     )?;
@@ -287,6 +307,11 @@ impl GpuTexture {
     }
 
     fn ring(vulkan: &Vulkan, texture: &Texture, buffers: usize) -> GpuTextureInner {
+        assert!(
+            !texture.settings().render_target,
+            "Ring buffer texture can not be a render target.
+            TODO: Error return type"
+        );
         let staging_id = vulkan
             .resources
             .create_buffer(

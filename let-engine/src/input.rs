@@ -1,6 +1,6 @@
 //! The default input system by the engine.
 
-use let_engine_core::{camera::CameraScaling, objects::scenes::LayerView};
+use let_engine_core::{backend::gpu::Loaded, camera::CameraScaling, objects::scenes::LayerView};
 use std::collections::HashSet;
 pub use winit::event::MouseButton;
 use winit::event::{ElementState, WindowEvent};
@@ -37,9 +37,11 @@ impl Input {
         }
     }
     /// Updates the input with the event.
-    pub(crate) fn update(&mut self, event: &WindowEvent, dimensions: Vec2) {
-        self.dimensions = dimensions;
+    pub(crate) fn update(&mut self, event: &WindowEvent) {
         match event {
+            WindowEvent::Resized(size) => {
+                self.dimensions = vec2(size.width as f32, size.height as f32);
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
                     self.keys_down.insert(event.logical_key.clone());
@@ -59,8 +61,8 @@ impl Input {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor_position = vec2(
-                    (position.x as f32 / dimensions.x) * 2.0 - 1.0,
-                    (position.y as f32 / dimensions.y) * 2.0 - 1.0,
+                    (position.x as f32 / self.dimensions.x) * 2.0 - 1.0,
+                    (position.y as f32 / self.dimensions.y) * 2.0 - 1.0,
                 );
             }
             WindowEvent::CursorEntered { .. } => self.cursor_inside = true,
@@ -86,8 +88,7 @@ impl Input {
 
     /// Returns the cursor position going from -1.0 to 1.0 x and y.
     pub fn cursor_position(&self) -> Vec2 {
-        let cp = self.cursor_position;
-        vec2(cp[0], cp[1])
+        self.cursor_position
     }
 
     /// Returns the cursor position going from -1.0 to 1.0 x and y scaled with the inserted layers scaling properties.
@@ -98,19 +99,8 @@ impl Input {
     }
 
     /// Returns the cursor position in layer world space.
-    pub fn cursor_to_world(&self, view: &LayerView) -> Vec2 {
-        let dims = self.dimensions;
-        let dimensions = view.scaling().scale(dims);
-        let cp = self.cursor_position;
-
-        let camera = view.camera();
-
-        let cam = camera.position;
-        let zoom = camera.size;
-        vec2(
-            cp[0] * (dimensions.x * zoom.x) + cam[0],
-            cp[1] * (dimensions.y * zoom.y) + cam[1],
-        )
+    pub fn cursor_to_world<T: Loaded>(&self, view: &LayerView<T>) -> Vec2 {
+        view.screen_to_world(self.cursor_position, self.dimensions)
     }
 
     /// Returns true if shift is pressed on the keyboard.

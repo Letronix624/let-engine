@@ -14,7 +14,7 @@ use draw::Draw;
 use glam::UVec2;
 use let_engine_core::{
     backend::gpu::{GpuBackend, Loaded},
-    objects::{Color, Descriptor, scenes::Scene},
+    objects::{Descriptor, scenes::Scene},
     resources::{
         Format,
         buffer::Location,
@@ -759,18 +759,6 @@ impl<'a> GpuInterface<'a> {
 
         Ok(())
     }
-
-    /// Returns the clear color of the window.
-    pub fn clear_color(&self) -> Color {
-        self.settings.read().clear_color
-    }
-
-    /// Sets the clear color of the window.
-    pub fn set_clear_color(&self, clear_color: Color) {
-        let mut settings = self.settings.write();
-        settings.clear_color = clear_color;
-        self.send_settings(*settings);
-    }
 }
 
 /// Errors that originate from Vulkan and the backend is not responsible for.
@@ -865,15 +853,6 @@ pub struct GpuSettings {
     /// - [`PresentMode::Fifo`]
     pub present_mode: PresentMode,
 
-    /// The clear color of the window.
-    ///
-    /// Replaces the background with this color each frame.
-    ///
-    /// # Default
-    ///
-    /// - [`Color::BLACK`]
-    pub clear_color: Color, // TODO: Clear(Color), Load, DontCare
-
     /// The amount of retries of creating a window surface to attempt before failing
     /// to create the backend.
     ///
@@ -901,7 +880,6 @@ impl GpuSettings {
     pub fn new() -> Self {
         Self {
             present_mode: PresentMode::Fifo,
-            clear_color: Color::BLACK,
             window_handle_retries: 20,
             max_frames_in_flight: 2,
         }

@@ -1,13 +1,14 @@
 //! Simple circle scene.
 //!
 //! # Controls
-//! - Scroll: change number of vertices
+//! - Scroll: increase / decrease number of sides
 
-use gpu::VulkanTypes;
-use let_engine::prelude::{gpu::model::ModelId, *};
-use let_engine_core::circle;
+use let_engine::prelude::*;
 
-const MAX_DEGREE: usize = 1000;
+use gpu::{VulkanTypes, model::ModelId};
+
+// Limit of corners
+const MAX_SIDES: usize = 1000;
 
 fn main() {
     // Log messages
@@ -17,7 +18,6 @@ fn main() {
         .unwrap();
 
     // First you make a builder containing the description of the window.
-
     let window_builder = WindowBuilder::new()
         .inner_size(uvec2(1280, 720))
         .title(env!("CARGO_CRATE_NAME"));
@@ -38,7 +38,7 @@ fn main() {
 /// Makes a game struct containing
 struct Game {
     model: ModelId<Vec2>,
-    degree: u32,
+    sides: u32,
 }
 
 impl Game {
@@ -48,20 +48,23 @@ impl Game {
             let root_view = context.scene.root_view_mut();
 
             // next we set the view of the game scene zoomed out and not stretchy.
-            *root_view.camera_mut() = Transform::with_size(Vec2::splat(2.0));
-            root_view.set_scaling(CameraScaling::Circle);
+            root_view.transform = Transform::with_size(Vec2::splat(2.0));
+            root_view.scaling = CameraScaling::Circle;
         }
 
         // First we get the root layer where the scene will be simulated on.
         let root_layer = context.scene.root_layer();
 
-        // Create a "circle" model with a default degree (amount of corners) of 15.
-        let degree = 15;
-        let mut circle_model = circle!(degree, BufferAccess::Pinned(PreferOperation::Write));
+        // Create a "circle" model with a default amount of sides.
+        let sides = 15;
+        let mut circle_model = circle!(sides, BufferAccess::Pinned(PreferOperation::Write));
 
         // Raise maximum vertices and indices for growable model
-        circle_model.set_max_vertices(MAX_DEGREE + 1);
-        circle_model.set_max_indices(MAX_DEGREE * 3);
+
+        // 1 vertex per side including `+ 1` for the center vertex
+        circle_model.set_max_vertices(MAX_SIDES + 1);
+        // Each side is 1 vertex, so 3 corners.
+        circle_model.set_max_indices(MAX_SIDES * 3);
 
         // Load circle model to the GPU.
         let circle_model = context.gpu.load_model(&circle_model).unwrap();
@@ -98,7 +101,7 @@ impl Game {
 
         Ok(Self {
             model: circle_model,
-            degree,
+            sides,
         })
     }
 }
@@ -110,20 +113,20 @@ impl let_engine::Game for Game {
         match event {
             WindowEvent::CloseRequested => context.exit(),
             WindowEvent::MouseWheel(ScrollDelta::LineDelta(delta)) => {
+                // Add or subtract side depending on the delta of the scroll
                 if delta.y > 0.0 {
-                    if self.degree < MAX_DEGREE as u32 {
-                        self.degree += 1;
-                        log::info!("(+) Corners: {}", self.degree);
+                    if self.sides < MAX_SIDES as u32 {
+                        self.sides += 1;
+                        log::info!("(+) Corners: {}", self.sides);
                     }
-                } else if self.degree > 2 {
-                    self.degree -= 1;
-                    log::info!("(-) Corners: {}", self.degree);
+                } else if self.sides > 2 {
+                    self.sides -= 1;
+                    log::info!("(-) Corners: {}", self.sides);
                 }
 
-                let new_model = circle!(self.degree);
-
+                // Generate new circle model and write it to the GPU
+                let new_model = circle!(self.sides);
                 let model = context.gpu.model(self.model).unwrap();
-
                 model.write_model(&new_model).unwrap();
             }
             _ => (),

@@ -557,6 +557,12 @@ pub struct TextureSettings {
     /// Defines the format of the texture data.
     pub format: Format,
 
+    /// If true, this texture can be used as a render target of a layer view.
+    ///
+    /// Error may occur within the graphics backend if this is false and the image is used as a target anyway.
+    #[builder(default = "false")]
+    pub render_target: bool,
+
     /// Indicates the preferred access operation for the texture.
     /// Defaults to [`BufferAccess::Fixed`], a one time write with no reading or writing.
     ///

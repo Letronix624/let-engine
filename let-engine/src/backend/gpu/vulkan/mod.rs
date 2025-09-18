@@ -10,6 +10,7 @@ use let_engine_core::resources::{data::Data, material::Topology, model::Vertex};
 use parking_lot::Mutex;
 use vulkano_taskgraph::{
     Id, InvalidSlotError, Ref,
+    graph::NodeId,
     resource::{AccessTypes, Flight, Resources},
 };
 use winit::event_loop::EventLoop;
@@ -63,7 +64,7 @@ pub struct Vulkan {
     resources_dirty: AtomicBool,
 
     pub vulkan_pipeline_cache: Arc<PipelineCache>,
-    pub pipeline_cache: Mutex<HashMap<MaterialId, Arc<GraphicsPipeline>>>,
+    pub pipeline_cache: Mutex<HashMap<(MaterialId, NodeId), Arc<GraphicsPipeline>>>,
 
     pub collector: CollectorHandle,
     resource_map: SlotMap<SlotId, Resource>,
@@ -169,7 +170,7 @@ impl Vulkan {
     }
 
     /// Call each frame to check if task graph has to be rebuilt
-    pub fn clean_resources(&self) -> bool {
+    pub fn rebuild_taskgraph(&self) -> bool {
         self.resources_dirty
             .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
@@ -181,10 +182,6 @@ impl Vulkan {
             .unwrap()
             .wait_idle()
             .unwrap()
-    }
-
-    pub fn get_pipeline(&self, material: MaterialId) -> Option<Arc<GraphicsPipeline>> {
-        self.pipeline_cache.lock().get(&material).cloned()
     }
 }
 

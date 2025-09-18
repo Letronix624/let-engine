@@ -561,8 +561,8 @@ const SQUARE_2D: [Vec2; 6] = [
 ///
 /// Returns a `Model<Vec2>` with vertices and indices.
 ///
-/// ### $corners
-/// Using this with a `u32` makes a circle fan with as many corners as given.
+/// ### $sides
+/// Using this with a `u32` makes a circle fan with as many sides as given.
 ///
 /// ### $percent
 /// Using this with a `f64` makes a circle fan that looks like a pie with the given percentage missing.
@@ -581,24 +581,24 @@ const SQUARE_2D: [Vec2; 6] = [
 /// ```
 ///
 /// ## Tip
-/// The amount of needed corners is similar to a logarithmical function.
-/// The more corners you use, the more resources you waste, and the less you notice any change.
-/// Try to use as little corners as possible for maximum resource efficiency.
+/// The amount of needed sides is similar to a logarithmical function.
+/// The more sides you add, the more resources you waste, and the less you notice any change.
+/// Try to use as little sides as possible for maximum resource efficiency.
 #[macro_export]
 macro_rules! circle {
     (0) => {
-        compile_error!("Number of corners must be greater than zero")
+        compile_error!("Number of sides must be greater than zero")
     };
 
     // Default access
-    ($corners:expr) => {
-        let_engine::prelude::circle!($corners, let_engine::prelude::BufferAccess::Fixed)
+    ($sides:expr) => {
+        let_engine::prelude::circle!($sides, let_engine::prelude::BufferAccess::Fixed)
     };
     // Full circle fan
-    ($corners:expr, $access:expr) => {{
+    ($sides:expr, $access:expr) => {{
         use let_engine::{glam::vec2, resources::model::Model};
 
-        let corners: u32 = $corners;
+        let sides: u32 = $sides;
 
         let mut vertices: Vec<Vec2> = vec![];
         let mut indices: Vec<u32> = vec![];
@@ -608,35 +608,35 @@ macro_rules! circle {
         vertices.push(vec2(0.0, 0.0));
 
         // Generate vertices
-        for i in 0..corners {
-            let angle = TAU * ((i as f64) / corners as f64);
+        for i in 0..sides {
+            let angle = TAU * ((i as f64) / sides as f64);
             vertices.push(vec2(angle.cos() as f32, angle.sin() as f32));
         }
 
         // Generate indices
-        for i in 0..corners - 1 {
+        for i in 0..sides - 1 {
             // -1 so the last index doesn't go above the total amounts of indices.
             indices.extend([0, i + 1, i + 2]);
         }
-        indices.extend([0, corners, 1]);
+        indices.extend([0, sides, 1]);
 
         Model::new_indexed(vertices, indices, $access)
     }};
 
     // Default access pie
-    ($corners:expr, $percent:expr) => {
-        let_engine::prelude::circle!($corners, $percent, let_engine::prelude::BufferAccess::Fixed)
+    ($sides:expr, $percent:expr) => {
+        let_engine::prelude::circle!($sides, $percent, let_engine::prelude::BufferAccess::Fixed)
     };
     // Pie circle
-    ($corners:expr, $percent:expr, $access:expr) => {{
+    ($sides:expr, $percent:expr, $access:expr) => {{
         use let_engine::{
             glam::{Vec2, vec2},
             resources::model::Model,
         };
 
-        let corners: u32 = $corners;
-        if corners == 0 {
-            panic!("Number of corners must be greater than zero")
+        let sides: u32 = $sides;
+        if sides == 0 {
+            panic!("Number of sides must be greater than zero")
         }
 
         let percent: f64 = ($percent as f64).clamp(0.0, 1.0);
@@ -649,13 +649,13 @@ macro_rules! circle {
         vertices.push(vec2(0.0, 0.0));
 
         // Generate vertices
-        for i in 0..corners + 1 {
-            let angle = angle_limit * (i as f64 / corners as f64);
+        for i in 0..sides + 1 {
+            let angle = angle_limit * (i as f64 / sides as f64);
             vertices.push(vec2(angle.cos() as f32, angle.sin() as f32));
         }
 
         // Generate indices
-        for i in 0..corners {
+        for i in 0..sides {
             indices.extend([0, i + 1, i + 2]);
         }
 

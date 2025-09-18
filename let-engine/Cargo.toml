@@ -51,7 +51,7 @@ workspace = true
 optional = true
 
 [dependencies.egui_winit_vulkano]
-git = "https://github.com/Letronix624/egui_winit_vulkano.git"
+git = "https://github.com/LukeP0WERS/egui_winit_vulkano.git"
 branch = "master"  
 optional = true
 

@@ -1,9 +1,6 @@
-use std::collections::hash_set::Iter;
-
 use super::*;
 use crate::{backend::gpu::Loaded, camera::*};
 use foldhash::HashSet;
-use glam::UVec2;
 use slotmap::SlotMap;
 #[cfg(feature = "physics")]
 use {rapier2d::parry::query::DefaultQueryDispatcher, slotmap::KeyData};
@@ -13,8 +10,10 @@ pub struct Scene<T: Loaded = ()> {
     layers: SlotMap<LayerId, Layer>,
     root_layer_id: LayerId,
 
-    layer_views: SlotMap<LayerViewId, LayerView>,
+    layer_views: SlotMap<LayerViewId, LayerView<T>>,
     root_layer_view_id: LayerViewId,
+
+    layer_tree_version: usize,
 
     objects: SlotMap<ObjectId, Object<T>>,
 
@@ -30,13 +29,21 @@ impl<T: Loaded> Default for Scene<T> {
         let mut layer_views = SlotMap::default();
 
         let root_layer_id = layers.insert_with_key(|id| Layer::new(id, None));
-        let root_layer_view_id = layer_views.insert(LayerView::new(root_layer_id));
+        let root_layer_view_id = layer_views.insert(LayerView::new(
+            root_layer_id,
+            DrawTarget::Window,
+            Some(Color::BLACK),
+        ));
+
+        // Add root view to root layer.
+        layers[root_layer_id].views.insert(root_layer_view_id);
 
         Self {
             layers,
             root_layer_id,
             layer_views,
             root_layer_view_id,
+            layer_tree_version: 0,
             objects: SlotMap::default(),
             #[cfg(feature = "physics")]
             dirty_objects: Vec::new(),
@@ -63,7 +70,7 @@ impl<T: Loaded> Scene<T> {
     }
 
     /// Returns the only `LayerView` of the root layer.
-    pub fn root_view(&self) -> &LayerView {
+    pub fn root_view(&self) -> &LayerView<T> {
         // There must always be a root view to render from
         &self.layer_views[self.root_layer_view_id]
     }
@@ -72,7 +79,7 @@ impl<T: Loaded> Scene<T> {
         self.root_layer_view_id
     }
 
-    pub fn root_view_mut(&mut self) -> &mut LayerView {
+    pub fn root_view_mut(&mut self) -> &mut LayerView<T> {
         // There must always be a root view to render from
         &mut self.layer_views[self.root_layer_view_id]
     }
@@ -86,11 +93,17 @@ impl<T: Loaded> Scene<T> {
 
         parent.layers.insert(layer_id);
 
+        self.layer_tree_version += 1;
+
         Some(layer_id)
     }
 
     pub fn layer(&self, id: LayerId) -> Option<&Layer> {
         self.layers.get(id)
+    }
+
+    pub fn layers_count(&self) -> usize {
+        self.layers.len()
     }
 
     pub fn layer_mut(&mut self, id: LayerId) -> Option<&mut Layer> {
@@ -101,6 +114,8 @@ impl<T: Loaded> Scene<T> {
         let Some(layer) = self.layers.remove(id) else {
             return;
         };
+
+        self.layer_tree_version += 1;
 
         // Remove layer from parent if there is one
         if let Some(parent_id) = layer.parent_id
@@ -132,46 +147,61 @@ impl<T: Loaded> Scene<T> {
         }
     }
 
+    pub fn layer_tree_version(&self) -> usize {
+        self.layer_tree_version
+    }
+
     /// Returns a new viewpoint to this scene.
     ///
-    /// Returns `None` in case the ID is invalid or the layer is the root layer.
+    /// Returns `None` in case the layer ID is invalid.
     ///
     /// You can not have multiple views of the root layer.
+    ///
+    /// # Arguments
+    /// - `layer_id`: The ID of the layer in which this view views.
+    /// - `camera`: The transform of the camera where size equals zoom.
+    /// - `scaling`: The method of scaling the image to the aspect ratio.
+    /// - `draw_target`: The target which the image gets drawn onto.
+    /// - `clear_color`: If some, the color with which the image gets cleared;
+    ///   if none, the image will not be cleared.
     pub fn add_view(
         &mut self,
         layer_id: LayerId,
-        camera: Camera,
-        extent: UVec2,
+        camera: Transform,
         scaling: CameraScaling,
+        draw_target: DrawTarget<T>,
+        clear_color: Option<Color>,
     ) -> Option<LayerViewId> {
         let layer = self.layers.get_mut(layer_id)?;
 
-        layer.parent_id?;
-
         let view = LayerView {
-            parent_id: layer_id,
-            camera,
-            draw: true,
-            extent,
+            transform: camera,
             scaling,
+            ..LayerView::new(layer_id, draw_target, clear_color)
         };
 
         let key = self.layer_views.insert(view);
 
         layer.views.insert(key);
 
+        self.layer_tree_version += 1;
+
         Some(key)
     }
 
-    pub fn views_iter(&self) -> slotmap::basic::Iter<'_, LayerViewId, LayerView> {
+    pub fn views_iter(&self) -> slotmap::basic::Iter<'_, LayerViewId, LayerView<T>> {
         self.layer_views.iter()
     }
 
-    pub fn view(&self, id: LayerViewId) -> Option<&LayerView> {
+    pub fn views_count(&self) -> usize {
+        self.layer_views.len()
+    }
+
+    pub fn view(&self, id: LayerViewId) -> Option<&LayerView<T>> {
         self.layer_views.get(id)
     }
 
-    pub fn view_mut(&mut self, id: LayerViewId) -> Option<&mut LayerView> {
+    pub fn view_mut(&mut self, id: LayerViewId) -> Option<&mut LayerView<T>> {
         self.layer_views.get_mut(id)
     }
 
@@ -182,6 +212,8 @@ impl<T: Loaded> Scene<T> {
 
         let layer = self.layers.get_mut(view.layer_id()).unwrap();
         layer.views.remove(&view_id);
+
+        self.layer_tree_version += 1;
     }
 
     pub fn add_object(&mut self, layer_id: LayerId, builder: ObjectBuilder<T>) -> Option<ObjectId> {
@@ -418,8 +450,8 @@ impl Layer {
         self.parent_id
     }
 
-    pub fn object_ids_iter(&self) -> Iter<'_, ObjectId> {
-        self.objects.iter()
+    pub fn object_ids_iter(&self) -> impl Iterator<Item = ObjectId> {
+        self.objects.iter().copied()
     }
 
     /// Checks if the layer contains this object.
@@ -428,16 +460,24 @@ impl Layer {
     }
 
     /// Returns the number of objects in total initialized into this layer.
-    pub fn number_of_objects(&self) -> usize {
+    pub fn objects_count(&self) -> usize {
         self.objects.len()
     }
 
-    pub fn view_ids_iter(&self) -> Iter<'_, LayerViewId> {
-        self.views.iter()
+    pub fn view_count(&self) -> usize {
+        self.views.len()
     }
 
-    pub fn layer_ids_iter(&self) -> Iter<'_, LayerId> {
-        self.layers.iter()
+    pub fn layer_count(&self) -> usize {
+        self.layers.len()
+    }
+
+    pub fn view_ids_iter(&self) -> impl Iterator<Item = LayerViewId> {
+        self.views.iter().copied()
+    }
+
+    pub fn layer_ids_iter(&self) -> impl Iterator<Item = LayerId> {
+        self.layers.iter().copied()
     }
 }
 
@@ -651,68 +691,32 @@ impl Layer {
 ///
 /// To delete a LayerView, drop the last reference to it.
 ///
-/// In `camera`, the [`Transform`] acts as a camera, where `size` determines the zoom in both axis.
+/// The [`Transform`] acts as a camera, where `size` determines the zoom in both axis.
 ///
-/// Setting the extent on the root view does not do anything.
-#[derive(Debug)]
-pub struct LayerView {
+/// The extent of this view is a screen or texture space UV rectangle.
+pub struct LayerView<T: Loaded> {
     parent_id: LayerId,
-    camera: Camera,
-    draw: bool,
-    extent: UVec2,
-    scaling: CameraScaling,
+    pub draw: bool,
+    draw_target: DrawTarget<T>,
+    clear_color: Option<Color>,
+    pub transform: Transform,
+    pub extent: [Vec2; 2],
+    pub scaling: CameraScaling,
 }
 
 new_key_type! { pub struct LayerViewId; }
 
-impl LayerView {
-    fn new(parent_id: LayerId) -> Self {
+impl<T: Loaded> LayerView<T> {
+    fn new(parent_id: LayerId, draw_target: DrawTarget<T>, clear_color: Option<Color>) -> Self {
         Self {
             parent_id,
-            camera: Camera::default(),
             draw: true,
-            extent: UVec2::default(),
+            draw_target,
+            clear_color,
+            transform: Transform::default(),
+            extent: [Vec2::ZERO, Vec2::ONE],
             scaling: CameraScaling::default(),
         }
-    }
-
-    /// Gets the camera.
-    pub fn camera(&self) -> Camera {
-        self.camera
-    }
-
-    /// Sets the camera.
-    pub fn camera_mut(&mut self) -> &mut Transform {
-        &mut self.camera
-    }
-
-    pub fn scaling(&self) -> CameraScaling {
-        self.scaling
-    }
-
-    pub fn set_scaling(&mut self, scaling: CameraScaling) {
-        self.scaling = scaling;
-    }
-
-    pub fn extent(&self) -> UVec2 {
-        self.extent
-    }
-
-    pub fn extent_mut(&mut self) -> &mut UVec2 {
-        &mut self.extent
-    }
-
-    /// Returns if this view gets drawn.
-    pub fn draw(&self) -> bool {
-        self.draw
-    }
-
-    /// Sets if this view should be drawn in the next draw task.
-    ///
-    /// If this is true it will and the view will update, but when false
-    /// the view will be stuck on the last drawn frame.
-    pub fn set_draw(&mut self, draw: bool) {
-        self.draw = draw;
     }
 
     /// Returns the parent layer of this view.
@@ -720,26 +724,45 @@ impl LayerView {
         self.parent_id
     }
 
-    /// Returns the position of a given side with given window dimensions to world space.
-    ///
-    /// x -1.0 to 1.0 for left to right
-    ///
-    /// y -1.0 to 1.0 for up to down
-    pub fn side_to_world(&self, direction: Vec2) -> Vec2 {
-        // Change this to remove dimensions.
-
-        let dimensions = self.scaling().scale(self.extent.as_vec2());
-        let zoom = 1.0 / self.camera.size;
-        vec2(
-            direction[0] * (dimensions.x * zoom.x) + self.camera.position.x * 2.0,
-            -direction[1] * (dimensions.y * zoom.y) + self.camera.position.y * 2.0,
-        )
+    pub fn draw_target(&self) -> &DrawTarget<T> {
+        &self.draw_target
     }
 
-    /// Creates a projection matrix for the view.
-    pub fn make_projection_matrix(&self) -> Mat4 {
-        let scaled = self.scaling().scale(self.extent.as_vec2());
-        // let scaled = scaled * 1.0 / self.transform.size;
-        Mat4::orthographic_rh(-scaled.x, scaled.x, -scaled.y, scaled.y, -1.0, 1.0)
+    pub fn clear_color(&self) -> Option<Color> {
+        self.clear_color
     }
+
+    /// Sets the clear color of this view in case it has been created with a clear color.
+    pub fn set_clear_color(&mut self, color: Color) {
+        if let Some(clear_color) = self.clear_color.as_mut() {
+            *clear_color = color;
+        }
+    }
+
+    /// Returns the position of a given screen space with given window dimensions to world space.
+    ///
+    /// This function takes coordinates, where (-1, -1) represents the top left corner of the screen
+    /// and (1, 1) the bottom right.
+    pub fn screen_to_world(&self, direction: Vec2, resolution: Vec2) -> Vec2 {
+        let min = vec2(
+            self.extent[0].x.min(self.extent[1].x),
+            self.extent[0].y.min(self.extent[1].y),
+        );
+        let max = vec2(
+            self.extent[0].x.max(self.extent[1].x),
+            self.extent[0].y.max(self.extent[1].y),
+        );
+
+        let offset = direction + 1.0 - max - min;
+        let extent = self.scaling.scale(1.0 / (max - min) * resolution) * self.transform.size;
+        let camera_offset = self.transform.position;
+
+        offset * extent + camera_offset
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum DrawTarget<T: Loaded> {
+    Window,
+    Texture(T::TextureId),
 }

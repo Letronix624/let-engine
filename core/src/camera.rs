@@ -1,8 +1,6 @@
 //! Camera and vision related settings.
 
-use glam::{Vec2, vec2};
-
-use crate::objects::Transform;
+use glam::{Mat4, Vec2, vec2};
 
 /// The Camera scaling modes determine how far you can see when the aspect ratio changes.
 ///
@@ -78,7 +76,10 @@ impl CameraScaling {
             CameraScaling::Custom(f) => f(dimensions),
         }
     }
-}
 
-/// When using the transform as a camera, size determines the zoom in both axis.
-pub type Camera = Transform;
+    /// Creates a projection matrix for the view.
+    pub fn make_projection_matrix(&self, resolution: Vec2) -> Mat4 {
+        let scaled = self.scale(resolution);
+        Mat4::orthographic_rh(-scaled.x, scaled.x, -scaled.y, scaled.y, -1.0, 1.0)
+    }
+}

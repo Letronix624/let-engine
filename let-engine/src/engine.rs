@@ -320,9 +320,6 @@ where
             .unwrap()
             .into();
 
-        let size = window.inner_size();
-        *self.game.scene.lock().root_view_mut().extent_mut() = uvec2(size.width, size.height);
-
         self.game.window.set(Window::new(window.clone())).unwrap();
 
         self.gpu_backend.init_window(event_loop, &window);
@@ -338,12 +335,7 @@ where
     ) {
         use winit::event::WindowEvent;
 
-        let window_size = {
-            let window = self.game.window.get().unwrap();
-            window.inner_size().as_vec2()
-        };
-
-        self.game.input.lock().update(&event, window_size);
+        self.game.input.lock().update(&event);
 
         #[cfg(feature = "egui")]
         if self.gpu_backend.update_egui(&event) {
@@ -354,7 +346,6 @@ where
             WindowEvent::Resized(size) => {
                 let size = uvec2(size.width, size.height);
                 self.gpu_backend.resize_event(size);
-                *self.game.scene.lock().root_view_mut().extent_mut() = size;
                 events::WindowEvent::Resized(size)
             }
             WindowEvent::CloseRequested => events::WindowEvent::CloseRequested,
@@ -497,25 +488,25 @@ pub(crate) struct BackendInterfaces<B: Backends> {
 unsafe impl<B: Backends> Send for BackendInterfaces<B> {}
 unsafe impl<B: Backends> Sync for BackendInterfaces<B> {}
 
-pub(crate) struct GameWrapper<G, E, B>
+pub(super) struct GameWrapper<G, E, B>
 where
     G: Game<B, E>,
     E: CustomError,
     B: Backends,
 {
-    pub(super) game: Mutex<G>,
-    pub(super) exit: OnceLock<Result<(), EngineError<E, B>>>,
+    pub game: Mutex<G>,
+    pub exit: OnceLock<Result<(), EngineError<E, B>>>,
 
-    pub(super) time: Time,
+    pub time: Time,
     #[cfg(feature = "client")]
-    pub(super) input: Mutex<Input>,
+    pub input: Mutex<Input>,
 
-    pub(super) scene: Mutex<Scene<<B::Gpu as GpuBackend>::LoadedTypes>>,
+    pub scene: Mutex<Scene<<B::Gpu as GpuBackend>::LoadedTypes>>,
 
     #[cfg(feature = "client")]
-    pub(super) window: OnceLock<Window>,
+    pub window: OnceLock<Window>,
 
-    pub(super) backends: BackendInterfaces<B>,
+    pub backends: BackendInterfaces<B>,
 }
 
 impl<G, E, B> GameWrapper<G, E, B>

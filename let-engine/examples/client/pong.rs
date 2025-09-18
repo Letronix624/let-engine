@@ -86,7 +86,7 @@ impl Game {
         // next we set the view of the game scene to -1 to 1 max
         {
             let root_view = context.scene.root_view_mut();
-            root_view.set_scaling(CameraScaling::Box);
+            root_view.scaling = CameraScaling::Box;
         }
 
         // When making UI, a recommended scaling mode is `Expand`, because it makes sure the UI is
@@ -96,10 +96,12 @@ impl Game {
             .add_view(
                 ui_layer,
                 Transform::default(),
-                RESOLUTION,
                 CameraScaling::Expand,
+                DrawTarget::Window,
+                None,
             )
             .unwrap();
+
         // The view will exist as long as this variable is kept. Dropping this eliminates the view.
 
         // Make left paddle controlled with W for up and S for down.
@@ -471,9 +473,16 @@ impl Ball {
                 .intersections_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
                 .is_empty();
 
+            let dimensions = context.window().unwrap().inner_size();
+
             // Check if the top side or bottom side are touched by checking if the ball position is below or above the screen edges +- the ball size.
-            let touching_floor = position.y < view.side_to_world(vec2(0.0, 1.0)).y + 0.015;
-            let touching_roof = position.y > view.side_to_world(vec2(0.0, -1.0)).y - 0.015;
+            let touching_floor = position.y
+                < view
+                    .screen_to_world(vec2(0.0, -1.0), dimensions.as_vec2())
+                    .y
+                    + 0.015;
+            let touching_roof =
+                position.y > view.screen_to_world(vec2(0.0, 1.0), dimensions.as_vec2()).y - 0.015;
             let touching_wall = position.x.abs() > 1.0;
 
             if touching_paddle

@@ -42,10 +42,7 @@ struct Game {
 impl Game {
     /// Constructor for this scene.
     pub fn new(context: EngineContext) -> Result<Self, ()> {
-        context
-            .scene
-            .root_view_mut()
-            .set_scaling(CameraScaling::Expand);
+        context.scene.root_view_mut().scaling = CameraScaling::Expand;
 
         // A square model with textured vertices.
         let model = context
