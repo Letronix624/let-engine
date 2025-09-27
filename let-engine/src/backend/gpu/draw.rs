@@ -174,7 +174,7 @@ impl Draw {
                         vulkano::memory::allocator::AllocationType::Linear,
                         draw.view_proj_alignment,
                     )
-                    .expect("You can not create more than 256 cameras."); // TODO: Resize
+                    .unwrap_or_else(|_| unimplemented!("Can not create more than 256 cameras yet")); // TODO: Resize
 
                 let framebuffer_id = match view.draw_target() {
                     DrawTarget::Window => window_framebuffer_id,

@@ -125,7 +125,7 @@ impl Game {
         // Loading the font for the score.
         let font = labelifier
             .font_from_slice(include_bytes!("../assets/Px437_CL_Stingray_8x16.ttf"))
-            .expect("Font is invalid.");
+            .expect("Font should be valid ttf");
 
         // Making a default label for the left side.
         let left_score_label = Label::new(

@@ -22,14 +22,14 @@ fn main() {
                     vertex_shaders.push((
                         file_name,
                         fs::read_to_string(file.unwrap().path())
-                            .expect("Vertex shader is not a text file."),
+                            .expect("Vertex shader should be a text file"),
                     ));
                 }
                 "frag" => {
                     fragment_shaders.push((
                         file_name,
                         fs::read_to_string(file.unwrap().path())
-                            .expect("Fragment shader is not a text file."),
+                            .expect("Fragment shader should be a text file"),
                     ));
                 }
                 _ => (),

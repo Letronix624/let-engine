@@ -284,7 +284,10 @@ impl<T: Loaded> Scene<T> {
         let mut public_transform = object.transform;
         let mut parent_id = object.parent_id;
         while let Some(id) = parent_id {
-            let parent = self.objects.get(id).expect("Parent of an object in the object map should ALWAYS exist in the objects map, else there is a bug.");
+            let parent = self
+                .objects
+                .get(id)
+                .expect("The parent of an object should exist in the objects map");
 
             public_transform = public_transform.combine(parent.transform);
             parent_id = parent.parent_id;
@@ -351,7 +354,7 @@ impl<T: Loaded> Scene<T> {
         let layer = self
             .layers
             .get_mut(object1.layer_id)
-            .expect("Object can not be in an invalid layer.");
+            .expect("Object should be in a valid layer");
 
         if let (Some(handle1), Some(handle2)) =
             (object1.rigidbody_handle(), object2.rigidbody_handle())

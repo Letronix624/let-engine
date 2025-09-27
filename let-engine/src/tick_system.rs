@@ -55,7 +55,7 @@ pub(super) fn run<G: Game<B, E>, E: CustomError, B: Backends>(game: Arc<GameWrap
             game.scene
                 .lock()
                 .physics_iteration()
-                .expect("Physics iteration failed.") // TODO: Handle problems
+                .expect("Expected physics iteration to succeed") // TODO: Handle problems
         }
 
         // record the elapsed time.

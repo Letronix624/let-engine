@@ -335,7 +335,8 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         material: &let_engine_core::resources::material::Material,
     ) -> Result<MaterialId> {
         let vulkan = VK.get().context("Vulkan uninitialized")?;
-        let material = GpuMaterial::new::<V>(material, vulkan).expect("failed to load material");
+        let material =
+            GpuMaterial::new::<V>(material, vulkan).context("failed to load material")?;
 
         Ok(vulkan.add_material(material, &self.guard))
     }
