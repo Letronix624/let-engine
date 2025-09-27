@@ -167,50 +167,22 @@ impl let_engine::Game for Game {
                     self.view_cycle = (self.view_cycle + 1) % 4;
                     log::info!("Mode: {}", self.view_cycle + 1);
 
+                    let scene = context.scene;
+
                     match self.view_cycle {
                         0 => {
-                            context
-                                .scene
-                                .object_mut(self.circle)
-                                .unwrap()
-                                .appearance
-                                .set_visible(true);
+                            scene[self.circle].appearance.set_visible(true);
                         }
                         1 => {
-                            context
-                                .scene
-                                .object_mut(self.triangle)
-                                .unwrap()
-                                .appearance
-                                .set_visible(false);
+                            scene[self.triangle].appearance.set_visible(false);
                         }
                         2 => {
-                            context
-                                .scene
-                                .object_mut(self.triangle)
-                                .unwrap()
-                                .appearance
-                                .set_visible(true);
-                            context
-                                .scene
-                                .object_mut(self.square)
-                                .unwrap()
-                                .appearance
-                                .set_visible(false);
+                            scene[self.triangle].appearance.set_visible(true);
+                            scene[self.square].appearance.set_visible(false);
                         }
                         3 => {
-                            context
-                                .scene
-                                .object_mut(self.square)
-                                .unwrap()
-                                .appearance
-                                .set_visible(true);
-                            context
-                                .scene
-                                .object_mut(self.circle)
-                                .unwrap()
-                                .appearance
-                                .set_visible(false);
+                            scene[self.square].appearance.set_visible(true);
+                            scene[self.circle].appearance.set_visible(false);
                         }
                         _ => unreachable!(),
                     }
@@ -223,8 +195,7 @@ impl let_engine::Game for Game {
 
     // Gradually change color of circle
     fn update(&mut self, context: EngineContext) -> Result<(), ()> {
-        let buffer = context.gpu.buffer(self.color_buffer).unwrap();
-        buffer
+        context.gpu[self.color_buffer]
             .write_data(|w| {
                 *w = w.lerp(
                     Color::from_rgb(1.0, 0.3, 0.5),

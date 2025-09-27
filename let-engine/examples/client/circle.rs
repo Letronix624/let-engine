@@ -126,8 +126,8 @@ impl let_engine::Game for Game {
 
                 // Generate new circle model and write it to the GPU
                 let new_model = circle!(self.sides);
-                let model = context.gpu.model(self.model).unwrap();
-                model.write_model(&new_model).unwrap();
+                // Index model from backend index implementation directly
+                context.gpu[self.model].write_model(&new_model).unwrap();
             }
             _ => (),
         }

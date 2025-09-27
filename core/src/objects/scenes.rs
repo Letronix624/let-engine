@@ -409,6 +409,54 @@ impl<T: Loaded> Scene<T> {
     }
 }
 
+impl<T: Loaded> std::ops::Index<LayerId> for Scene<T> {
+    type Output = Layer;
+
+    fn index(&self, index: LayerId) -> &Self::Output {
+        self.layer(index)
+            .unwrap_or_else(|| panic!("Invalid layer index."))
+    }
+}
+
+impl<T: Loaded> std::ops::Index<LayerViewId> for Scene<T> {
+    type Output = LayerView<T>;
+
+    fn index(&self, index: LayerViewId) -> &Self::Output {
+        self.view(index)
+            .unwrap_or_else(|| panic!("Invalid view index."))
+    }
+}
+
+impl<T: Loaded> std::ops::Index<ObjectId> for Scene<T> {
+    type Output = Object<T>;
+
+    fn index(&self, index: ObjectId) -> &Self::Output {
+        self.object(index)
+            .unwrap_or_else(|| panic!("Invalid object index."))
+    }
+}
+
+impl<T: Loaded> std::ops::IndexMut<LayerId> for Scene<T> {
+    fn index_mut(&mut self, index: LayerId) -> &mut Self::Output {
+        self.layer_mut(index)
+            .unwrap_or_else(|| panic!("Invalid layer index."))
+    }
+}
+
+impl<T: Loaded> std::ops::IndexMut<LayerViewId> for Scene<T> {
+    fn index_mut(&mut self, index: LayerViewId) -> &mut Self::Output {
+        self.view_mut(index)
+            .unwrap_or_else(|| panic!("Invalid view index."))
+    }
+}
+
+impl<T: Loaded> std::ops::IndexMut<ObjectId> for Scene<T> {
+    fn index_mut(&mut self, index: ObjectId) -> &mut Self::Output {
+        self.object_mut(index)
+            .unwrap_or_else(|| panic!("Invalid object index."))
+    }
+}
+
 /// A layer struct holding it's own object hierarchy, camera and physics iteration.
 #[derive(Debug)]
 pub struct Layer {

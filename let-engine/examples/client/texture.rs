@@ -64,7 +64,7 @@ impl Game {
             ImageFormat::Png,
             TextureSettingsBuilder::default()
                 .format(Format::Rgba8Unorm)
-                .access_pattern(BufferAccess::Staged) // `BufferAccess::Staged` to make the texture mutable
+                .access_pattern(BufferAccess::RingBuffer { buffers: 2 }) // `BufferAccess::Pinned` to make the texture mutable for each frame
                 .unwrap()
                 .build()
                 .unwrap(),
@@ -137,9 +137,8 @@ impl let_engine::Game for Game {
                 }
                 // Edit texture when space is pressed.
                 Key::Named(NamedKey::Space) => {
-                    let texture = context.gpu.texture(self.texture).unwrap();
                     // Write data to the texture
-                    texture
+                    context.gpu[self.texture]
                         .write_data(|data| {
                             let mut buffer: ImageBuffer<image::Rgba<u8>, &mut [u8]> =
                                 ImageBuffer::from_raw(RES.x, RES.y, data).unwrap();

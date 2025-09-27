@@ -369,7 +369,7 @@ impl Paddle {
         let shift = context.input.key_down(&self.controls.0) as i32
             - context.input.key_down(&self.controls.1) as i32;
 
-        let object = context.scene.object_mut(self.object).unwrap();
+        let object = &mut context.scene[self.object];
 
         // Shift Y and clamp it between 0.51 so it doesn't go out of bounds.
         let y = &mut object.transform.position.y;
@@ -462,7 +462,7 @@ impl Ball {
     pub fn update(&mut self, time: &Time, context: &mut EngineContext) -> bool {
         // Wait one second before starting the round.
         if self.new_round.elapsed().unwrap().as_secs() > 0 {
-            let object = context.scene.object(self.object_id).unwrap();
+            let object = &context.scene[self.object_id];
             let layer = context.scene.root_layer();
             let view = context.scene.root_view();
 
@@ -510,12 +510,8 @@ impl Ball {
             }
 
             // Calculate new ball position
-            context
-                .scene
-                .object_mut(self.object_id)
-                .unwrap()
-                .transform
-                .position += self.direction * time.delta_time() as f32 * self.speed;
+            context.scene[self.object_id].transform.position +=
+                self.direction * time.delta_time() as f32 * self.speed;
 
             // self.bounce_sound.update(Tween::default()).unwrap();
         }
@@ -526,8 +522,7 @@ impl Ball {
     fn reset(&mut self, scene: &mut Scene<VulkanTypes>) {
         self.new_round = SystemTime::now();
 
-        let object = scene.object_mut(self.object_id).unwrap();
-        object.transform.position = vec2(0.0, 0.0);
+        scene[self.object_id].transform.position = vec2(0.0, 0.0);
 
         self.direction = Self::random_direction();
         self.speed = 1.1;
