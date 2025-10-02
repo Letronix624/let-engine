@@ -98,7 +98,7 @@ impl Game {
                 Transform::default(),
                 CameraScaling::Expand,
                 DrawTarget::Window,
-                None,
+                Some(Color::BLACK),
             )
             .unwrap();
 
