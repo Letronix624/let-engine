@@ -751,7 +751,16 @@ pub struct LayerView<T: Loaded> {
     draw_target: DrawTarget<T>,
     clear_color: Option<Color>,
     pub transform: Transform,
+
+    /// The extent of the viewport.
+    ///
+    /// A rect determining the location on the target, where to put the viewport in UV coordinates.
     pub extent: [Vec2; 2],
+
+    /// The scissor of the viewport.
+    ///
+    /// A UV rect that is visible in the viewport. Everything outside this rect is discarded.
+    pub scissor: [Vec2; 2],
     pub scaling: CameraScaling,
 }
 
@@ -766,6 +775,7 @@ impl<T: Loaded> LayerView<T> {
             clear_color,
             transform: Transform::default(),
             extent: [Vec2::ZERO, Vec2::ONE],
+            scissor: [Vec2::ZERO, Vec2::ONE],
             scaling: CameraScaling::default(),
         }
     }

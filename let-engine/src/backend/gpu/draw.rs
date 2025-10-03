@@ -511,7 +511,7 @@ impl Draw {
                     ..Default::default()
                 }),
                 subpass: subpass.map(|x| x.into()),
-                dynamic_state: &[DynamicState::Viewport],
+                dynamic_state: &[DynamicState::Viewport, DynamicState::Scissor],
                 ..GraphicsPipelineCreateInfo::new(&layout)
             },
         )
@@ -632,6 +632,7 @@ impl Task for DrawTask {
         }
 
         {
+            // Set viewport
             let min = vec2(
                 view.extent[0].x.min(view.extent[1].x),
                 view.extent[0].y.min(view.extent[1].y),
@@ -652,6 +653,30 @@ impl Task for DrawTask {
                         offset: (min * draw.dimensions.as_vec2()).into(),
                         extent: ((max - min) * draw.dimensions.as_vec2()).into(),
                         ..Default::default()
+                    }),
+                )?
+            };
+
+            // Set scissor of viewport
+            let min = vec2(
+                view.scissor[0].x.min(view.scissor[1].x),
+                view.scissor[0].y.min(view.scissor[1].y),
+            );
+            let max = vec2(
+                view.scissor[0].x.max(view.scissor[1].x),
+                view.scissor[0].y.max(view.scissor[1].y),
+            );
+            // Skip if scissor contains 0
+            if (max - min).min_element() == 0.0 {
+                return Ok(());
+            }
+
+            unsafe {
+                cbf.set_scissor(
+                    0,
+                    std::slice::from_ref(&vulkano::pipeline::graphics::viewport::Scissor {
+                        offset: (min * draw.dimensions.as_vec2()).as_uvec2().into(),
+                        extent: ((max - min) * draw.dimensions.as_vec2()).as_uvec2().into(),
                     }),
                 )?
             };
