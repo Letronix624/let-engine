@@ -1,5 +1,9 @@
 use atomic_float::AtomicF64;
 use crossbeam::{atomic::AtomicCell, channel::bounded};
+#[cfg(feature = "client")]
+use parking_lot::RwLock;
+#[cfg(feature = "client")]
+use std::collections::VecDeque;
 use std::sync::atomic::Ordering::Relaxed;
 
 use let_engine_core::{
@@ -244,6 +248,8 @@ impl<G: Game<B, E>, E: CustomError, B: Backends> Engine<G, E, B> {
             GameWrapper::new(
                 game,
                 settings.tick_system.clone(),
+                #[cfg(feature = "client")]
+                settings.oldest_fps_sample,
                 #[cfg(feature = "client")]
                 gpu_interface,
                 audio_interface,
@@ -519,6 +525,7 @@ where
     pub fn new(
         game: impl FnOnce(EngineContext<E, B>) -> Result<G, E>,
         tick_settings: tick_system::TickSettings,
+        #[cfg(feature = "client")] delta_time_window_oldest_allowed_sample_age: Duration,
         #[cfg(feature = "client")] gpu: <B::Gpu as GpuBackend>::Interface,
         audio: AudioInterface<<B as Backends>::Kira>,
         server: <B::Networking as NetworkingBackend>::ServerInterface,
@@ -526,7 +533,10 @@ where
     ) -> Result<Self, E> {
         let exit = OnceLock::new();
 
-        let time = Time::default();
+        let time = Time::new(
+            #[cfg(feature = "client")]
+            delta_time_window_oldest_allowed_sample_age,
+        );
         #[cfg(feature = "client")]
         let input = Mutex::new(Input::default());
         let scene = Mutex::new(Scene::default());
@@ -812,14 +822,21 @@ pub struct Time {
     delta_time: AtomicF64,
 
     #[cfg(feature = "client")]
+    delta_time_window: RwLock<VecDeque<(Instant, f64)>>,
+    #[cfg(feature = "client")]
+    delta_time_window_oldest_allowed_sample_age: Duration,
+
+    #[cfg(feature = "client")]
     framerate_limit: AtomicCell<Duration>,
 
-    /// Notification to time dependent tick systems that the time scale has reached zero, so stopped.
+    /// Notification to time dependent tick systems that the time scale is not zero anymore.
     pub(crate) zero_cvar: (Mutex<()>, Condvar),
 }
 
-impl Default for Time {
-    fn default() -> Self {
+impl Time {
+    fn new(
+        #[cfg(feature = "client")] delta_time_window_oldest_allowed_sample_age: Duration,
+    ) -> Self {
         Self {
             time: AtomicCell::new(Instant::now()),
             time_scale: 1.0.into(),
@@ -828,13 +845,15 @@ impl Default for Time {
             #[cfg(feature = "client")]
             delta_time: 0.0.into(),
             #[cfg(feature = "client")]
+            delta_time_window: RwLock::new(VecDeque::with_capacity(180)),
+            #[cfg(feature = "client")]
+            delta_time_window_oldest_allowed_sample_age,
+            #[cfg(feature = "client")]
             framerate_limit: AtomicCell::new(Duration::ZERO),
             zero_cvar: (Mutex::new(()), Condvar::new()),
         }
     }
-}
 
-impl Time {
     /// Updates the time data on frame redraw.
     #[inline]
     #[cfg(feature = "client")]
@@ -842,6 +861,19 @@ impl Time {
         let now = Instant::now();
         let last = self.delta_instant.swap(now);
         let delta = now.duration_since(last).as_secs_f64();
+
+        let mut time_window = self.delta_time_window.write();
+
+        // Add delta to time window
+        time_window.push_back((now, delta));
+
+        // Remove out of date samples
+        while let Some(&(timestamp, _)) = time_window.front()
+            && now.duration_since(timestamp) > self.delta_time_window_oldest_allowed_sample_age
+        {
+            time_window.pop_front();
+        }
+
         self.delta_time.store(delta, Relaxed);
     }
 
@@ -863,7 +895,16 @@ impl Time {
     #[inline]
     #[cfg(feature = "client")]
     pub fn fps(&self) -> f64 {
-        1.0 / self.delta_time.load(Relaxed)
+        // Calculate smooth delta time from the time window
+        let time_window = self.delta_time_window.read();
+
+        let smooth_delta_time = if !time_window.is_empty() {
+            time_window.iter().map(|(_, dt)| *dt).sum::<f64>() / time_window.len() as f64
+        } else {
+            0.0
+        };
+
+        1.0 / smooth_delta_time
     }
 
     /// Returns the time since start of the engine game session.

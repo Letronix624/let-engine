@@ -18,6 +18,16 @@ pub struct EngineSettings<B: Backends> {
     /// The initial settings of the tick system.
     pub tick_system: TickSettings,
 
+    /// The oldest allowed smooth delta time window calculation sample age.
+    ///
+    /// The higher this duration, the smoother the output of [`Time::fps`](crate::engine::Time::fps)
+    /// and the more readable the FPS value for human eyes.
+    ///
+    /// # Default
+    /// - `Duration::from_millis(300)`
+    #[cfg(feature = "client")]
+    pub oldest_fps_sample: std::time::Duration,
+
     pub gpu: <B::Gpu as GpuBackend>::Settings,
     pub audio: AudioSettings<B::Kira>,
     pub networking: <B::Networking as NetworkingBackend>::Settings,
@@ -32,6 +42,8 @@ where
             #[cfg(feature = "client")]
             window: crate::window::WindowBuilder::default(),
             tick_system: TickSettings::default(),
+            #[cfg(feature = "client")]
+            oldest_fps_sample: std::time::Duration::from_millis(300),
             gpu: <B::Gpu as GpuBackend>::Settings::default(),
             audio: AudioSettings::default(),
             networking: <B::Networking as NetworkingBackend>::Settings::default(),
@@ -48,6 +60,8 @@ where
             #[cfg(feature = "client")]
             window: self.window.clone(),
             tick_system: self.tick_system.clone(),
+            #[cfg(feature = "client")]
+            oldest_fps_sample: self.oldest_fps_sample,
             gpu: self.gpu.clone(),
             audio: self.audio.clone(),
             networking: self.networking.clone(),
@@ -66,6 +80,13 @@ impl<B: Backends> EngineSettings<B> {
     /// Sets the value `tick_system` and returns self.
     pub fn tick_system(mut self, tick_system: TickSettings) -> Self {
         self.tick_system = tick_system;
+        self
+    }
+
+    /// Sets the oldest allowed smooth delta time FPS calculation sample age.
+    #[cfg(feature = "client")]
+    pub fn oldest_fps_sample(mut self, sample_age: std::time::Duration) -> Self {
+        self.oldest_fps_sample = sample_age;
         self
     }
 
