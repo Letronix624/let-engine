@@ -2,7 +2,6 @@
 
 use gpu::VulkanTypes;
 use let_engine::prelude::{gpu::buffer::BufferId, *};
-use let_engine_core::circle;
 
 fn main() {
     // Log messages

@@ -1,9 +1,11 @@
 use glam::UVec2;
 use std::sync::{Arc, OnceLock};
-use vulkano::device::Device;
-use vulkano::format::Format;
-use vulkano::image::ImageUsage;
-use vulkano::swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo};
+use vulkano::{
+    device::Device,
+    format::Format,
+    image::ImageUsage,
+    swapchain::{PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo},
+};
 use vulkano_taskgraph::Id;
 use winit::window::Window;
 

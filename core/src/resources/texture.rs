@@ -584,7 +584,7 @@ impl TextureSettingsBuilder {
             }
             _ => {
                 return Err(TextureSettingsBuilderError::ValidationError(
-                    "Unsupported BufferAccess variant".to_string(),
+                    "Unsupported BufferAccess variant".to_owned(),
                 ));
             }
         };

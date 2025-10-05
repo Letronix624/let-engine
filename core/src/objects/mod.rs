@@ -13,13 +13,12 @@ use let_engine_macros::Vertex;
 #[cfg(feature = "physics")]
 use physics::*;
 
-pub mod scenes;
-use scenes::LayerId;
+use super::scenes::LayerId;
 
 use derive_builder::Builder;
 use slotmap::new_key_type;
 
-use glam::{Mat4, Quat, Vec2, vec2};
+use glam::{Mat4, Quat, Vec2};
 
 /// Holds position size and rotation of an object.
 #[derive(Clone, Copy, Debug, PartialEq, Vertex, AnyBitPattern)]
@@ -199,9 +198,9 @@ pub struct ObjectBuilder<T: Loaded> {
 pub struct Object<T: Loaded = ()> {
     pub transform: Transform,
     pub appearance: Appearance<T>,
-    children: HashSet<ObjectId>,
-    parent_id: Option<ObjectId>,
-    layer_id: LayerId,
+    pub(crate) children: HashSet<ObjectId>,
+    pub(crate) parent_id: Option<ObjectId>,
+    pub(crate) layer_id: LayerId,
     #[cfg(feature = "physics")]
     pub(crate) physics: ObjectPhysics,
 }
@@ -417,12 +416,6 @@ impl<T: Loaded> Object<T> {
 use thiserror::Error;
 
 use crate::backend::gpu::Loaded;
-
-/// This error gets returned when the layer that gets specified when an object needs to get added
-/// does not exit in the objects list anymore.
-#[derive(Error, Debug)]
-#[error("No Layer found")]
-pub struct NoLayerError;
 
 /// Errors that happen in object and layer functions.
 #[derive(Error, Debug)]

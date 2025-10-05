@@ -1,6 +1,6 @@
 //! The default input system by the engine.
 
-use let_engine_core::{backend::gpu::Loaded, camera::CameraScaling, objects::scenes::LayerView};
+use let_engine_core::{backend::gpu::Loaded, camera::CameraScaling, scenes::LayerView};
 use std::collections::HashSet;
 pub use winit::event::MouseButton;
 use winit::event::{ElementState, WindowEvent};

@@ -29,7 +29,7 @@ pub struct GpuMaterial {
     settings: MaterialSettings,
     shaders: VulkanGraphicsShaders,
 
-    pub(crate) vertex_input_state: VertexInputState,
+    vertex_input_state: VertexInputState,
 }
 
 concurrent_slotmap::declare_key! {
@@ -113,6 +113,10 @@ impl GpuMaterial {
     /// Returns the graphics shaders of this material.
     pub(crate) fn graphics_shaders(&self) -> &VulkanGraphicsShaders {
         &self.shaders
+    }
+
+    pub(crate) fn vertex_input_state(&self) -> &VertexInputState {
+        &self.vertex_input_state
     }
 }
 

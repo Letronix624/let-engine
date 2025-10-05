@@ -4,8 +4,10 @@ use std::path::PathBuf;
 
 use crate::prelude::*;
 use glam::DVec2;
-pub use winit::event::{ElementState, MouseButton};
-pub use winit::keyboard::*;
+pub use winit::{
+    event::{ElementState, MouseButton},
+    keyboard::*,
+};
 
 /// An event coming with window context.
 #[derive(Debug, Clone)]

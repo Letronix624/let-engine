@@ -43,8 +43,8 @@ use vulkano_taskgraph::{
 };
 use winit::event_loop::ActiveEventLoop;
 
-use let_engine_core::objects::{
-    Descriptor,
+use let_engine_core::{
+    objects::Descriptor,
     scenes::{DrawTarget, LayerId, LayerViewId, Scene},
 };
 
@@ -491,7 +491,7 @@ impl Draw {
             Some(&vulkan.vulkan_pipeline_cache),
             &GraphicsPipelineCreateInfo {
                 stages: &stages,
-                vertex_input_state: Some(&material.vertex_input_state),
+                vertex_input_state: Some(material.vertex_input_state()),
                 input_assembly_state: Some(&InputAssemblyState {
                     topology: topology_to_vulkan(settings.topology),
                     primitive_restart_enable: settings.primitive_restart,
@@ -533,6 +533,7 @@ impl Draw {
         node_id: NodeId,
         vulkan: &Vulkan,
     ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
+        // HINT 1: Do not use `unwrap_or` because it is lazily evaluated.
         if let Some(pipeline) = {
             vulkan
                 .pipeline_cache
@@ -542,6 +543,7 @@ impl Draw {
         } {
             Ok(pipeline)
         } else {
+            // HINT 2: This would be called even if this pipeline exists
             self.cache_pipeline(material_id, node_id, vulkan)
         }
     }

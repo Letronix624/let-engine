@@ -1,13 +1,16 @@
 use std::str::FromStr;
 use std::sync::Arc;
-use vulkano::device::physical::PhysicalDevice;
-use vulkano::device::{
-    Device, DeviceCreateInfo, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags,
+use vulkano::{
+    Version,
+    device::{
+        Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo,
+        QueueFlags,
+        physical::{PhysicalDevice, PhysicalDeviceType},
+    },
+    instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions},
+    library::VulkanLibrary,
+    swapchain::Surface,
 };
-use vulkano::device::{DeviceExtensions, physical::PhysicalDeviceType};
-use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions};
-use vulkano::swapchain::Surface;
-use vulkano::{Version, library::VulkanLibrary};
 use winit::raw_window_handle::HasDisplayHandle;
 
 use crate::backend::gpu::{DefaultGpuBackendError, DefaultGpuBackendError::Unsupported};

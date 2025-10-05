@@ -20,7 +20,7 @@ pub use glam;
 
 #[cfg(feature = "client")]
 pub use let_engine_core::resources;
-pub use let_engine_core::{Direction, camera, objects};
+pub use let_engine_core::{Direction, backend as core_backend, camera, objects};
 
 #[cfg(feature = "client")]
 pub mod window;

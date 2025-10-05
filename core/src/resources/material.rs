@@ -156,9 +156,9 @@ impl GraphicsShaders {
     pub fn new_default() -> Self {
         Self::new(
             include_bytes!(concat!(env!("OUT_DIR"), "/default.vert")).to_vec(),
-            "main".to_string(),
+            "main".to_owned(),
             include_bytes!(concat!(env!("OUT_DIR"), "/default.frag")).to_vec(),
-            "main".to_string(),
+            "main".to_owned(),
         )
     }
 
@@ -174,9 +174,9 @@ impl GraphicsShaders {
     pub fn default_textured() -> Self {
         Self::new(
             include_bytes!(concat!(env!("OUT_DIR"), "/textured.vert")).to_vec(),
-            "main".to_string(),
+            "main".to_owned(),
             include_bytes!(concat!(env!("OUT_DIR"), "/textured.frag")).to_vec(),
-            "main".to_string(),
+            "main".to_owned(),
         )
     }
 }

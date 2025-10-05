@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use glam::UVec2;
 
+#[cfg(feature = "client")]
+use crate::scenes::Scene;
 use crate::{
     objects::Descriptor,
     resources::{
@@ -48,7 +50,7 @@ pub trait GpuBackend: Sized {
     #[cfg(feature = "client")]
     fn draw(
         &mut self,
-        scene: &crate::objects::scenes::Scene<Self::LoadedTypes>,
+        scene: &Scene<Self::LoadedTypes>,
         pre_present_notify: impl FnOnce(),
     ) -> Result<(), Self::Error>;
 
@@ -302,11 +304,7 @@ impl GpuBackend for () {
     }
 
     #[cfg(feature = "client")]
-    fn draw(
-        &mut self,
-        _scene: &crate::objects::scenes::Scene<Self>,
-        _: impl FnOnce(),
-    ) -> Result<(), Self::Error> {
+    fn draw(&mut self, _scene: &Scene<Self>, _: impl FnOnce()) -> Result<(), Self::Error> {
         Ok(())
     }
 

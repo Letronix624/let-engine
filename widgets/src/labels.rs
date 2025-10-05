@@ -227,7 +227,7 @@ impl<T: Loaded + 'static> Label<T> {
 
 impl<T: Loaded + 'static> Label<T> {
     /// Create a GlyphBrush section out of this label description.
-    pub(crate) fn create_section(&self, id: usize) -> Section<'_, usize> {
+    fn create_section(&self, id: usize) -> Section<'_, usize> {
         let extent = self.extent.as_vec2();
 
         let text = Text {
@@ -379,9 +379,9 @@ impl<T: Loaded + 'static> Labelifier<T> {
 
         let text_shaders = GraphicsShaders::new(
             include_bytes!("shaders/text_vert.spv").to_vec(),
-            "main".to_string(),
+            "main".to_owned(),
             include_bytes!("shaders/text_frag.spv").to_vec(),
-            "main".to_string(),
+            "main".to_owned(),
         );
 
         let material = Material::new(material_settings, text_shaders);

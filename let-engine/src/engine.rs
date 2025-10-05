@@ -12,7 +12,7 @@ use let_engine_core::{
         gpu::GpuBackend,
         networking::{NetEvent, NetworkingBackend},
     },
-    objects::scenes::Scene,
+    scenes::Scene,
 };
 
 use parking_lot::{Condvar, Mutex};
@@ -208,7 +208,7 @@ impl<G: Game<B, E>, E: CustomError, B: Backends> Engine<G, E, B> {
 
         let networking_settings = settings.networking.clone();
         let networking_join_handle = std::thread::Builder::new()
-            .name("let-engine-networking-backend".to_string())
+            .name("let-engine-networking-backend".to_owned())
             .spawn(move || {
                 let mut networking_backend = match B::Networking::new(networking_settings) {
                     Ok(n) => {
@@ -297,7 +297,7 @@ impl<G: Game<B, E>, E: CustomError, B: Backends> Engine<G, E, B> {
 
             let game_clone = game.clone();
             let tick_system_join_thread = std::thread::Builder::new()
-                .name("let-engine-tick-system".to_string())
+                .name("let-engine-tick-system".to_owned())
                 .spawn(move || {
                     tick_system::run(game_clone);
                 })
@@ -853,7 +853,7 @@ impl Time {
     /// Updates the time data on frame redraw.
     #[inline]
     #[cfg(feature = "client")]
-    pub(crate) fn update(
+    fn update(
         &self,
         time_window: &mut VecDeque<(Instant, f64)>,
         delta_time_window_oldest_allowed_sample_age: Duration,

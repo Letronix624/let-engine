@@ -282,13 +282,9 @@ impl Cache {
             write.entry(key2).or_insert(data);
         }
 
-        if let Some(data) = result {
-            Ok(data)
-        } else {
-            Err(AssetError::UnsupportedFormat(anyhow!(
-                "The format of the asset file {key} is not compatible."
-            )))
-        }
+        result.ok_or(AssetError::UnsupportedFormat(anyhow!(
+            "The format of the asset file {key} is not compatible."
+        )))
     }
 
     /// Removes all the resources that are not used.

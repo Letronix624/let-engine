@@ -1,9 +1,16 @@
-use super::*;
-use crate::{backend::gpu::Loaded, camera::*};
-use foldhash::HashSet;
-use slotmap::SlotMap;
+#[cfg(feature = "physics")]
+use crate::objects::physics::{AddJointError, Physics, Shape, joints};
 #[cfg(feature = "physics")]
 use {rapier2d::parry::query::DefaultQueryDispatcher, slotmap::KeyData};
+
+use crate::{
+    backend::gpu::Loaded,
+    camera::CameraScaling,
+    objects::{Color, Object, ObjectBuilder, ObjectId, Transform},
+};
+use foldhash::HashSet;
+use glam::{Vec2, vec2};
+use slotmap::{SlotMap, new_key_type};
 
 /// The whole scene seen with all it's layers.
 pub struct Scene<T: Loaded = ()> {
@@ -478,7 +485,7 @@ new_key_type! { pub struct LayerId; }
 
 impl Layer {
     /// Creates a new layer.
-    pub(crate) fn new(id: LayerId, parent_id: Option<LayerId>) -> Self {
+    fn new(id: LayerId, parent_id: Option<LayerId>) -> Self {
         Self {
             objects: HashSet::default(),
             views: HashSet::default(),
@@ -540,7 +547,7 @@ use rapier2d::prelude::*;
 #[cfg(feature = "physics")]
 impl Layer {
     /// Returns the nearest collider id from a specific location.
-    pub fn query_nearest_collider_at(&self, position: Vec2) -> Option<usize> {
+    pub fn query_nearest_collider_at(&self, position: Vec2) -> Option<ObjectId> {
         let query_pipeline = self.physics.broad_phase.as_query_pipeline(
             &DefaultQueryDispatcher,
             &self.physics.rigid_body_set,
@@ -549,13 +556,13 @@ impl Layer {
         );
 
         // TODO: Allow user to set max distance
-        let result = query_pipeline.project_point(&position.into(), 1000., true);
-
-        if let Some((handle, _)) = result {
-            Some(self.physics.collider_set.get(handle).unwrap().user_data as usize)
-        } else {
-            None
-        }
+        query_pipeline
+            .project_point(&position.into(), 1000., true)
+            .map(|(handle, _)| {
+                ObjectId::from(KeyData::from_ffi(
+                    self.physics.collider_set.get(handle).unwrap().user_data as u64,
+                ))
+            })
     }
 
     /// Returns id of the first collider intersecting with given ray.
@@ -573,19 +580,17 @@ impl Layer {
             QueryFilter::new(),
         );
 
-        let result = query_pipeline.cast_ray(
-            &Ray::new(position.into(), direction.into()),
-            time_of_impact,
-            solid,
-        );
-
-        if let Some((handle, _)) = result {
-            Some(ObjectId::from(KeyData::from_ffi(
-                self.physics.collider_set.get(handle).unwrap().user_data as u64,
-            )))
-        } else {
-            None
-        }
+        query_pipeline
+            .cast_ray(
+                &Ray::new(position.into(), direction.into()),
+                time_of_impact,
+                solid,
+            )
+            .map(|(handle, _)| {
+                ObjectId::from(KeyData::from_ffi(
+                    self.physics.collider_set.get(handle).unwrap().user_data as u64,
+                ))
+            })
     }
     /// Returns id of the first collider intersecting with given ray and returns a normal.
     pub fn cast_ray_and_get_normal(
@@ -602,23 +607,21 @@ impl Layer {
             QueryFilter::new(),
         );
 
-        let result = query_pipeline.cast_ray_and_get_normal(
-            &Ray::new(position.into(), direction.into()),
-            time_of_impact,
-            solid,
-        );
-
-        if let Some((handle, intersection)) = result {
-            let inter = intersection.normal;
-            Some((
-                ObjectId::from(KeyData::from_ffi(
-                    self.physics.collider_set.get(handle).unwrap().user_data as u64,
-                )),
-                vec2(inter.x, inter.y),
-            ))
-        } else {
-            None
-        }
+        query_pipeline
+            .cast_ray_and_get_normal(
+                &Ray::new(position.into(), direction.into()),
+                time_of_impact,
+                solid,
+            )
+            .map(|(handle, intersection)| {
+                let inter = intersection.normal;
+                (
+                    ObjectId::from(KeyData::from_ffi(
+                        self.physics.collider_set.get(handle).unwrap().user_data as u64,
+                    )),
+                    vec2(inter.x, inter.y),
+                )
+            })
     }
 
     /// Returns id of the first collider intersecting with given ray.
@@ -657,11 +660,7 @@ impl Layer {
     }
 
     /// Cast a shape and return the first collider intersecting with it.
-    pub fn intersections_with_shape(
-        &self,
-        shape: physics::Shape,
-        position: (Vec2, f32),
-    ) -> Vec<ObjectId> {
+    pub fn intersections_with_shape(&self, shape: Shape, position: (Vec2, f32)) -> Vec<ObjectId> {
         let query_pipeline = self.physics.broad_phase.as_query_pipeline(
             &DefaultQueryDispatcher,
             &self.physics.rigid_body_set,

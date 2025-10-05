@@ -219,19 +219,15 @@ impl std::fmt::Debug for Tick {
 /// The waiting behaviour of the tick system.
 ///
 /// Set to variable by default.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum TimeStep {
     /// Wait a fixed time after every tick, not caring about the duration the tick actually lasted for.
     Fixed,
+
     /// Wait a variable time using the tick_wait field as a target duration.
     ///
     /// That means the tick system waits less the longer the tick took to execute.
     /// This for example prevents the physics system from slowing down in case the iterations get more expensive.
+    #[default]
     Variable,
-}
-
-impl Default for TimeStep {
-    fn default() -> Self {
-        Self::Variable
-    }
 }

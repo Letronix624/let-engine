@@ -19,7 +19,7 @@ pub use tick_system::*;
 pub use let_engine_core::{camera::*, objects::*};
 
 pub use crate::*;
-pub use let_engine_core::{backend as core_backend, circle, model};
+pub use let_engine_core::{circle, model};
 
 // Client structs
 #[cfg(feature = "client")]
@@ -57,4 +57,4 @@ pub use backend::gpu;
 pub use crate::settings::*;
 pub use glam;
 pub use glam::{UVec2, Vec2, uvec2, vec2};
-pub use scenes::*;
+pub use let_engine_core::scenes::*;

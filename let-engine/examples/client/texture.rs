@@ -2,9 +2,8 @@
 //!
 //! Press space to bitshift random pixels to make an interesting effect.
 
-use gpu::VulkanTypes;
+use gpu::{VulkanTypes, texture::TextureId};
 use image::ImageBuffer;
-use let_engine::prelude::gpu::texture::TextureId;
 use let_engine::prelude::*;
 
 static RES: UVec2 = uvec2(1122, 821);

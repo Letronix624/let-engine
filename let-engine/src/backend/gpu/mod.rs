@@ -14,7 +14,7 @@ use draw::Draw;
 use glam::UVec2;
 use let_engine_core::{
     backend::gpu::{GpuBackend, Loaded},
-    objects::{Descriptor, scenes::Scene},
+    objects::Descriptor,
     resources::{
         Format,
         buffer::Location,
@@ -139,7 +139,7 @@ impl GpuBackend for DefaultGpuBackend {
 
     fn draw(
         &mut self,
-        scene: &Scene<Self::LoadedTypes>,
+        scene: &let_engine_core::scenes::Scene<Self::LoadedTypes>,
         pre_present_notify: impl FnOnce(),
     ) -> Result<(), Self::Error> {
         if let Some(draw) = self.draw.get_mut() {
@@ -576,7 +576,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
                 .definition(entry_point)
                 .unwrap(); // TODO
 
-        if !eq_vertex_input_state(&vertex_input_state, &material.vertex_input_state) {
+        if !eq_vertex_input_state(&vertex_input_state, material.vertex_input_state()) {
             return Err(AppearanceCreationError::WrongVertexType);
         }
 

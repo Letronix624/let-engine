@@ -469,7 +469,7 @@ macro_rules! impl_vertex {
                     let stride = std::mem::size_of::<[<$ty>]>() as u32;
 
                     members.insert(
-                        "position".to_string(),
+                        "position".to_owned(),
                         VertexMemberInfo {
                             offset: 0,
                             format: Format::$format,

@@ -19,7 +19,6 @@ anyhow = { workspace = true }
 derive_builder = { workspace = true }
 parking_lot = { workspace = true }
 foldhash = { workspace = true }
-rkyv = { workspace = true }
 image = { workspace = true }
 winit = { workspace = true, optional = true }
 egui = { workspace = true, optional = true }

@@ -2,10 +2,14 @@ pub mod backend;
 pub mod camera;
 pub mod objects;
 pub mod resources;
+pub mod scenes;
 
-use backend::audio::{AudioBackend, AudioBackendError};
-use backend::networking::NetworkingBackend;
-use backend::{Backends, gpu::GpuBackend};
+use backend::{
+    Backends,
+    audio::{AudioBackend, AudioBackendError},
+    gpu::GpuBackend,
+    networking::NetworkingBackend,
+};
 
 use parking_lot::Mutex;
 use thiserror::Error;
