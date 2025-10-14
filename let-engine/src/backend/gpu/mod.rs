@@ -33,6 +33,7 @@ use vulkano::{
     LoadingError, VulkanError as VulkanoError,
     buffer::AllocateBufferError,
     descriptor_set::layout::DescriptorType,
+    device::physical::PhysicalDeviceType,
     format::NumericType,
     image::{AllocateImageError, view::ImageViewType},
     memory::allocator::MemoryAllocatorError,
@@ -99,7 +100,7 @@ impl GpuBackend for DefaultGpuBackend {
     ) -> Result<(Self, Self::Interface), Self::Error> {
         // Initialize backend in case it is not already initialized.
         if VK.get().is_none() {
-            let vulkan = Vulkan::init(event_loop, settings)?;
+            let vulkan = Vulkan::init(event_loop, settings.clone())?;
             let _ = VK.set(vulkan);
         }
         let settings = Arc::new(RwLock::new(settings));
@@ -124,7 +125,7 @@ impl GpuBackend for DefaultGpuBackend {
 
     fn init_window(&mut self, event_loop: &ActiveEventLoop, window: &Arc<winit::window::Window>) {
         // TODO: Remove unwraps
-        let settings = *self.interfacer.settings.read();
+        let settings = self.interfacer.settings.read().clone();
         let draw = Draw::new(
             settings,
             self.settings_receiver.clone(),
@@ -723,7 +724,7 @@ impl std::ops::Index<TextureId> for GpuInterface<'_> {
 impl<'a> GpuInterface<'a> {
     /// Returns the settings of the gpu backend.
     pub fn settings(&self) -> GpuSettings {
-        *self.settings.read()
+        self.settings.read().clone()
     }
 
     pub fn settings_mut<F: FnMut(&mut GpuSettings)>(&self, mut f: F) {
@@ -737,7 +738,7 @@ impl<'a> GpuInterface<'a> {
 
     /// Sets the settings of this gpu backend
     pub fn set_settings(&self, settings: GpuSettings) {
-        *self.settings.write() = settings;
+        *self.settings.write() = settings.clone();
         self.send_settings(settings);
     }
 
@@ -762,7 +763,7 @@ impl<'a> GpuInterface<'a> {
         {
             let mut settings = self.settings.write();
             settings.present_mode = present_mode;
-            self.send_settings(*settings);
+            self.send_settings(settings.clone());
         } else {
             return Err(anyhow!("Present mode not supported."));
         };
@@ -854,7 +855,7 @@ impl From<SpirvBytesNotMultipleOf4> for ShaderError {
 }
 
 /// Backend wide Gpu settings.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct GpuSettings {
     /// An option that determines something called "VSync".
     ///
@@ -877,21 +878,65 @@ pub struct GpuSettings {
     ///
     /// - `2`
     pub max_frames_in_flight: usize, // /// Time waited before each frame.
+
+    /// The function used for device selection.
+    ///
+    /// In case this returns `None`, no suitable device according to the user's criteria is accepted.
+    ///
+    /// # Default
+    ///
+    /// - Always `Some`
+    /// - Prefer discrete GPU over integrated over virtual GPU over CPU.
+    pub device_selection: fn(&[Device]) -> Option<&Device>,
 }
 
 impl Default for GpuSettings {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl GpuSettings {
-    /// Creates a new gpu settings instance.
-    pub fn new() -> Self {
         Self {
             present_mode: PresentMode::Fifo,
             window_handle_retries: 20,
             max_frames_in_flight: 2,
+            device_selection: prefer_device,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Device {
+    pub name: String,
+    pub id: u32,
+    pub device_type: DeviceType,
+}
+
+fn prefer_device(devices: &[Device]) -> Option<&Device> {
+    devices
+        .iter()
+        .min_by_key(|device| match device.device_type {
+            DeviceType::DiscreteGpu => 0,
+            DeviceType::IntegratedGpu => 1,
+            DeviceType::VirtualGpu => 2,
+            DeviceType::Cpu => 3,
+            DeviceType::Other => 4,
+        })
+}
+
+#[derive(Debug, Clone)]
+pub enum DeviceType {
+    DiscreteGpu,
+    IntegratedGpu,
+    VirtualGpu,
+    Cpu,
+    Other,
+}
+
+impl From<PhysicalDeviceType> for DeviceType {
+    fn from(value: PhysicalDeviceType) -> Self {
+        match value {
+            PhysicalDeviceType::DiscreteGpu => DeviceType::DiscreteGpu,
+            PhysicalDeviceType::IntegratedGpu => DeviceType::IntegratedGpu,
+            PhysicalDeviceType::VirtualGpu => DeviceType::VirtualGpu,
+            PhysicalDeviceType::Cpu => DeviceType::Cpu,
+            _ => DeviceType::Other,
         }
     }
 }

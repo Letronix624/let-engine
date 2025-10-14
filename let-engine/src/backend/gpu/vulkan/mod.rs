@@ -107,8 +107,12 @@ impl Vulkan {
             wide_lines: true,
             ..DeviceFeatures::empty()
         };
-        let (device, queues) =
-            instance::create_device_and_queues(&instance, &features, event_loop)?;
+        let (device, queues) = instance::create_device_and_queues(
+            &instance,
+            &features,
+            event_loop,
+            settings.device_selection,
+        )?;
 
         let descriptor_set_allocator = StandardDescriptorSetAllocator::new(
             &device,

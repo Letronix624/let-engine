@@ -4,8 +4,7 @@ use vulkano::{
     Version,
     device::{
         Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo,
-        QueueFlags,
-        physical::{PhysicalDevice, PhysicalDeviceType},
+        QueueFlags, physical::PhysicalDevice,
     },
     instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions},
     library::VulkanLibrary,
@@ -13,7 +12,7 @@ use vulkano::{
 };
 use winit::raw_window_handle::HasDisplayHandle;
 
-use crate::backend::gpu::{DefaultGpuBackendError, DefaultGpuBackendError::Unsupported};
+use crate::backend::gpu::DefaultGpuBackendError::{self, Unsupported};
 
 #[derive(Debug)]
 pub struct Queues {
@@ -121,6 +120,7 @@ fn choose_physical_device(
     device_extensions: &DeviceExtensions,
     features: &DeviceFeatures,
     handle: &impl HasDisplayHandle,
+    device_selection: fn(&[crate::backend::gpu::Device]) -> Option<&crate::backend::gpu::Device>,
 ) -> Result<(Arc<PhysicalDevice>, [Option<usize>; 3]), DefaultGpuBackendError> {
     let devices = instance.enumerate_physical_devices().map_err(|e| {
         if let vulkano::VulkanError::InitializationFailed = e {
@@ -130,17 +130,31 @@ fn choose_physical_device(
         }
     })?;
 
-    devices
+    let devices: Vec<_> = devices
         .filter(|p| p.supported_extensions().contains(device_extensions))
         .filter(|p| p.supported_features().contains(features))
         .filter_map(|p| find_queue_families(&p, handle).map(|queue_families| (p, queue_families)))
-        .min_by_key(|(p, _)| match p.properties().device_type {
-            PhysicalDeviceType::DiscreteGpu => 0,
-            PhysicalDeviceType::IntegratedGpu => 1,
-            PhysicalDeviceType::VirtualGpu => 2,
-            PhysicalDeviceType::Cpu => 3,
-            PhysicalDeviceType::Other => 4,
-            _ => 5,
+        .collect();
+
+    let chooseable: Vec<_> = devices
+        .iter()
+        .map(|(p, _)| {
+            let properties = p.properties();
+            crate::backend::gpu::Device {
+                name: properties.device_name.clone(),
+                id: properties.device_id,
+                device_type: properties.device_type.into(),
+            }
+        })
+        .collect();
+
+    let chosen = device_selection(&chooseable)
+        .ok_or_else(|| Unsupported("No graphics device suitable for drawing the game found."))?;
+
+    devices
+        .into_iter()
+        .find_map(|(device, queue_families)| {
+            (device.properties().device_id == chosen.id).then_some((device, queue_families))
         })
         .ok_or_else(|| Unsupported("No graphics device suitable for drawing the game found."))
 }
@@ -195,6 +209,7 @@ pub fn create_device_and_queues(
     instance: &Arc<Instance>,
     features: &DeviceFeatures,
     handle: &impl HasDisplayHandle,
+    device_selection: fn(&[crate::backend::gpu::Device]) -> Option<&crate::backend::gpu::Device>,
 ) -> Result<(Arc<Device>, Arc<Queues>), DefaultGpuBackendError> {
     let device_extensions = DeviceExtensions {
         khr_swapchain: true,
@@ -203,8 +218,13 @@ pub fn create_device_and_queues(
     };
 
     // selects the physical device to be used using this order of preferred devices as well as a list of queue families.
-    let (physical_device, queue_families) =
-        choose_physical_device(instance, &device_extensions, features, handle)?;
+    let (physical_device, queue_families) = choose_physical_device(
+        instance,
+        &device_extensions,
+        features,
+        handle,
+        device_selection,
+    )?;
 
     let queue_create_infos: Vec<QueueCreateInfo> = queue_families
         .iter()
