@@ -8,7 +8,6 @@ use crate::{
     camera::CameraScaling,
     objects::{Color, Object, ObjectBuilder, ObjectId, Transform},
 };
-use foldhash::HashSet;
 use glam::{Vec2, vec2};
 use slotmap::{SlotMap, new_key_type};
 
@@ -43,7 +42,8 @@ impl<T: Loaded> Default for Scene<T> {
         ));
 
         // Add root view to root layer.
-        layers[root_layer_id].views.insert(root_layer_view_id);
+        // No need to sort; This is the first insert
+        layers[root_layer_id].views.push(root_layer_view_id);
 
         Self {
             layers,
@@ -98,7 +98,7 @@ impl<T: Loaded> Scene<T> {
 
         let parent = self.layers.get_mut(parent_id)?;
 
-        parent.layers.insert(layer_id);
+        parent.layers.push(layer_id);
 
         self.layer_tree_version += 1;
 
@@ -127,8 +127,9 @@ impl<T: Loaded> Scene<T> {
         // Remove layer from parent if there is one
         if let Some(parent_id) = layer.parent_id
             && let Some(parent) = self.layers.get_mut(parent_id)
+            && let Ok(id) = parent.layers.binary_search(&id)
         {
-            parent.layers.remove(&id);
+            parent.layers.remove(id);
         };
 
         // recursively get all ids to be removed
@@ -189,7 +190,9 @@ impl<T: Loaded> Scene<T> {
 
         let key = self.layer_views.insert(view);
 
-        layer.views.insert(key);
+        if let Err(index) = layer.views.binary_search(&key) {
+            layer.views.insert(index, key);
+        }
 
         self.layer_tree_version += 1;
 
@@ -218,7 +221,9 @@ impl<T: Loaded> Scene<T> {
         };
 
         let layer = self.layers.get_mut(view.layer_id()).unwrap();
-        layer.views.remove(&view_id);
+        if let Ok(index) = layer.views.binary_search(&view_id) {
+            layer.views.remove(index);
+        }
 
         self.layer_tree_version += 1;
     }
@@ -229,7 +234,7 @@ impl<T: Loaded> Scene<T> {
         let object = Object {
             transform: builder.transform,
             appearance: builder.appearance,
-            children: HashSet::default(),
+            children: Vec::new(),
             parent_id: None,
             layer_id,
             #[cfg(feature = "physics")]
@@ -241,7 +246,9 @@ impl<T: Loaded> Scene<T> {
         #[cfg(feature = "physics")]
         self.dirty_objects.push(object_id);
 
-        layer.objects.insert(object_id);
+        if let Err(index) = layer.objects.binary_search(&object_id) {
+            layer.objects.insert(index, object_id);
+        }
 
         Some(object_id)
     }
@@ -259,7 +266,7 @@ impl<T: Loaded> Scene<T> {
         let object = Object {
             transform: builder.transform,
             appearance: builder.appearance,
-            children: HashSet::default(),
+            children: Vec::new(),
             parent_id: Some(parent_id),
             layer_id: layer.id,
             #[cfg(feature = "physics")]
@@ -271,12 +278,13 @@ impl<T: Loaded> Scene<T> {
         #[cfg(feature = "physics")]
         self.dirty_objects.push(object_id);
 
-        self.objects
-            .get_mut(parent_id)
-            .unwrap()
-            .children
-            .insert(object_id);
-        layer.objects.insert(object_id);
+        let parent = self.objects.get_mut(parent_id).unwrap();
+        if let Err(index) = parent.children.binary_search(&object_id) {
+            parent.children.insert(index, object_id);
+        }
+        if let Err(index) = layer.objects.binary_search(&object_id) {
+            layer.objects.insert(index, object_id);
+        }
 
         Some(object_id)
     }
@@ -318,15 +326,18 @@ impl<T: Loaded> Scene<T> {
         let Some(layer) = self.layers.get_mut(object.layer_id) else {
             return;
         };
-        layer.objects.remove(&id);
+        if let Ok(index) = layer.objects.binary_search(&id) {
+            layer.objects.remove(index);
+        }
         #[cfg(feature = "physics")]
         object.physics.remove(&mut layer.physics);
 
         // Remove yourself from parent
         if let Some(parent_id) = object.parent_id
             && let Some(parent) = self.objects.get_mut(parent_id)
+            && let Ok(index) = parent.children.binary_search(&id)
         {
-            parent.children.remove(&id);
+            parent.children.remove(index);
         }
 
         // Create removal stack
@@ -470,9 +481,9 @@ impl<T: Loaded> std::ops::IndexMut<ObjectId> for Scene<T> {
 /// A layer struct holding it's own object hierarchy, camera and physics iteration.
 #[derive(Debug)]
 pub struct Layer {
-    objects: HashSet<ObjectId>,
-    views: HashSet<LayerViewId>,
-    layers: HashSet<LayerId>,
+    objects: Vec<ObjectId>,
+    views: Vec<LayerViewId>,
+    layers: Vec<LayerId>,
     id: LayerId,
     parent_id: Option<LayerId>,
     #[cfg(feature = "physics")]
@@ -487,9 +498,9 @@ impl Layer {
     /// Creates a new layer.
     fn new(id: LayerId, parent_id: Option<LayerId>) -> Self {
         Self {
-            objects: HashSet::default(),
-            views: HashSet::default(),
-            layers: HashSet::default(),
+            objects: Vec::new(),
+            views: Vec::new(),
+            layers: Vec::new(),
             id,
             parent_id,
 

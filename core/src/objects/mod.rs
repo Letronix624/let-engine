@@ -8,7 +8,6 @@ pub use color::Color;
 
 #[cfg(feature = "physics")]
 pub mod physics;
-use foldhash::HashSet;
 use let_engine_macros::Vertex;
 #[cfg(feature = "physics")]
 use physics::*;
@@ -30,7 +29,7 @@ pub struct Transform {
     #[format(R32Float)]
     pub rotation: f32,
 }
-impl Eq for Transform {}
+
 impl Transform {
     const ORIGIN: Self = Self {
         position: Vec2::ZERO,
@@ -198,7 +197,7 @@ pub struct ObjectBuilder<T: Loaded> {
 pub struct Object<T: Loaded = ()> {
     pub transform: Transform,
     pub appearance: Appearance<T>,
-    pub(crate) children: HashSet<ObjectId>,
+    pub(crate) children: Vec<ObjectId>,
     pub(crate) parent_id: Option<ObjectId>,
     pub(crate) layer_id: LayerId,
     #[cfg(feature = "physics")]
