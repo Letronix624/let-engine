@@ -10,7 +10,9 @@ use glyph_brush::{
     Section, SectionBuilder, Text, VerticalAlign, ab_glyph,
 };
 use let_engine_core::backend::gpu::{GpuInterface, Loaded};
-use let_engine_core::objects::{AppearanceBuilder, Color, Descriptor};
+use let_engine_core::objects::{
+    Appearance, AppearanceBuilder, AppearanceBuilderError, Color, Descriptor,
+};
 use let_engine_core::resources::buffer::{
     Buffer, BufferAccess, BufferUsage, LoadedBuffer, Location,
 };
@@ -147,7 +149,7 @@ pub struct Label<T: Loaded + 'static> {
     pub font: Font,
     pub transform: Transform,
     sender: Sender<Self>,
-    material_id: T::MaterialId,
+    material_id: T::MaterialId<TVert>,
     buffer_id: T::BufferId<Color>,
     model_id: T::ModelId<TVert>,
     texture_id: T::TextureId,
@@ -210,11 +212,15 @@ impl<T: Loaded + 'static> Label<T> {
     }
 
     /// Returns the appearance of this label to be used with objects for label objects.
-    pub fn appearance(&self) -> AppearanceBuilder<T> {
+    pub fn appearance(
+        &self,
+        gpu_interface: &impl GpuInterface<T>,
+    ) -> Result<Appearance<T>, AppearanceBuilderError<T>> {
         let mut transform = self.transform;
-        transform.size *= self.extent.as_vec2();
+        transform.size *= self.extent.as_vec2().extend(1.0);
         AppearanceBuilder::default()
             .transform(transform)
+            .transparent(true)
             .model(self.model_id)
             .material(self.material_id)
             .descriptors(&[
@@ -222,6 +228,7 @@ impl<T: Loaded + 'static> Label<T> {
                 (Location::new(1, 0), Descriptor::buffer(self.buffer_id)),
                 (Location::new(2, 0), Descriptor::Texture(self.texture_id)),
             ])
+            .build(gpu_interface)
     }
 }
 
@@ -342,7 +349,7 @@ struct TextVertex {
 
 /// A label maker holding
 pub struct Labelifier<T: Loaded + 'static> {
-    material_id: T::MaterialId,
+    material_id: T::MaterialId<TVert>,
 
     current_texture_id: T::TextureId,
     virtual_texture_id: T::TextureId,
@@ -571,7 +578,7 @@ impl<T: Loaded + 'static> Labelifier<T> {
     }
 
     /// Returns the global material of all labels.
-    pub fn material_id(&self) -> &T::MaterialId {
+    pub fn material_id(&self) -> &T::MaterialId<TVert> {
         &self.material_id
     }
 

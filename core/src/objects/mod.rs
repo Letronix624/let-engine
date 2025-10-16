@@ -8,6 +8,9 @@ pub use color::Color;
 
 #[cfg(feature = "physics")]
 pub mod physics;
+
+#[cfg(feature = "physics")]
+use glam::Vec2;
 use let_engine_macros::Vertex;
 #[cfg(feature = "physics")]
 use physics::*;
@@ -17,29 +20,29 @@ use super::scenes::LayerId;
 use derive_builder::Builder;
 use slotmap::new_key_type;
 
-use glam::{Mat4, Quat, Vec2};
+use glam::{Mat4, Quat, Vec3};
 
 /// Holds position size and rotation of an object.
 #[derive(Clone, Copy, Debug, PartialEq, Vertex, AnyBitPattern)]
 pub struct Transform {
     #[format(Rg32Float)]
-    pub position: Vec2,
+    pub position: Vec3,
     #[format(Rg32Float)]
-    pub size: Vec2,
+    pub size: Vec3,
     #[format(R32Float)]
-    pub rotation: f32,
+    pub rotation: Quat,
 }
 
 impl Transform {
     const ORIGIN: Self = Self {
-        position: Vec2::ZERO,
-        size: Vec2::ONE,
-        rotation: 0.0,
+        position: Vec3::ZERO,
+        size: Vec3::ONE,
+        rotation: Quat::IDENTITY,
     };
 
     /// Creates a new [`Transform`].
     #[inline]
-    pub fn new(position: Vec2, size: Vec2, rotation: f32) -> Self {
+    pub fn new(position: Vec3, size: Vec3, rotation: Quat) -> Self {
         Self {
             position,
             size,
@@ -47,36 +50,91 @@ impl Transform {
         }
     }
 
+    /// Creates a new [`Transform`] from 2D arguments
+    #[inline]
+    pub fn new_2d(position: Vec2, size: Vec2, rotation: f32) -> Self {
+        Self {
+            position: position.extend(0.0),
+            size: size.extend(1.0),
+            rotation: Quat::from_rotation_z(rotation),
+        }
+    }
+
     /// Creates a new [`Transform`] with the given position.
     #[inline]
-    pub fn with_position(position: Vec2) -> Self {
+    pub fn with_position(position: Vec3) -> Self {
         Self {
             position,
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given 2D position.
+    #[inline]
+    pub fn with_position_2d(position: Vec2) -> Self {
+        Self {
+            position: position.extend(0.0),
             ..Default::default()
         }
     }
 
     /// Creates a new [`Transform`] with the given size.
     #[inline]
-    pub fn with_size(size: Vec2) -> Self {
+    pub fn with_size(size: Vec3) -> Self {
         Self {
             size,
             ..Default::default()
         }
     }
 
+    /// Creates a new [`Transform`] with the given 2D size.
+    #[inline]
+    pub fn with_size_2d(size: Vec2) -> Self {
+        Self {
+            size: size.extend(1.0),
+            ..Default::default()
+        }
+    }
+
     /// Creates a new [`Transform`] with the given rotation.
     #[inline]
-    pub fn with_rotation(rotation: f32) -> Self {
+    pub fn with_rotation(rotation: Quat) -> Self {
         Self {
             rotation,
             ..Default::default()
         }
     }
 
+    /// Creates a new [`Transform`] with the given x angle.
+    #[inline]
+    pub fn with_angle_x(angle: f32) -> Self {
+        Self {
+            rotation: Quat::from_rotation_x(angle),
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given y angle.
+    #[inline]
+    pub fn with_angle_y(angle: f32) -> Self {
+        Self {
+            rotation: Quat::from_rotation_y(angle),
+            ..Default::default()
+        }
+    }
+
+    /// Creates a new [`Transform`] with the given z angle.
+    #[inline]
+    pub fn with_angle_z(angle: f32) -> Self {
+        Self {
+            rotation: Quat::from_rotation_z(angle),
+            ..Default::default()
+        }
+    }
+
     /// Creates a new [`Transform`] with the given position and size.
     #[inline]
-    pub fn with_position_size(position: Vec2, size: Vec2) -> Self {
+    pub fn with_position_size(position: Vec3, size: Vec3) -> Self {
         Self {
             position,
             size,
@@ -84,9 +142,19 @@ impl Transform {
         }
     }
 
+    /// Creates a new [`Transform`] with the given 2D position and size.
+    #[inline]
+    pub fn with_position_size_2d(position: Vec2, size: Vec2) -> Self {
+        Self {
+            position: position.extend(0.0),
+            size: size.extend(1.0),
+            ..Default::default()
+        }
+    }
+
     /// Creates a new [`Transform`] with the given position and rotation.
     #[inline]
-    pub fn with_position_rotation(position: Vec2, rotation: f32) -> Self {
+    pub fn with_position_rotation(position: Vec3, rotation: Quat) -> Self {
         Self {
             position,
             rotation,
@@ -96,7 +164,7 @@ impl Transform {
 
     /// Creates a new [`Transform`] with the given size and rotation.
     #[inline]
-    pub fn with_size_rotation(size: Vec2, rotation: f32) -> Self {
+    pub fn with_size_rotation(size: Vec3, rotation: Quat) -> Self {
         Self {
             size,
             rotation,
@@ -104,39 +172,37 @@ impl Transform {
         }
     }
 
-    /// Combines two Transforms with each other. It adds position, multiplies size and adds rotation.
-    pub fn combine(self, parent: Self) -> Self {
-        // Calculate the rotation matrix for the parent's rotation
-        let rotation_matrix = glam::Mat2::from_angle(parent.rotation);
-
-        // Apply the parent's rotation to the child's position
-        let new_position = rotation_matrix * self.position + parent.position;
-
-        // Combine the sizes
-        let new_size = self.size * parent.size;
-
-        // Combine the rotations
-        let new_rotation = self.rotation + parent.rotation;
-
-        Transform {
-            position: new_position,
-            size: new_size,
-            rotation: new_rotation,
-        }
-    }
-
-    /// Creates a view matrix using the transform as a camera orientation.
-    pub fn make_view_matrix(&self) -> Mat4 {
-        let translation = Mat4::from_translation(self.position.extend(0.0));
-        let rotation = Mat4::from_rotation_z(self.rotation);
-        let scale = Mat4::from_scale(self.size.extend(1.0));
-
-        (translation * rotation * scale).inverse()
+    /// Turns the transform into a four dimensional affine transformation matrix.
+    pub fn to_matrix(&self) -> Mat4 {
+        Mat4::from_scale_rotation_translation(self.size, self.rotation, self.position)
     }
 }
 
-impl From<(Vec2, f32)> for Transform {
-    fn from(value: (Vec2, f32)) -> Self {
+impl std::ops::Mul for Transform {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self::Output {
+        let child_matrix = rhs.to_matrix();
+        let parent_matrix = self.to_matrix();
+
+        let (scale, rotation, translation) =
+            (parent_matrix * child_matrix).to_scale_rotation_translation();
+
+        Self {
+            position: translation,
+            size: scale,
+            rotation,
+        }
+    }
+}
+
+impl std::ops::MulAssign for Transform {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = *self * rhs;
+    }
+}
+
+impl From<(Vec3, Quat)> for Transform {
+    fn from(value: (Vec3, Quat)) -> Self {
         Self {
             position: value.0,
             rotation: value.1,
@@ -145,7 +211,7 @@ impl From<(Vec2, f32)> for Transform {
     }
 }
 
-impl From<Transform> for (Vec2, f32) {
+impl From<Transform> for (Vec3, Quat) {
     fn from(value: Transform) -> Self {
         (value.position, value.rotation)
     }
@@ -157,29 +223,6 @@ impl Default for Transform {
         Self::ORIGIN
     }
 }
-
-//     /// Takes a vector of every object transform and appearance and fills it with the right client order based on the root node inserted.
-//     pub fn order_position(order: &mut Vec<VisualObject<T>>, objects: &Self) {
-//         for child in objects.children.iter() {
-//             let child = child.lock();
-//             if !child.object.appearance.visible() {
-//                 continue;
-//             }
-//             let object = VisualObject::combined(&child.object, &objects.object);
-//             order.push(object.clone());
-//             for child in child.children.iter() {
-//                 let child = child.lock();
-//                 if !child.object.appearance.visible() {
-//                     continue;
-//                 }
-//                 order.push(VisualObject {
-//                     transform: child.object.transform.combine(object.transform),
-//                     appearance: child.object.appearance().clone(),
-//                 });
-//                 Self::order_position(order, &child);
-//             }
-//         }
-//     }
 
 /// Object to be initialized to the layer.
 #[derive(Clone, Builder)]
@@ -208,9 +251,21 @@ new_key_type! { pub struct ObjectId; }
 
 impl<T: Loaded> ObjectBuilder<T> {
     /// Returns a default object
+    #[inline]
     pub fn new(appearance: Appearance<T>) -> Self {
         Self {
             transform: Transform::default(),
+            appearance,
+            #[cfg(feature = "physics")]
+            physics: ObjectPhysics::default(),
+        }
+    }
+
+    /// Returns an object with the given transform.
+    #[inline]
+    pub fn with_transform(transform: Transform, appearance: Appearance<T>) -> Self {
+        Self {
+            transform,
             appearance,
             #[cfg(feature = "physics")]
             physics: ObjectPhysics::default(),
@@ -221,7 +276,7 @@ impl<T: Loaded> ObjectBuilder<T> {
 /// Setters
 impl<T: Loaded> ObjectBuilder<T> {
     /// Sets the position and rotation of an object.
-    pub fn set_isometry(&mut self, position: Vec2, rotation: f32) {
+    pub fn set_isometry(&mut self, position: Vec3, rotation: Quat) {
         self.transform.position = position;
         self.transform.rotation = rotation;
     }
@@ -294,15 +349,9 @@ impl<T: Loaded> Object<T> {
     //     }
     // }
 
-    /// Creates a model matrix for the given object.
-    pub fn make_model_matrix(&self) -> Mat4 {
-        let transform = self.appearance.transform().combine(self.transform);
-
-        Mat4::from_scale_rotation_translation(
-            transform.size.extend(0.0),
-            Quat::from_rotation_z(transform.rotation),
-            transform.position.extend(0.0),
-        )
+    #[inline]
+    pub fn visual_transform(&self) -> Transform {
+        self.transform * *self.appearance.transform()
     }
 
     // /// Removes the object from it's layer in case it is still initialized.
@@ -351,7 +400,7 @@ impl<T: Loaded> Object<T> {
     }
 
     /// Sets the position and rotation of an object.
-    pub fn set_isometry(&mut self, position: Vec2, rotation: f32) {
+    pub fn set_isometry(&mut self, position: Vec3, rotation: Quat) {
         self.transform.position = position;
         self.transform.rotation = rotation;
     }

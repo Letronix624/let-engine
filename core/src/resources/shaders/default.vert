@@ -12,7 +12,5 @@ layout (push_constant) uniform pc {
 } model;
 
 void main() {
-
     gl_Position = view_proj.proj * view_proj.view * model.model * vec4(position, 0.0, 1.0);
-
 }

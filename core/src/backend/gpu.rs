@@ -74,7 +74,7 @@ pub trait GpuInterfacer<T: Loaded>: Clone + Send + Sync {
 }
 
 pub trait GpuInterface<T: Loaded> {
-    fn load_material<V: Vertex>(&self, material: &Material) -> Result<T::MaterialId>;
+    fn load_material<V: Vertex>(&self, material: &Material<V>) -> Result<T::MaterialId<V>>;
     fn load_buffer<B: Data>(&self, buffer: &Buffer<B>) -> Result<T::BufferId<B>>;
     fn load_model<V: Vertex>(&self, model: &Model<V>) -> Result<T::ModelId<V>>;
     fn load_texture(&self, texture: &Texture) -> Result<T::TextureId>;
@@ -94,31 +94,35 @@ pub trait GpuInterface<T: Loaded> {
         settings: TextureSettings,
     ) -> Result<T::TextureId>;
 
-    fn add_virtual_material(&self, id: T::MaterialId) -> Result<T::MaterialId>;
+    fn add_virtual_material<V: Vertex>(&self, id: T::MaterialId<V>) -> Result<T::MaterialId<V>>;
     fn add_virtual_buffer<B: Data>(&self, id: T::BufferId<B>) -> Result<T::BufferId<B>>;
     fn add_virtual_model<V: Vertex>(&self, id: T::ModelId<V>) -> Result<T::ModelId<V>>;
     fn add_virtual_texture(&self, id: T::TextureId) -> Result<T::TextureId>;
 
-    fn map_virtual_material(&self, from: T::MaterialId, to: T::MaterialId) -> Result<()>;
+    fn map_virtual_material<V: Vertex>(
+        &self,
+        from: T::MaterialId<V>,
+        to: T::MaterialId<V>,
+    ) -> Result<()>;
     fn map_virtual_buffer<B: Data>(&self, from: T::BufferId<B>, to: T::BufferId<B>) -> Result<()>;
     fn map_virtual_model<V: Vertex>(&self, from: T::ModelId<V>, to: T::ModelId<V>) -> Result<()>;
     fn map_virtual_texture(&self, from: T::TextureId, to: T::TextureId) -> Result<()>;
 
-    fn material(&self, id: T::MaterialId) -> Option<&T::Material>;
+    fn material<V: Vertex>(&self, id: T::MaterialId<V>) -> Option<&T::Material<V>>;
     fn buffer<B: Data>(&self, id: T::BufferId<B>) -> Option<&T::Buffer<B>>;
     fn model<V: Vertex>(&self, id: T::ModelId<V>) -> Option<&T::Model<V>>;
     fn texture(&self, id: T::TextureId) -> Option<&T::Texture>;
 
-    fn remove_material(&self, id: T::MaterialId) -> Result<()>;
+    fn remove_material<V: Vertex>(&self, id: T::MaterialId<V>) -> Result<()>;
     fn remove_buffer<B: Data>(&self, id: T::BufferId<B>) -> Result<()>;
     fn remove_model<V: Vertex>(&self, id: T::ModelId<V>) -> Result<()>;
     fn remove_texture(&self, id: T::TextureId) -> Result<()>;
 
     /// Validates if the backend allows this combination of material, model and buffers.
-    fn validate_appearance(
+    fn validate_appearance<V: Vertex>(
         &self,
-        material: T::MaterialId,
-        model: T::ModelId<u8>,
+        material: T::MaterialId<V>,
+        model: T::ModelId<V>,
         descriptors: &BTreeMap<Location, Descriptor<T>>,
     ) -> Result<(), T::AppearanceCreationError>;
 }
@@ -136,7 +140,7 @@ pub trait ResourceId {
 }
 
 impl GpuInterface<()> for () {
-    fn load_material<V: Vertex>(&self, _material: &Material) -> Result<()> {
+    fn load_material<V: Vertex>(&self, _material: &Material<V>) -> Result<()> {
         Ok(())
     }
 
@@ -172,7 +176,7 @@ impl GpuInterface<()> for () {
         Ok(())
     }
 
-    fn add_virtual_material(&self, _id: ()) -> Result<()> {
+    fn add_virtual_material<V: Vertex>(&self, _id: ()) -> Result<()> {
         Ok(())
     }
     fn add_virtual_buffer<B: Data>(&self, _id: ()) -> Result<()> {
@@ -185,7 +189,7 @@ impl GpuInterface<()> for () {
         Ok(())
     }
 
-    fn map_virtual_material(&self, _from: (), _to: ()) -> Result<()> {
+    fn map_virtual_material<V: Vertex>(&self, _from: (), _to: ()) -> Result<()> {
         Ok(())
     }
     fn map_virtual_buffer<B: Data>(&self, _from: (), _to: ()) -> Result<()> {
@@ -198,7 +202,7 @@ impl GpuInterface<()> for () {
         Ok(())
     }
 
-    fn material(&self, _id: ()) -> Option<&()> {
+    fn material<V: Vertex>(&self, _id: ()) -> Option<&()> {
         None
     }
 
@@ -214,7 +218,7 @@ impl GpuInterface<()> for () {
         None
     }
 
-    fn remove_material(&self, _id: ()) -> Result<()> {
+    fn remove_material<V: Vertex>(&self, _id: ()) -> Result<()> {
         Ok(())
     }
 
@@ -230,7 +234,7 @@ impl GpuInterface<()> for () {
         Ok(())
     }
 
-    fn validate_appearance(
+    fn validate_appearance<V: Vertex>(
         &self,
         _material: (),
         _model: (),
@@ -243,8 +247,11 @@ impl GpuInterface<()> for () {
 /// Loaded version of types used by the gpu backend.
 pub trait Loaded: Clone + Default {
     /// The type of a material when it is loaded.
-    type Material: Send + Sync;
-    type MaterialId: Copy + Send + Sync;
+    type Material<V: Vertex>: Send + Sync;
+    type MaterialId<V: Vertex>: Copy + Send + Sync;
+    /// # Safety
+    /// The given unit vertex type is just a placeholder and is not usable.
+    unsafe fn material_id_unit<V: Vertex>(material: Self::MaterialId<V>) -> Self::MaterialId<()>;
 
     /// The type of a buffer when it is loaded.
     type Buffer<B: Data>: LoadedBuffer<B>;
@@ -256,7 +263,7 @@ pub trait Loaded: Clone + Default {
     type ModelId<V: Vertex>: Copy + Send + Sync;
     /// # Safety
     /// Different vertex types are not compatible with each other. Do not use modified ID.
-    unsafe fn model_id_u8<V: Vertex>(model: Self::ModelId<V>) -> Self::ModelId<u8>;
+    unsafe fn model_id_unit<V: Vertex>(model: Self::ModelId<V>) -> Self::ModelId<()>;
 
     /// The type of a texture when it is loaded.
     type Texture: LoadedTexture;
@@ -267,14 +274,15 @@ pub trait Loaded: Clone + Default {
 }
 
 impl Loaded for () {
-    type Material = ();
-    type MaterialId = ();
+    type Material<V: Vertex> = ();
+    type MaterialId<V: Vertex> = ();
+    unsafe fn material_id_unit<V: Vertex>(_material: Self::MaterialId<V>) -> Self::MaterialId<()> {}
     type Buffer<B: Data> = ();
     type BufferId<B: Data> = ();
     fn buffer_id_u8<B: Data>(_buffer: Self::BufferId<B>) -> Self::BufferId<u8> {}
     type Model<V: Vertex> = ();
     type ModelId<V: Vertex> = ();
-    unsafe fn model_id_u8<V: Vertex>(_model: Self::ModelId<V>) -> Self::ModelId<u8> {}
+    unsafe fn model_id_unit<V: Vertex>(_model: Self::ModelId<V>) -> Self::ModelId<()> {}
     type Texture = ();
     type TextureId = ();
 

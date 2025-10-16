@@ -8,7 +8,7 @@ use let_engine_core::resources::{
     model::Vertex,
 };
 
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 use thiserror::Error;
 
 use vulkano::{
@@ -25,19 +25,28 @@ use super::{VulkanError, vertex_buffer_description_to_vulkano, vulkan::Vulkan};
 
 /// A material holding the way an object should be drawn.
 #[derive(Clone)]
-pub struct GpuMaterial {
+pub struct GpuMaterial<V: Vertex> {
     settings: MaterialSettings,
     shaders: VulkanGraphicsShaders,
 
     vertex_input_state: VertexInputState,
+    _marker: PhantomData<V>,
 }
 
-concurrent_slotmap::declare_key! {
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub struct MaterialId
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MaterialId<V: Vertex>(concurrent_slotmap::SlotId, PhantomData<V>);
+
+impl<V: Vertex> concurrent_slotmap::Key for MaterialId<V> {
+    fn from_id(id: concurrent_slotmap::SlotId) -> Self {
+        Self(id, PhantomData)
+    }
+
+    fn as_id(self) -> concurrent_slotmap::SlotId {
+        self.0
+    }
 }
 
-impl MaterialId {
+impl<V: Vertex> MaterialId<V> {
     pub const TAG_BIT: u32 = 1 << 6;
 
     pub fn is_virtual(&self) -> bool {
@@ -63,7 +72,7 @@ pub enum GpuMaterialError {
     InvalidSettings(&'static str, String),
 }
 
-impl std::fmt::Debug for GpuMaterial {
+impl<V: Vertex> std::fmt::Debug for GpuMaterial<V> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Material")
             .field("settings", &self.settings)
@@ -75,12 +84,9 @@ impl std::fmt::Debug for GpuMaterial {
 /// # Creation
 ///
 /// Right now it produces an error when the shaders do not have a main function.
-impl GpuMaterial {
+impl<V: Vertex> GpuMaterial<V> {
     /// Creates a new material using the given shaders, settings and write operations.
-    pub(crate) fn new<V: Vertex>(
-        material: &Material,
-        vulkan: &Vulkan,
-    ) -> Result<Self, GpuMaterialError> {
+    pub(crate) fn new(material: &Material<V>, vulkan: &Vulkan) -> Result<Self, GpuMaterialError> {
         let settings = material.settings.clone();
         let shaders = unsafe {
             VulkanGraphicsShaders::from_bytes(material.graphics_shaders.clone(), vulkan)
@@ -102,6 +108,7 @@ impl GpuMaterial {
             settings,
             shaders,
             vertex_input_state,
+            _marker: PhantomData,
         })
     }
 

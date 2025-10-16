@@ -11,6 +11,7 @@ use audio::{
     gen_square_wave,
     sound::static_sound::{StaticSoundData, StaticSoundSettings},
 };
+use glam::{Vec2, Vec3Swizzles, vec2};
 use gpu::VulkanTypes;
 
 use let_engine::prelude::*;
@@ -131,9 +132,10 @@ impl Game {
             LabelCreateInfo::default()
                 .text("0")
                 .align(Direction::No)
-                .transform(Transform::with_position(vec2(
+                .transform(Transform::with_position(vec3(
                     RESOLUTION.x as f32 * -0.55,
                     80.0,
+                    0.,
                 )))
                 .extent(RESOLUTION / uvec2(2, 1))
                 .scale(Vec2::splat(50.0))
@@ -146,7 +148,7 @@ impl Game {
         // initialize this one to the ui
         context.scene.add_object(
             ui_layer,
-            ObjectBuilder::new(left_score_label.appearance().build(&context.gpu).unwrap()),
+            ObjectBuilder::new(left_score_label.appearance(&context.gpu).unwrap()),
         );
 
         // Making a default label for the right side.
@@ -154,9 +156,10 @@ impl Game {
             LabelCreateInfo::default()
                 .text("0")
                 .align(Direction::Nw)
-                .transform(Transform::with_position(vec2(
+                .transform(Transform::with_position(vec3(
                     RESOLUTION.x as f32 * 0.55,
                     80.0,
+                    0.,
                 )))
                 .extent(RESOLUTION / uvec2(2, 1))
                 .scale(Vec2::splat(50.0))
@@ -170,7 +173,7 @@ impl Game {
             .scene
             .add_object(
                 ui_layer,
-                ObjectBuilder::new(right_score_label.appearance().build(&context.gpu).unwrap()),
+                ObjectBuilder::new(right_score_label.appearance(&context.gpu).unwrap()),
             )
             .unwrap();
 
@@ -343,11 +346,7 @@ impl Paddle {
 
         let height = 0.05;
         let mut object = ObjectBuilder::new(appearance);
-        object.transform = Transform {
-            position: vec2(x, 0.0),
-            size: vec2(0.015, height),
-            ..Default::default()
-        };
+        object.transform = Transform::with_position_size_2d(vec2(x, 0.0), vec2(0.015, height));
 
         // Make a collider that resembles the form of the paddle.
         object.set_collider(Some(ColliderBuilder::square(0.015, height).build()));
@@ -394,7 +393,7 @@ impl Paddle {
 
 struct Ball {
     object_id: ObjectId,
-    direction: Vec2,
+    direction: Vec3,
     speed: f32,
     new_round: SystemTime,
     pub wins: [u32; 2],
@@ -433,7 +432,7 @@ impl Ball {
             .unwrap();
 
         let mut object = ObjectBuilder::new(appearance);
-        object.transform.size = vec2(0.015, 0.015);
+        object.transform.size = Vec3::splat(0.015);
 
         let object = context
             .scene
@@ -449,7 +448,7 @@ impl Ball {
 
         Self {
             object_id: object,
-            direction: vec2(1.0, 0.0),
+            direction: vec3(1.0, 0.0, 0.0),
             speed: 1.1,
             new_round: lifetime,
             wins: [0; 2],
@@ -469,7 +468,7 @@ impl Ball {
 
             // Check if the ball is touching a paddle.
             let touching_paddle = !layer
-                .intersections_with_shape(Shape::square(0.02, 0.02), (position, 0.0))
+                .intersections_with_shape(Shape::square(0.02, 0.02), (position.xy(), 0.0))
                 .is_empty();
 
             let dimensions = context.window().unwrap().inner_size();
@@ -521,7 +520,7 @@ impl Ball {
     fn reset(&mut self, scene: &mut Scene<VulkanTypes>) {
         self.new_round = SystemTime::now();
 
-        scene[self.object_id].transform.position = vec2(0.0, 0.0);
+        scene[self.object_id].transform.position = Vec3::ZERO;
 
         self.direction = Self::random_direction();
         self.speed = 1.1;
@@ -532,16 +531,16 @@ impl Ball {
         let random = (rand::random_range(0.0..1.0) as f64).copysign(-x);
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(-x)) - FRAC_PI_2;
 
-        self.direction = Vec2::from_angle(direction as f32).normalize();
+        self.direction = Vec2::from_angle(direction as f32).normalize().extend(0.0);
 
         // play the bounce sound.
         audio_interface.play(self.bounce_sound.clone()).unwrap();
     }
 
-    fn random_direction() -> Vec2 {
+    fn random_direction() -> Vec3 {
         let random = rand::random_range(-1.0..1.0) as f64;
 
         let direction = random.mul_add(FRAC_PI_2, FRAC_PI_4.copysign(random)) - FRAC_PI_2;
-        Vec2::from_angle(direction as f32).normalize()
+        Vec2::from_angle(direction as f32).normalize().extend(0.0)
     }
 }

@@ -1,7 +1,7 @@
 //! Physics related structs.
 
 use crate::objects::Transform;
-use glam::f32::Vec2;
+use glam::{Quat, Vec3, Vec3Swizzles, f32::Vec2};
 use nalgebra::Isometry2;
 pub use rapier2d::parry::transformation::vhacd::VHACDParameters;
 use rapier2d::prelude::*;
@@ -361,12 +361,14 @@ impl ObjectPhysics {
 
 impl From<Transform> for Isometry<Real> {
     fn from(val: Transform) -> Self {
-        Isometry2::new(val.position.into(), val.rotation)
+        let position = val.position.xy();
+        let rotation = val.rotation.to_euler(glam::EulerRot::XYZ).2;
+        Isometry2::new(position.into(), rotation)
     }
 }
 
-impl From<(Vec2, Vec2, f32)> for Transform {
-    fn from(val: (Vec2, Vec2, f32)) -> Self {
+impl From<(Vec3, Vec3, Quat)> for Transform {
+    fn from(val: (Vec3, Vec3, Quat)) -> Self {
         Transform {
             position: val.0,
             size: val.1,

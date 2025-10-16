@@ -3,6 +3,7 @@
 //! # Controls
 //! - Scroll: increase / decrease number of sides
 
+use glam::Vec2;
 use let_engine::prelude::*;
 
 use gpu::{VulkanTypes, model::ModelId};
@@ -48,7 +49,7 @@ impl Game {
             let root_view = context.scene.root_view_mut();
 
             // next we set the view of the game scene zoomed out and not stretchy.
-            root_view.transform = Transform::with_size(Vec2::splat(2.0));
+            root_view.transform = Transform::with_size(Vec3::splat(2.0));
             root_view.scaling = CameraScaling::Circle;
         }
 
@@ -83,7 +84,7 @@ impl Game {
             ))
             .unwrap();
 
-        let circle_appearance = AppearanceBuilder::<VulkanTypes>::default()
+        let circle_appearance = AppearanceBuilder::<VulkanTypes, Vec2>::default()
             .model(circle_model)
             .material(default_material)
             .descriptors(&[

@@ -49,6 +49,8 @@ use super::{
 
 pub static VK: OnceLock<Vulkan> = OnceLock::new();
 
+type PipelineCacheMap = Mutex<HashMap<(MaterialId<()>, NodeId), Arc<GraphicsPipeline>>>;
+
 /// Just a holder of general immutable information about Vulkan.
 pub struct Vulkan {
     pub instance: Arc<vulkano::instance::Instance>,
@@ -64,7 +66,7 @@ pub struct Vulkan {
     resources_dirty: AtomicBool,
 
     pub vulkan_pipeline_cache: Arc<PipelineCache>,
-    pub pipeline_cache: Mutex<HashMap<(MaterialId, NodeId), Arc<GraphicsPipeline>>>,
+    pub pipeline_cache: PipelineCacheMap,
 
     pub collector: CollectorHandle,
     resource_map: SlotMap<SlotId, Resource>,
@@ -74,9 +76,9 @@ pub struct Vulkan {
 pub const VIRTUAL_TAG_BIT: u32 = 1 << 7;
 
 pub enum Resource {
-    Material(GpuMaterial),
+    Material(GpuMaterial<()>),
     Buffer(GpuBuffer<u8>),
-    Model(GpuModel<u8>),
+    Model(GpuModel<()>),
     Texture(GpuTexture),
 }
 
@@ -190,9 +192,13 @@ impl Vulkan {
 }
 
 impl Vulkan {
-    pub fn material<'a>(&'a self, id: MaterialId, guard: &'a Guard<'_>) -> Option<&'a GpuMaterial> {
+    pub fn material<'a, V: Vertex>(
+        &'a self,
+        id: MaterialId<V>,
+        guard: &'a Guard<'_>,
+    ) -> Option<&'a GpuMaterial<V>> {
         if let Some(Resource::Material(material)) = self.resource(id.as_id(), guard) {
-            Some(material)
+            Some(unsafe { std::mem::transmute::<&GpuMaterial<()>, &GpuMaterial<V>>(material) })
         } else {
             None
         }
@@ -220,7 +226,7 @@ impl Vulkan {
             // SAFETY: transmute is safe here, because the generic is not present in the byte representation and drop logic.
             //         The vertex type might mismatch to the original format, but this is only possible if the user used unsafe
             //         logic to reinterpret the vertex type of an ID to a non-compatible type, which is totally on them.
-            Some(unsafe { std::mem::transmute::<&GpuModel<u8>, &GpuModel<V>>(model) })
+            Some(unsafe { std::mem::transmute::<&GpuModel<()>, &GpuModel<V>>(model) })
         } else {
             None
         }
@@ -234,10 +240,16 @@ impl Vulkan {
         }
     }
 
-    pub fn add_material(&self, material: GpuMaterial, guard: &Guard<'_>) -> MaterialId {
+    pub fn add_material<V: Vertex>(
+        &self,
+        material: GpuMaterial<V>,
+        guard: &Guard<'_>,
+    ) -> MaterialId<V> {
         MaterialId::from_id(self.resource_map.insert_with_tag(
-            Resource::Material(material),
-            MaterialId::TAG_BIT,
+            Resource::Material(unsafe {
+                std::mem::transmute::<GpuMaterial<V>, GpuMaterial<()>>(material)
+            }),
+            MaterialId::<V>::TAG_BIT,
             guard,
         ))
     }
@@ -252,7 +264,7 @@ impl Vulkan {
 
     pub fn add_model<V: Vertex>(&self, model: GpuModel<V>, guard: &Guard<'_>) -> ModelId<V> {
         ModelId::from_id(self.resource_map.insert_with_tag(
-            Resource::Model(unsafe { std::mem::transmute::<GpuModel<V>, GpuModel<u8>>(model) }),
+            Resource::Model(unsafe { std::mem::transmute::<GpuModel<V>, GpuModel<()>>(model) }),
             ModelId::<V>::TAG_BIT,
             guard,
         ))

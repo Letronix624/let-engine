@@ -12,16 +12,22 @@ use glam::f32::{Vec2, vec2};
 ///
 /// Updates each frame.
 pub struct Input {
-    //pressed keyboard keycodes.
+    /// pressed keyboard keycodes.
     keys_down: HashSet<Key>,
-    //pressed keyboard modifiers
+
+    /// pressed keyboard modifiers
     keyboard_modifiers: ModifiersState,
-    //pressed mouse buttons
+
+    /// pressed mouse buttons
     mouse_down: HashSet<MouseButton>,
-    //mouse position
+
+    /// mouse position
     cursor_position: Vec2,
+
+    /// True if the cursor is contained within the window.
     cursor_inside: bool,
-    //dimensions of the window
+
+    /// dimensions of the window
     dimensions: Vec2,
 }
 
@@ -36,6 +42,7 @@ impl Input {
             dimensions: vec2(0.0, 0.0),
         }
     }
+
     /// Updates the input with the event.
     pub(crate) fn update(&mut self, event: &WindowEvent) {
         match event {

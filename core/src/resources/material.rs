@@ -1,22 +1,29 @@
+use std::marker::PhantomData;
+
 use derive_builder::Builder;
+
+use crate::resources::model::Vertex;
 
 /// Represents a material that defines how an object is rendered, including its shaders, textures, and buffers.
 ///
 /// A `Material` consists of several components that control the appearance of an object in the rendering pipeline.
 /// It includes shader programs and settings, that define the object's properties.
-pub struct Material {
+pub struct Material<V: Vertex> {
     /// The material's settings that define rendering configuration, such as pipeline state or other parameters.
     pub settings: MaterialSettings,
 
     /// The shaders that define how the material interacts with the GPU during rendering.
     pub graphics_shaders: GraphicsShaders,
+
+    _marker: PhantomData<std::sync::Arc<V>>,
 }
 
-impl Material {
+impl<V: Vertex> Material<V> {
     pub fn new(settings: MaterialSettings, graphics_shaders: GraphicsShaders) -> Self {
         Self {
             settings,
             graphics_shaders,
+            _marker: PhantomData,
         }
     }
 
@@ -28,10 +35,7 @@ impl Material {
     /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
     /// set 1, binding 0: [`Color`](crate::prelude::Color)
     pub fn new_default() -> Self {
-        Self {
-            settings: MaterialSettings::default(),
-            graphics_shaders: GraphicsShaders::new_default(),
-        }
+        Self::new(MaterialSettings::default(), GraphicsShaders::new_default())
     }
 
     /// Creates simple default texture shaders, which only draw the object with a texture.
@@ -44,10 +48,26 @@ impl Material {
     /// set 1, binding 0: [`Color`](crate::prelude::Color)
     /// set 2, binding 0: Texture
     pub fn default_textured() -> Self {
-        Self {
-            settings: MaterialSettings::default(),
-            graphics_shaders: GraphicsShaders::default_textured(),
-        }
+        Self::new(
+            MaterialSettings::default(),
+            GraphicsShaders::default_textured(),
+        )
+    }
+
+    /// Creates simple default texture shaders, which only draw the object with a texture.
+    /// The texture can be tinted using the color provided in set 2.
+    ///
+    /// # Layout
+    ///
+    /// vertex type: [`Vert3D`](crate::prelude::Vert3D)
+    /// set 0, binding 0: Default [MVP matrix](crate::prelude::MvpConfig)
+    /// set 1, binding 0: [`Color`](crate::prelude::Color)
+    /// set 2, binding 0: Texture
+    pub fn default_textured_3d() -> Self {
+        Self::new(
+            MaterialSettings::default(),
+            GraphicsShaders::default_textured_3d(),
+        )
     }
 }
 
@@ -96,6 +116,19 @@ pub struct MaterialSettings {
     #[builder(setter(into), default = "Topology::TriangleList")]
     pub topology: Topology,
 
+    /// Which face of a triangle is considered the front.
+    ///
+    /// Counter-clockwise by default
+    #[builder(setter(into), default = "FrontFace::CounterClockwise")]
+    pub front_face: FrontFace,
+
+    /// Which face side to cull. Encouraged for non-hollow objects to increase performance.
+    /// Which of those if the front is determined by the `front_face` attribute.
+    ///
+    /// None by default
+    #[builder(setter(into), default = "CullMode::None")]
+    pub culling_mode: CullMode,
+
     /// If this is true when drawing with an index buffer in a "strip" topology,
     /// using a special index with the maximum index of `u32::MAX` will tell the GPU that
     /// it's the end of a primitive.
@@ -107,6 +140,34 @@ pub struct MaterialSettings {
     /// The width of the line in case the topology was set to something with lines.
     #[builder(setter(into), default = "1.0")]
     pub line_width: f32,
+}
+
+/// Determines for each triangle to be drawn, which side is the front face.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FrontFace {
+    /// Triangles drawn in a clockwise order are the front.
+    Clockwise,
+
+    /// Triangles drawn in a counter-clockwise order are the front.
+    CounterClockwise,
+}
+
+/// Determines which side of the triangle to cull.
+///
+/// Culling may increase performance.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CullMode {
+    /// Do not cull
+    None,
+
+    /// Cull front face
+    Front,
+
+    /// Cull back face
+    Back,
+
+    /// Cull both sides
+    Both,
 }
 
 impl Eq for MaterialSettings {}
@@ -123,6 +184,8 @@ impl Default for MaterialSettings {
     fn default() -> Self {
         Self {
             topology: Topology::TriangleList,
+            front_face: FrontFace::CounterClockwise,
+            culling_mode: CullMode::None,
             primitive_restart: false,
             line_width: 1.0,
         }
@@ -162,6 +225,15 @@ impl GraphicsShaders {
         )
     }
 
+    pub fn new_default_3d() -> Self {
+        Self::new(
+            include_bytes!(concat!(env!("OUT_DIR"), "/default3d.vert")).to_vec(),
+            "main".to_owned(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/default3d.frag")).to_vec(),
+            "main".to_owned(),
+        )
+    }
+
     pub fn new_no_fragment(vertex_bytes: Vec<u8>, vertex_entry_point: String) -> Self {
         Self {
             vertex_bytes,
@@ -176,6 +248,15 @@ impl GraphicsShaders {
             include_bytes!(concat!(env!("OUT_DIR"), "/textured.vert")).to_vec(),
             "main".to_owned(),
             include_bytes!(concat!(env!("OUT_DIR"), "/textured.frag")).to_vec(),
+            "main".to_owned(),
+        )
+    }
+
+    pub fn default_textured_3d() -> Self {
+        Self::new(
+            include_bytes!(concat!(env!("OUT_DIR"), "/textured3d.vert")).to_vec(),
+            "main".to_owned(),
+            include_bytes!(concat!(env!("OUT_DIR"), "/textured3d.frag")).to_vec(),
             "main".to_owned(),
         )
     }

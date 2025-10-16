@@ -176,8 +176,11 @@ impl GpuBackend for DefaultGpuBackend {
 pub struct VulkanTypes;
 
 impl Loaded for VulkanTypes {
-    type Material = GpuMaterial;
-    type MaterialId = MaterialId;
+    type Material<V: Vertex> = GpuMaterial<V>;
+    type MaterialId<V: Vertex> = MaterialId<V>;
+    unsafe fn material_id_unit<V: Vertex>(material: Self::MaterialId<V>) -> Self::MaterialId<()> {
+        unsafe { std::mem::transmute(material) }
+    }
 
     type Buffer<B: Data> = GpuBuffer<B>;
     type BufferId<B: Data> = BufferId<B>;
@@ -191,7 +194,7 @@ impl Loaded for VulkanTypes {
     type ModelId<V: Vertex> = ModelId<V>;
 
     #[inline]
-    unsafe fn model_id_u8<V: Vertex>(model: Self::ModelId<V>) -> Self::ModelId<u8> {
+    unsafe fn model_id_unit<V: Vertex>(model: Self::ModelId<V>) -> Self::ModelId<()> {
         unsafe { std::mem::transmute(model) }
     }
 
@@ -333,11 +336,10 @@ pub struct GpuInterface<'a> {
 impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterface<'a> {
     fn load_material<V: let_engine_core::resources::model::Vertex>(
         &self,
-        material: &let_engine_core::resources::material::Material,
-    ) -> Result<MaterialId> {
+        material: &let_engine_core::resources::material::Material<V>,
+    ) -> Result<MaterialId<V>> {
         let vulkan = VK.get().context("Vulkan uninitialized")?;
-        let material =
-            GpuMaterial::new::<V>(material, vulkan).context("failed to load material")?;
+        let material = GpuMaterial::new(material, vulkan).context("failed to load material")?;
 
         Ok(vulkan.add_material(material, &self.guard))
     }
@@ -353,7 +355,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         Ok(vulkan.add_buffer(buffer, &self.guard))
     }
 
-    fn load_model<V: let_engine_core::resources::model::Vertex>(
+    fn load_model<V: Vertex>(
         &self,
         model: &let_engine_core::resources::model::Model<V>,
     ) -> Result<ModelId<V>> {
@@ -414,7 +416,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         Ok(vulkan.add_texture(texture, &self.guard))
     }
 
-    fn material(&self, id: MaterialId) -> Option<&GpuMaterial> {
+    fn material<V: Vertex>(&self, id: MaterialId<V>) -> Option<&GpuMaterial<V>> {
         let vulkan = VK.get().unwrap();
 
         vulkan.material(id, &self.guard)
@@ -438,7 +440,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         vulkan.texture(id, &self.guard)
     }
 
-    fn remove_material(&self, id: MaterialId) -> Result<()> {
+    fn remove_material<V: Vertex>(&self, id: MaterialId<V>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
         vulkan.remove_resource(id.as_id(), &self.guard);
@@ -472,7 +474,7 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         Ok(())
     }
 
-    fn add_virtual_material(&self, id: MaterialId) -> Result<MaterialId> {
+    fn add_virtual_material<V: Vertex>(&self, id: MaterialId<V>) -> Result<MaterialId<V>> {
         let vulkan = VK.get().unwrap();
 
         Ok(MaterialId::from_id(
@@ -504,7 +506,11 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         ))
     }
 
-    fn map_virtual_material(&self, from: MaterialId, to: MaterialId) -> Result<()> {
+    fn map_virtual_material<V: Vertex>(
+        &self,
+        from: MaterialId<V>,
+        to: MaterialId<V>,
+    ) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
         vulkan.remap_virtual_id(from.as_id(), to.as_id(), &self.guard)
@@ -528,10 +534,10 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         vulkan.remap_virtual_id(from.as_id(), to.as_id(), &self.guard)
     }
 
-    fn validate_appearance(
+    fn validate_appearance<V: Vertex>(
         &self,
-        material_id: MaterialId,
-        model_id: ModelId<u8>,
+        material_id: MaterialId<V>,
+        model_id: ModelId<V>,
         descriptors: &BTreeMap<Location, Descriptor<VulkanTypes>>,
     ) -> Result<(), AppearanceCreationError> {
         let vulkan = VK.get().context("Vulkan uninitialized").unwrap();
@@ -681,10 +687,10 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     }
 }
 
-impl std::ops::Index<MaterialId> for GpuInterface<'_> {
-    type Output = GpuMaterial;
+impl<V: Vertex> std::ops::Index<MaterialId<V>> for GpuInterface<'_> {
+    type Output = GpuMaterial<V>;
 
-    fn index(&self, index: MaterialId) -> &Self::Output {
+    fn index(&self, index: MaterialId<V>) -> &Self::Output {
         use let_engine_core::backend::gpu::GpuInterface;
         self.material(index)
             .unwrap_or_else(|| panic!("Invalid material index"))

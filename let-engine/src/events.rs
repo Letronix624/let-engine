@@ -2,8 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::prelude::*;
-use glam::DVec2;
+use glam::{DVec2, UVec2, Vec2};
 pub use winit::{
     event::{ElementState, MouseButton},
     keyboard::*,

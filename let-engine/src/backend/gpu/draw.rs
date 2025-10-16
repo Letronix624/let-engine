@@ -5,8 +5,10 @@ use crossbeam::channel::Receiver;
 use egui_winit_vulkano::{EguiSystem, RenderEguiWorld};
 
 use std::{
+    cell::RefCell,
     collections::BTreeMap,
     num::NonZero,
+    rc::Rc,
     sync::{Arc, OnceLock},
 };
 use vulkano::{
@@ -14,7 +16,7 @@ use vulkano::{
     buffer::{Buffer, BufferCreateInfo, BufferUsage},
     descriptor_set::{DescriptorSet, WriteDescriptorSet, sys::RawDescriptorSet},
     format::Format,
-    image::{Image, sampler::Sampler},
+    image::{Image, ImageCreateInfo, ImageUsage, sampler::Sampler},
     memory::{
         DeviceAlignment,
         allocator::{
@@ -27,6 +29,7 @@ use vulkano::{
         graphics::{
             GraphicsPipelineCreateInfo,
             color_blend::{AttachmentBlend, ColorBlendAttachmentState, ColorBlendState},
+            depth_stencil::{DepthState, DepthStencilState},
             input_assembly::InputAssemblyState,
             multisample::MultisampleState,
             rasterization::RasterizationState,
@@ -44,7 +47,11 @@ use vulkano_taskgraph::{
 use winit::event_loop::ActiveEventLoop;
 
 use let_engine_core::{
-    objects::Descriptor,
+    objects::{Descriptor, ObjectId},
+    resources::{
+        material::{CullMode, FrontFace},
+        texture::LoadedTexture,
+    },
     scenes::{DrawTarget, LayerId, LayerViewId, Scene},
 };
 
@@ -62,6 +69,8 @@ use super::{
 pub struct Draw {
     swapchain_id: Id<Swapchain>,
     virtual_swapchain_id: Id<Swapchain>,
+    virtual_swapchain_depth_id: Id<Image>,
+    depth_stencil_ids: Vec<(Id<Image>, Id<Image>)>,
 
     recreate_swapchain: bool,
 
@@ -136,6 +145,8 @@ impl Draw {
         Ok(Self {
             swapchain_id,
             virtual_swapchain_id: swapchain_id,
+            virtual_swapchain_depth_id: Id::INVALID,
+            depth_stencil_ids: Vec::new(),
             recreate_swapchain,
             image_format,
             task_graph,
@@ -152,8 +163,21 @@ impl Draw {
     }
 
     fn recompile_task_graph(&mut self, vulkan: &Vulkan, scene: &Scene<VulkanTypes>) -> Result<()> {
+        // Reset view suballocator and depth stencils. They will be rebuilt.
         self.suballocator.reset();
+        let mut deferred_batch = vulkan.resources.create_deferred_batch();
+        while let Some((_, depth_stencil_id)) = self.depth_stencil_ids.pop() {
+            deferred_batch.destroy_image(depth_stencil_id);
+        }
+        unsafe {
+            deferred_batch.enqueue_with_flights([vulkan.graphics_flight, vulkan.transfer_flight])
+        };
 
+        // Clear pipeline cache, as the subpasses are all outdated
+        vulkan.pipeline_cache.lock().clear();
+
+        /// Recursive function that traverses the scene in a post order fashion
+        /// and adds tasks to the task graph for each layer view.
         fn post_order_tasks(
             draw: &mut Draw,
             vulkan: &Vulkan,
@@ -182,33 +206,43 @@ impl Draw {
                 };
 
                 let mut format = Format::UNDEFINED;
+                let mut extent: [u32; 3] = draw.dimensions.extend(1).into();
 
                 let guard = unsafe { vulkan.collector.pin() };
 
                 let image_id = match view.draw_target() {
                     DrawTarget::Window => ImageId::Swapchain(draw.virtual_swapchain_id),
                     DrawTarget::Texture(image_id) => {
-                        let settings = vulkan.texture(*image_id, &guard).unwrap().settings();
+                        assert!(!image_id.is_virtual(), "Render targets can not be virtual.");
+                        let texture = vulkan.texture(*image_id, &guard).unwrap();
+                        let settings = texture.settings();
+                        extent = texture.dimensions().extent();
                         assert!(settings.render_target, "Texture is not a render target");
                         format = crate::backend::gpu::format_to_vulkano(&settings.format);
                         ImageId::Texture(*image_id)
                     }
                 };
 
-                let mut builder = task_graph.create_task_node(
-                    format!("view-{:?}", view_id),
+                let transparent_rest = Rc::new(RefCell::new(Vec::new()));
+
+                let mut opaque_builder = task_graph.create_task_node(
+                    format!("view-{:?}-opaque", view_id),
                     vulkano_taskgraph::QueueFamilyType::Graphics,
                     DrawTask {
                         view_id,
                         view_suballocation,
                         node_id: NodeId::INVALID,
                         image_id,
+                        transparent: false,
+                        transparent_rest: transparent_rest.clone(),
                     },
                 );
 
-                builder.framebuffer(framebuffer_id);
-                builder.color_attachment(
-                    image_id.image_id(vulkan),
+                opaque_builder.framebuffer(framebuffer_id);
+
+                let vk_image_id = image_id.image_id(vulkan);
+                opaque_builder.color_attachment(
+                    vk_image_id,
                     AccessTypes::COLOR_ATTACHMENT_WRITE,
                     vulkano_taskgraph::resource::ImageLayoutType::Optimal,
                     &AttachmentInfo {
@@ -217,42 +251,157 @@ impl Draw {
                         ..Default::default()
                     },
                 );
-                builder.buffer_access(
+
+                if let Err(index) = draw
+                    .depth_stencil_ids
+                    .binary_search_by_key(&vk_image_id, |(id, _)| *id)
+                {
+                    let depth_stencil_id = vulkan
+                        .resources
+                        .create_image(
+                            &ImageCreateInfo {
+                                image_type: vulkano::image::ImageType::Dim2d,
+                                format: Format::D16_UNORM,
+                                usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT
+                                    | ImageUsage::TRANSIENT_ATTACHMENT,
+                                extent,
+                                ..Default::default()
+                            },
+                            &AllocationCreateInfo {
+                                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                                ..Default::default()
+                            },
+                        )
+                        .unwrap();
+                    draw.depth_stencil_ids
+                        .insert(index, (vk_image_id, depth_stencil_id));
+                }
+
+                opaque_builder.depth_stencil_attachment(
+                    draw.virtual_swapchain_depth_id,
+                    AccessTypes::DEPTH_STENCIL_ATTACHMENT_WRITE,
+                    vulkano_taskgraph::resource::ImageLayoutType::Optimal,
+                    &AttachmentInfo {
+                        clear: true,
+                        format: Format::D16_UNORM,
+                        ..Default::default()
+                    },
+                );
+                opaque_builder.buffer_access(
                     draw.view_proj_buffer_id,
                     AccessTypes::VERTEX_SHADER_UNIFORM_READ,
                 );
 
                 let resources = vulkan.iter_resource_access(&guard);
 
-                for access in resources {
+                for access in resources.iter() {
                     match access {
                         ResourceAccess::Buffer { id, access_types } => {
-                            builder.buffer_access(id, access_types);
+                            opaque_builder.buffer_access(*id, *access_types);
                         }
                         ResourceAccess::Image { id, access_types } => {
-                            builder.image_access(
-                                id,
-                                access_types,
+                            opaque_builder.image_access(
+                                *id,
+                                *access_types,
                                 vulkano_taskgraph::resource::ImageLayoutType::Optimal,
                             );
                         }
                     }
                 }
 
-                let node_id = builder.build();
+                let opaque_node_id = opaque_builder.build();
                 if let Some(parent_id) = parent_id {
-                    task_graph.add_edge(node_id, parent_id).unwrap();
+                    task_graph.add_edge(opaque_node_id, parent_id).unwrap();
                 }
+                // Replace `DrawTask.node_id` from `NodeId::INVALID`with correct node ID
+                task_graph
+                    .task_node_mut(opaque_node_id)
+                    .unwrap()
+                    .task_mut()
+                    .downcast_mut::<DrawTask>()
+                    .unwrap()
+                    .node_id = opaque_node_id;
 
                 let task: &mut DrawTask = task_graph
-                    .task_node_mut(node_id)
+                    .task_node_mut(opaque_node_id)
                     .unwrap()
                     .task_mut()
                     .downcast_mut()
                     .unwrap();
 
-                task.node_id = node_id;
-                parent_id = Some(node_id);
+                task.node_id = opaque_node_id;
+
+                let mut transparent_builder = task_graph.create_task_node(
+                    format!("view-{:?}-opaque", view_id),
+                    vulkano_taskgraph::QueueFamilyType::Graphics,
+                    DrawTask {
+                        view_id,
+                        view_suballocation,
+                        node_id: NodeId::INVALID,
+                        image_id,
+                        transparent: true,
+                        transparent_rest,
+                    },
+                );
+
+                transparent_builder.framebuffer(framebuffer_id);
+
+                transparent_builder.color_attachment(
+                    vk_image_id,
+                    AccessTypes::COLOR_ATTACHMENT_WRITE,
+                    vulkano_taskgraph::resource::ImageLayoutType::Optimal,
+                    &AttachmentInfo {
+                        clear: view.clear_color().is_some(),
+                        format,
+                        ..Default::default()
+                    },
+                );
+
+                transparent_builder.depth_stencil_attachment(
+                    draw.virtual_swapchain_depth_id,
+                    AccessTypes::DEPTH_STENCIL_ATTACHMENT_READ,
+                    vulkano_taskgraph::resource::ImageLayoutType::Optimal,
+                    &AttachmentInfo {
+                        format: Format::D16_UNORM,
+                        ..Default::default()
+                    },
+                );
+                transparent_builder.buffer_access(
+                    draw.view_proj_buffer_id,
+                    AccessTypes::VERTEX_SHADER_UNIFORM_READ,
+                );
+
+                for access in resources.iter() {
+                    match access {
+                        ResourceAccess::Buffer { id, access_types } => {
+                            transparent_builder.buffer_access(*id, *access_types);
+                        }
+                        ResourceAccess::Image { id, access_types } => {
+                            transparent_builder.image_access(
+                                *id,
+                                *access_types,
+                                vulkano_taskgraph::resource::ImageLayoutType::Optimal,
+                            );
+                        }
+                    }
+                }
+
+                let transparent_node_id = transparent_builder.build();
+                // Replace `DrawTask.node_id` from `NodeId::INVALID`with correct node ID,
+                // just like for the opaque version.
+                task_graph
+                    .task_node_mut(transparent_node_id)
+                    .unwrap()
+                    .task_mut()
+                    .downcast_mut::<DrawTask>()
+                    .unwrap()
+                    .node_id = transparent_node_id;
+
+                task_graph
+                    .add_edge(opaque_node_id, transparent_node_id)
+                    .unwrap();
+
+                parent_id = Some(transparent_node_id);
             }
 
             for layer_id in layer.layer_ids_iter() {
@@ -274,6 +423,11 @@ impl Draw {
             image_format: self.image_format,
             ..Default::default()
         });
+        self.virtual_swapchain_depth_id = task_graph.add_image(&ImageCreateInfo {
+            format: Format::D16_UNORM,
+            ..Default::default()
+        });
+
         let window_framebuffer_id = task_graph.add_framebuffer();
 
         task_graph.add_host_buffer_access(
@@ -375,6 +529,33 @@ impl Draw {
                     ..*create_info
                 })
                 .map_err(|e| VulkanError::from(e.unwrap()))?;
+            // Recreate depth stencil for swapchain.
+            let depth_stencil_id = vulkan
+                .resources
+                .create_image(
+                    &ImageCreateInfo {
+                        image_type: vulkano::image::ImageType::Dim2d,
+                        format: Format::D16_UNORM,
+                        usage: ImageUsage::DEPTH_STENCIL_ATTACHMENT
+                            | ImageUsage::TRANSIENT_ATTACHMENT,
+                        extent: self.dimensions.extend(1).into(),
+                        ..Default::default()
+                    },
+                    &AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+
+            let swapchain_image_id = self.virtual_swapchain_id.current_image_id();
+
+            let index = self
+                .depth_stencil_ids
+                .binary_search_by_key(&swapchain_image_id, |(id, _)| *id)
+                .expect("Swapchain depth buffer must exist when recreating swapchain.");
+
+            self.depth_stencil_ids[index].1 = depth_stencil_id;
 
             self.recreate_swapchain = false;
         };
@@ -426,9 +607,16 @@ impl Draw {
 
         let task_graph = self.task_graph.as_ref().unwrap();
 
+        let depth_stencil_id = self.depth_stencil_ids[self
+            .depth_stencil_ids
+            .binary_search_by_key(&self.virtual_swapchain_id.current_image_id(), |(id, _)| *id)
+            .unwrap()]
+        .1;
+
         let resource_map = resource_map!(
             task_graph,
             self.virtual_swapchain_id => self.swapchain_id,
+            self.virtual_swapchain_depth_id => depth_stencil_id,
         )
         .unwrap();
 
@@ -461,7 +649,7 @@ impl Draw {
     /// Creates and caches a graphics pipeline according to the given material.
     fn cache_pipeline(
         &self,
-        material_id: MaterialId,
+        material_id: MaterialId<()>,
         node_id: NodeId,
         vulkan: &Vulkan,
     ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
@@ -484,7 +672,30 @@ impl Draw {
 
         let draw_node = task_graph.task_node(node_id).unwrap();
 
+        // Write depth stencil if NOT transparent.
+        let write_enable = !draw_node
+            .task()
+            .downcast_ref::<DrawTask>()
+            .unwrap()
+            .transparent;
+
         let subpass = draw_node.subpass();
+
+        use vulkano::pipeline::graphics::rasterization::{
+            CullMode as VkCullMode, FrontFace as VkFrontFace,
+        };
+
+        let front_face = match settings.front_face {
+            FrontFace::Clockwise => VkFrontFace::Clockwise,
+            FrontFace::CounterClockwise => VkFrontFace::CounterClockwise,
+        };
+
+        let cull_mode = match settings.culling_mode {
+            CullMode::None => VkCullMode::None,
+            CullMode::Front => VkCullMode::Front,
+            CullMode::Back => VkCullMode::Back,
+            CullMode::Both => VkCullMode::FrontAndBack,
+        };
 
         let pipeline = GraphicsPipeline::new(
             &vulkan.device,
@@ -500,6 +711,8 @@ impl Draw {
                 viewport_state: Some(&ViewportState::default()),
                 rasterization_state: Some(&RasterizationState {
                     line_width: settings.line_width,
+                    cull_mode,
+                    front_face,
                     ..Default::default()
                 }),
                 multisample_state: Some(&MultisampleState::default()),
@@ -508,6 +721,14 @@ impl Draw {
                         blend: Some(AttachmentBlend::alpha()),
                         ..Default::default()
                     }],
+                    ..Default::default()
+                }),
+                depth_stencil_state: Some(&DepthStencilState {
+                    depth: Some(DepthState {
+                        write_enable,
+                        compare_op:
+                            vulkano::pipeline::graphics::depth_stencil::CompareOp::GreaterOrEqual,
+                    }),
                     ..Default::default()
                 }),
                 subpass: subpass.map(|x| x.into()),
@@ -529,7 +750,7 @@ impl Draw {
     /// If this material is not found, it will be created and added to the cache.
     pub fn get_or_init_pipeline(
         &self,
-        material_id: MaterialId,
+        material_id: MaterialId<()>,
         node_id: NodeId,
         vulkan: &Vulkan,
     ) -> Result<Arc<GraphicsPipeline>, VulkanError> {
@@ -593,7 +814,13 @@ struct DrawTask {
     view_suballocation: Suballocation,
     node_id: NodeId,
     image_id: ImageId,
+    transparent: bool,
+    transparent_rest: Rc<RefCell<Vec<(f32, ObjectId)>>>,
 }
+
+// SAFETY: DrawTask is never shared across threads.
+unsafe impl Send for DrawTask {}
+unsafe impl Sync for DrawTask {}
 
 impl Task for DrawTask {
     type World = DrawWorld;
@@ -603,13 +830,22 @@ impl Task for DrawTask {
         clear_values: &mut vulkano_taskgraph::ClearValues<'_>,
         world: &Self::World,
     ) {
+        if self.transparent {
+            return;
+        }
+
         let vulkan = VK.get().unwrap();
         let image_id = self.image_id.image_id(vulkan);
+
         let scene = unsafe { &*world.scene };
+        let draw = unsafe { &*world.draw };
+
         let view = scene.view(self.view_id).unwrap();
         if let Some(clear_color) = view.clear_color() {
             clear_values.set(image_id, clear_color.rgba());
         }
+
+        clear_values.set(draw.virtual_swapchain_depth_id, 0.0);
     }
 
     // TODO: Clean up clean up
@@ -654,7 +890,8 @@ impl Task for DrawTask {
                     std::slice::from_ref(&Viewport {
                         offset: (min * draw.dimensions.as_vec2()).into(),
                         extent: ((max - min) * draw.dimensions.as_vec2()).into(),
-                        ..Default::default()
+                        min_depth: 1.0,
+                        max_depth: 0.0,
                     }),
                 )?
             };
@@ -687,20 +924,31 @@ impl Task for DrawTask {
         let start = self.view_suballocation.offset;
         let range = self.view_suballocation.size;
 
-        // Write camera matrices into buffer regions
-        let write: &mut [Mat4; 2] =
-            tcx.write_buffer(draw.view_proj_buffer_id, start..start + range)?;
+        let mut transparent_rest = self.transparent_rest.borrow_mut();
 
-        write[0] = view.transform.make_view_matrix();
-        write[1] = view
-            .scaling
-            .make_projection_matrix(draw.dimensions.as_vec2());
+        if self.transparent {
+            transparent_rest.sort_by(|(a, _), (b, _)| a.total_cmp(b));
+        } else {
+            // Write camera matrices into buffer regions if not transparent.
+            // If transparent, reuse the ones written when not transparent.
+            let write: &mut [Mat4; 2] =
+                tcx.write_buffer(draw.view_proj_buffer_id, start..start + range)?;
+
+            write[0] = view.view_matrix();
+            write[1] = view.projection_matrix(draw.dimensions.as_vec2());
+        }
 
         let guard = unsafe { vulkan.collector.pin() };
 
         /* Draw Objects */
 
-        for id in layer.object_ids_iter() {
+        let mut layer_objects = layer.object_ids_iter();
+
+        while let Some(id) = if self.transparent {
+            transparent_rest.pop().map(|(_, id)| id)
+        } else {
+            layer_objects.next()
+        } {
             let object = scene.object(id).unwrap();
 
             let appearance = &object.appearance;
@@ -710,11 +958,20 @@ impl Task for DrawTask {
                 continue;
             };
 
+            let visual_transform = object.visual_transform();
+
+            // Skip objects marked as transparent and draw later IF this draw is for opaque objects.
+            if *appearance.transparent() && !self.transparent {
+                let distance = view.transform.position.distance(visual_transform.position);
+                transparent_rest.push((distance, id));
+                continue;
+            }
+
             let material_id = appearance.material_id();
 
             /* Default MVP Matrix Creation */
 
-            let model_matrix: Mat4 = object.make_model_matrix();
+            let model_matrix: Mat4 = visual_transform.to_matrix();
 
             /* TEMP Descriptor Creation TEMP */
 
@@ -822,6 +1079,7 @@ impl Task for DrawTask {
             }
             .unwrap();
             cbf.destroy_objects(descriptors);
+
             unsafe { cbf.push_constants(graphics_pipeline.layout(), 0, &model_matrix)? };
             unsafe {
                 cbf.bind_vertex_buffers(

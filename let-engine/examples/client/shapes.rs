@@ -1,5 +1,6 @@
 //! 3 Shapes, triangle, square and circle.
 
+use glam::Vec2;
 use gpu::VulkanTypes;
 use let_engine::prelude::{gpu::buffer::BufferId, *};
 
@@ -42,7 +43,7 @@ impl Game {
     pub fn new(context: EngineContext) -> Result<Self, ()> {
         {
             let root_view = context.scene.root_view_mut();
-            root_view.transform = Transform::with_size(Vec2::splat(1.0 / 500.0));
+            root_view.transform = Transform::with_size(Vec3::splat(1.0 / 500.0));
             root_view.scaling = CameraScaling::Expand;
         }
 
@@ -52,7 +53,7 @@ impl Game {
             .load_material::<Vec2>(&Material::new_default())
             .unwrap();
 
-        let builder = AppearanceBuilder::<VulkanTypes>::default().material(default_material);
+        let builder = AppearanceBuilder::<VulkanTypes, Vec2>::default().material(default_material);
 
         // Shape 1: Triangle
         let triangle_model = context.gpu.load_model(&model!(triangle)).unwrap();
@@ -74,7 +75,7 @@ impl Game {
             .build(&context.gpu)
             .unwrap();
         let mut triangle = ObjectBuilder::new(triangle_appearance);
-        triangle.transform.position = vec2(-2.0, 0.21); // move triangle to the left
+        triangle.transform.position = vec3(-2.0, 0.21, 0.0); // move triangle to the left
         let triangle = context
             .scene
             .add_object(context.scene.root_layer_id(), triangle)

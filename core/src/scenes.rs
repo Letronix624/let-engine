@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 #[cfg(feature = "physics")]
 use crate::objects::physics::{AddJointError, Physics, Shape, joints};
 #[cfg(feature = "physics")]
@@ -5,10 +7,10 @@ use {rapier2d::parry::query::DefaultQueryDispatcher, slotmap::KeyData};
 
 use crate::{
     backend::gpu::Loaded,
-    camera::CameraScaling,
+    camera::{CameraMode, CameraScaling},
     objects::{Color, Object, ObjectBuilder, ObjectId, Transform},
 };
-use glam::{Vec2, vec2};
+use glam::{Mat4, Vec2, Vec3Swizzles, vec2};
 use slotmap::{SlotMap, new_key_type};
 
 /// The whole scene seen with all it's layers.
@@ -304,7 +306,7 @@ impl<T: Loaded> Scene<T> {
                 .get(id)
                 .expect("The parent of an object should exist in the objects map");
 
-            public_transform = public_transform.combine(parent.transform);
+            public_transform = parent.transform * public_transform;
             parent_id = parent.parent_id;
         }
 
@@ -420,7 +422,10 @@ impl<T: Loaded> Scene<T> {
                     if let Some(handle) = object.rigidbody_handle() {
                         let rigid_body = layer.physics.rigid_body_set.get(handle).unwrap();
                         let pos = *rigid_body.translation();
-                        object.set_isometry(vec2(pos.x, pos.y), rigid_body.rotation().angle());
+                        let t = &mut object.transform;
+                        t.position.x = pos.x;
+                        t.position.y = pos.y;
+                        t.rotation = glam::Quat::from_rotation_z(rigid_body.rotation().angle());
                     }
                 }
             }
@@ -760,12 +765,18 @@ pub struct LayerView<T: Loaded> {
     pub draw: bool,
     draw_target: DrawTarget<T>,
     clear_color: Option<Color>,
+
     pub transform: Transform,
 
     /// The extent of the viewport.
     ///
     /// A rect determining the location on the target, where to put the viewport in UV coordinates.
     pub extent: [Vec2; 2],
+
+    /// The range determining the depth view distances.
+    pub depth: Range<f32>,
+
+    pub mode: CameraMode,
 
     /// The scissor of the viewport.
     ///
@@ -785,8 +796,45 @@ impl<T: Loaded> LayerView<T> {
             clear_color,
             transform: Transform::default(),
             extent: [Vec2::ZERO, Vec2::ONE],
+            depth: 0.0..1.0,
+            mode: CameraMode::default(),
             scissor: [Vec2::ZERO, Vec2::ONE],
             scaling: CameraScaling::default(),
+        }
+    }
+
+    /// Returns the matrix of this view.
+    #[inline]
+    pub fn view_matrix(&self) -> Mat4 {
+        self.transform.to_matrix().inverse()
+    }
+
+    /// Creates a projection matrix for the view.
+    pub fn projection_matrix(&self, resolution: Vec2) -> Mat4 {
+        let scaled = self.scaling.scale(resolution);
+        match self.mode {
+            CameraMode::Orthographic => Mat4::orthographic_rh(
+                -scaled.x,
+                scaled.x,
+                -scaled.y,
+                scaled.y,
+                self.depth.start,
+                -self.depth.end,
+            ),
+            CameraMode::Perspective { fov_y_rad } => Mat4::perspective_rh(
+                fov_y_rad,
+                scaled.max_element() / scaled.min_element(),
+                self.depth.start,
+                self.depth.end,
+            ),
+            CameraMode::Frustum => Mat4::frustum_rh(
+                -scaled.x,
+                scaled.x,
+                -scaled.y,
+                scaled.y,
+                self.depth.start,
+                self.depth.end,
+            ),
         }
     }
 
@@ -825,8 +873,8 @@ impl<T: Loaded> LayerView<T> {
         );
 
         let offset = direction + 1.0 - max - min;
-        let extent = self.scaling.scale(1.0 / (max - min) * resolution) * self.transform.size;
-        let camera_offset = self.transform.position;
+        let extent = self.scaling.scale(1.0 / (max - min) * resolution) * self.transform.size.xy();
+        let camera_offset = self.transform.position.xy();
 
         offset * extent + camera_offset
     }

@@ -2,6 +2,7 @@
 //!
 //! Press space to bitshift random pixels to make an interesting effect.
 
+use glam::vec2;
 use gpu::{VulkanTypes, texture::TextureId};
 use image::ImageBuffer;
 use let_engine::prelude::*;
@@ -89,10 +90,10 @@ impl Game {
 
         let dim = texture.dimensions().extent();
 
-        let appearance = AppearanceBuilder::<VulkanTypes>::default()
+        let appearance = AppearanceBuilder::<VulkanTypes, TVert>::default()
             .model(model)
             .material(default_material)
-            .transform(Transform::with_size(vec2(dim[0] as f32, dim[1] as f32)))
+            .transform(Transform::with_size_2d(vec2(dim[0] as f32, dim[1] as f32)))
             .descriptors(&[
                 (Location::new(0, 0), Descriptor::Mvp),
                 (Location::new(1, 0), Descriptor::buffer(color_buffer)),

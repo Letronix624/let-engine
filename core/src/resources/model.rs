@@ -458,6 +458,13 @@ pub unsafe trait Vertex: AnyBitPattern + Sized + Send + Sync {
     fn description() -> VertexBufferDescription;
 }
 
+/// Vertex implementation for unit, never use, only use as placeholder.
+unsafe impl Vertex for () {
+    fn description() -> VertexBufferDescription {
+        panic!("Can not use unit as a vertex")
+    }
+}
+
 use paste::paste;
 macro_rules! impl_vertex {
     ($ty:ty, $format:expr) => {
@@ -596,7 +603,10 @@ macro_rules! circle {
     };
     // Full circle fan
     ($sides:expr, $access:expr) => {{
-        use let_engine::{glam::vec2, resources::model::Model};
+        use let_engine::{
+            glam::{Vec2, vec2},
+            resources::model::Model,
+        };
 
         let sides: u32 = $sides;
 

@@ -1,7 +1,7 @@
 //! Wrapping of Rapiers colliders to be used with Let Engine and Glam.
 
 use crate::objects::Transform;
-use glam::Vec2;
+use glam::{Vec2, Vec3Swizzles};
 use rapier2d::{parry::transformation::vhacd::VHACDParameters, prelude::*};
 
 #[derive(Clone)]
@@ -424,8 +424,11 @@ impl Shape {
             shapes
                 .into_iter()
                 .map(|x| {
-                    let pos = x.0.position;
-                    let iso = nalgebra::Isometry2::new(pos.into(), x.0.rotation);
+                    let pos = x.0.position.xy();
+                    let iso = nalgebra::Isometry2::new(
+                        pos.into(),
+                        x.0.rotation.to_euler(glam::EulerRot::XYZ).2,
+                    );
 
                     (iso, x.1.0)
                 })

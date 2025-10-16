@@ -1,6 +1,6 @@
 //! Camera and vision related settings.
 
-use glam::{Mat4, Vec2, vec2};
+use glam::{Vec2, vec2};
 
 /// The Camera scaling modes determine how far you can see when the aspect ratio changes.
 ///
@@ -50,6 +50,16 @@ pub enum CameraScaling {
     Custom(fn(Vec2) -> Vec2),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+pub enum CameraMode {
+    #[default]
+    Orthographic,
+    Perspective {
+        fov_y_rad: f32,
+    },
+    Frustum,
+}
+
 impl CameraScaling {
     /// Scales the given dimensions using the given scaling algorithm.
     ///
@@ -75,11 +85,5 @@ impl CameraScaling {
             CameraScaling::KeepVertical => vec2(1.0 / (dimensions.y / dimensions.x), 1.0),
             CameraScaling::Custom(f) => f(dimensions),
         }
-    }
-
-    /// Creates a projection matrix for the view.
-    pub fn make_projection_matrix(&self, resolution: Vec2) -> Mat4 {
-        let scaled = self.scale(resolution);
-        Mat4::orthographic_rh(-scaled.x, scaled.x, -scaled.y, scaled.y, -1.0, 1.0)
     }
 }

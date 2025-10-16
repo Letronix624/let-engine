@@ -9,28 +9,37 @@ use crate::{
 ///
 /// Fields `material` and `model` must be initialized for an appearance to be able to be built.
 #[derive(Clone)]
-pub struct AppearanceBuilder<T: Loaded> {
+pub struct AppearanceBuilder<T, V>
+where
+    T: Loaded,
+    V: Vertex,
+{
     /// Initial transform
     pub transform: Transform,
 
     /// The initial material of the appearance.
     ///
     /// This field must be initialized for the build to succeed.
-    pub material: Option<T::MaterialId>,
+    pub material: Option<T::MaterialId<V>>,
 
     /// The initial model of the appearance.
     ///
     /// This field must be initialized for the build to succeed.
-    pub model: Option<T::ModelId<u8>>,
+    pub model: Option<T::ModelId<V>>,
 
     /// The buffers and textures and their location in the shaders.
     pub descriptors: BTreeMap<Location, Descriptor<T>>,
 
     /// Initial visibility of the appearance.
     pub visible: bool,
+
+    /// If true, this object is transparent.
+    ///
+    /// All fragments behind this object will pass.
+    pub transparent: bool,
 }
 
-impl<T: Loaded> Default for AppearanceBuilder<T> {
+impl<T: Loaded, V: Vertex> Default for AppearanceBuilder<T, V> {
     fn default() -> Self {
         Self {
             transform: Transform::default(),
@@ -38,14 +47,21 @@ impl<T: Loaded> Default for AppearanceBuilder<T> {
             model: None,
             descriptors: BTreeMap::new(),
             visible: true,
+            transparent: false,
         }
     }
 }
 
-impl<T: Loaded> AppearanceBuilder<T> {
+impl<T: Loaded, V: Vertex> AppearanceBuilder<T, V> {
     /// Sets if this object is visible and returns self.
     pub fn visible(mut self, visible: bool) -> Self {
         self.visible = visible;
+        self
+    }
+
+    /// Sets if this object is transparent and returns self.
+    pub fn transparent(mut self, transparent: bool) -> Self {
+        self.transparent = transparent;
         self
     }
 
@@ -58,7 +74,7 @@ impl<T: Loaded> AppearanceBuilder<T> {
     /// Sets the material and returns self.
     ///
     /// This field must be initialized for the build to succeed.
-    pub fn material(mut self, material: T::MaterialId) -> Self {
+    pub fn material(mut self, material: T::MaterialId<V>) -> Self {
         self.material = Some(material);
         self
     }
@@ -66,8 +82,8 @@ impl<T: Loaded> AppearanceBuilder<T> {
     /// Sets the model and returns self.
     ///
     /// This field must be initialized for the build to succeed.
-    pub fn model<V: Vertex>(mut self, model: T::ModelId<V>) -> Self {
-        self.model = Some(unsafe { T::model_id_u8(model) });
+    pub fn model(mut self, model: T::ModelId<V>) -> Self {
+        self.model = Some(model);
         self
     }
 
@@ -126,9 +142,10 @@ impl<T: Loaded> AppearanceBuilder<T> {
 
         Ok(Appearance {
             visible: self.visible,
+            transparent: self.transparent,
             transform: self.transform,
-            material,
-            model,
+            material: unsafe { T::material_id_unit(material) },
+            model: unsafe { T::model_id_unit(model) },
             descriptors: self.descriptors,
         })
     }
@@ -156,9 +173,10 @@ pub struct Appearance<T: Loaded> {
     descriptors: BTreeMap<Location, Descriptor<T>>,
     transform: Transform,
 
-    material: T::MaterialId,
-    model: T::ModelId<u8>,
+    material: T::MaterialId<()>,
+    model: T::ModelId<()>,
     visible: bool,
+    transparent: bool,
 }
 
 impl Default for Appearance<()> {
@@ -169,6 +187,7 @@ impl Default for Appearance<()> {
             material: (),
             model: (),
             visible: false,
+            transparent: false,
         }
     }
 }
@@ -177,6 +196,7 @@ impl<T: Loaded> Clone for Appearance<T> {
     fn clone(&self) -> Self {
         Self {
             visible: self.visible,
+            transparent: self.transparent,
             transform: self.transform,
             material: self.material,
             model: self.model,
@@ -242,19 +262,23 @@ macro_rules! getters_and_setters {
 
 impl<T: Loaded> Appearance<T> {
     getters_and_setters!(visible, "the visibility", bool);
+    getters_and_setters!(transparent, "the transparency", bool);
     getters_and_setters!(transform, "the transform", Transform);
 
     /// Returns a reference to the matrial ID of this appearance.
+    ///
+    /// # Safety
+    /// Returned material vertex type of unit is not valid to use anywhere anymore.
     #[inline]
-    pub fn material_id(&self) -> T::MaterialId {
+    pub fn material_id(&self) -> T::MaterialId<()> {
         self.material
     }
 
     /// # Safety
-    /// Returned model type of u8 is not compatible with the original vertex type
+    /// Returned model vertex type of unit is not compatible with the original vertex type
     /// in case it was different.
     #[inline]
-    pub unsafe fn model_id(&self) -> T::ModelId<u8> {
+    pub unsafe fn model_id(&self) -> T::ModelId<()> {
         self.model
     }
 

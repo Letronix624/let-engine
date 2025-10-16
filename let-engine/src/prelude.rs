@@ -56,5 +56,5 @@ pub use backend::gpu;
 // Other structs
 pub use crate::settings::*;
 pub use glam;
-pub use glam::{UVec2, Vec2, uvec2, vec2};
+pub use glam::{UVec2, Vec3, uvec2, vec3};
 pub use let_engine_core::scenes::*;
