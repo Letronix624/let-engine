@@ -35,14 +35,14 @@ where
     Recreation,
 
     /// An error given by the used gpu backend upon creation.
-    #[error(transparent)]
+    #[error("An error has occured while starting the graphics backend.")]
     GpuBackend(<B::Gpu as GpuBackend>::Error),
 
     /// An error given by the used audio backend.
-    #[error(transparent)]
+    #[error("An error has occured while starting the audio backend.")]
     AudioBackend(KiraError<B>),
     /// An error given by the used networking backend.
-    #[error(transparent)]
+    #[error("An error has occured while starting the networking backend.")]
     NetworkingBackend(<B::Networking as NetworkingBackend>::Error),
 
     /// Custom user error that can return from executing a game state update.
@@ -69,13 +69,13 @@ where
                 )?;
             }
             Self::GpuBackend(e) => {
-                write!(f, "{e}")?;
+                write!(f, "GPU backend error: {e}")?;
             }
             Self::AudioBackend(e) => {
-                write!(f, "{e:?}")?;
+                write!(f, "Audio backend error: {e:?}")?;
             }
             Self::NetworkingBackend(e) => {
-                write!(f, "{e:?}")?;
+                write!(f, "Networking backend error: {e:?}")?;
             }
             Self::Custom(e) => {
                 write!(f, "{e:?}")?;

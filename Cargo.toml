@@ -63,6 +63,6 @@ futures = "0.3"
 bytemuck = "1.23"
 rkyv = "0.8"
 bincode = "2.0"
-egui = "0.31"
+egui = "0.33"
 rand = "0.9"
 

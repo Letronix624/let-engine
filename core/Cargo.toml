@@ -26,7 +26,7 @@ bytemuck = { workspace = true, features = ["derive", "min_const_generics"] }
 half = { version = "2.6", features = ["bytemuck"] }
 let-engine-macros = { path = "../macros" }
 paste = "1.0"
-kira = "0.10"
+kira = "0.11"
 slotmap = "1.0"
 
 [dependencies.glam]
@@ -43,7 +43,7 @@ features = ["simd-stable", "parallel"]
 optional = true
 
 [build-dependencies]
-shaderc = "0.9"
+shaderc = "0.10"
 
 [features]
 client = ["dep:winit"]

@@ -51,7 +51,7 @@ pub fn create_instance(
     handle: &impl HasDisplayHandle,
     max_retries: usize,
 ) -> Result<Arc<vulkano::instance::Instance>, DefaultGpuBackendError> {
-    let library = VulkanLibrary::new().map_err(DefaultGpuBackendError::Loading)?;
+    let library = unsafe { VulkanLibrary::new() }.map_err(DefaultGpuBackendError::Loading)?;
 
     let mut required_extensions = None;
 

@@ -783,7 +783,7 @@ impl Task for DrawTask {
                                     vulkano::descriptor_set::DescriptorBufferInfo {
                                         buffer: subbuffer,
                                         offset: start,
-                                        range,
+                                        range: Some(range),
                                     },
                                 ));
                             }
@@ -839,7 +839,7 @@ impl Task for DrawTask {
                     cbf.bind_index_buffer(
                         index_subbuffer,
                         0,
-                        model.index_len() as DeviceSize,
+                        Some(model.index_len() as DeviceSize),
                         vulkano::buffer::IndexType::U32,
                     )?;
                     cbf.draw_indexed(model.index_len() as u32, 1, 0, 0, 0)?;

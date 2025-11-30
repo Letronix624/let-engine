@@ -13,15 +13,9 @@ pub use kira::{
 };
 use thiserror::Error;
 
-#[derive(Error)]
+#[derive(Debug, Error)]
 #[error(transparent)]
 pub struct AudioBackendError<B>(B);
-
-impl<B: std::fmt::Debug> std::fmt::Debug for AudioBackendError<B> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
 
 pub struct AudioInterface<B: AudioBackend> {
     manager: Arc<Mutex<AudioManager<B>>>,

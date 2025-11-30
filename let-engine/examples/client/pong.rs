@@ -25,6 +25,7 @@ use std::{
 // A const that contains the constant window resolution.
 const RESOLUTION: UVec2 = uvec2(800, 600);
 
+#[derive(Debug)]
 struct PongBackends;
 
 impl core_backend::Backends for PongBackends {
@@ -37,7 +38,7 @@ impl core_backend::Backends for PongBackends {
 
 type EngineContext<'a> = let_engine::EngineContext<'a, (), PongBackends>;
 
-fn main() {
+fn main() -> Result<(), EngineError<(), PongBackends>> {
     simple_logger::SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
         .init()
@@ -60,7 +61,6 @@ fn main() {
             ),
         Game::new,
     )
-    .unwrap();
 }
 
 struct Game {
