@@ -10,6 +10,7 @@ use let_engine_core::resources::{data::Data, material::Topology, model::Vertex};
 use parking_lot::Mutex;
 use vulkano_taskgraph::{
     Id, InvalidSlotError, Ref,
+    collector::DeferredBatch,
     graph::NodeId,
     resource::{AccessTypes, Flight, Resources},
 };
@@ -343,11 +344,16 @@ impl Vulkan {
             .collect()
     }
 
-    pub fn remove_resource(&self, id: SlotId, guard: &Guard<'_>) {
+    pub fn remove_resource(&self, id: SlotId, batch: &mut DeferredBatch, guard: &Guard<'_>) {
         if id.tag() & VIRTUAL_TAG_BIT != 0 {
             self.virtual_ids.remove(id, guard);
-        } else {
-            self.resource_map.remove(id, guard);
+        } else if let Some(resource) = self.resource_map.remove(id, guard) {
+            match resource {
+                Resource::Buffer(gpu_buffer) => unsafe { gpu_buffer.destroy(batch) },
+                Resource::Model(gpu_model) => unsafe { gpu_model.destroy(batch) },
+                Resource::Texture(gpu_texture) => unsafe { gpu_texture.destroy(batch) },
+                _ => (),
+            }
         }
     }
 }

@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use concurrent_slotmap::{Key, SlotId};
+use concurrent_slotmap::{Key, SlotId, hyaline::Guard};
 use let_engine_core::resources::{
     buffer::{Buffer, BufferAccess, BufferUsage, LoadedBuffer, PreferOperation},
     data::Data,
@@ -21,6 +21,7 @@ use vulkano::{
 };
 use vulkano_taskgraph::{
     Id,
+    collector::DeferredBatch,
     command_buffer::CopyBufferInfo,
     resource::{AccessTypes, HostAccessType},
 };
@@ -396,6 +397,30 @@ impl<T: Data> GpuBuffer<T> {
                 buffer_ids, turn, ..
             } => buffer_ids[turn.load(Relaxed)],
         }
+    }
+
+    /// # Safety
+    /// Only call when destroying this object. Ids can not be reused.
+    pub(crate) unsafe fn destroy(&self, batch: &mut DeferredBatch<'_>) {
+        match &self.inner {
+            GpuBufferInner::Fixed(id) => {
+                batch.destroy_buffer(*id);
+            }
+            GpuBufferInner::Staged {
+                buffer_id,
+                staging_id,
+            } => {
+                batch.destroy_buffer(*buffer_id).destroy_buffer(*staging_id);
+            }
+            GpuBufferInner::Pinned { buffer_id, .. } => {
+                batch.destroy_buffer(*buffer_id);
+            }
+            GpuBufferInner::RingBuffer { buffer_ids, .. } => {
+                for id in buffer_ids {
+                    batch.destroy_buffer(*id);
+                }
+            }
+        };
     }
 
     pub(crate) fn descriptor_type(&self) -> DescriptorType {

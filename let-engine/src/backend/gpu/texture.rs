@@ -8,6 +8,7 @@ use let_engine_core::resources::{
 };
 use vulkano_taskgraph::{
     Id,
+    collector::DeferredBatch,
     command_buffer::{CopyBufferToImageInfo, CopyImageToBufferInfo},
     resource::{AccessTypes, HostAccessType, ImageLayoutType},
 };
@@ -186,6 +187,31 @@ impl GpuTexture {
             GpuTextureInner::RingBuffer {
                 image_ids, turn, ..
             } => image_ids[turn.load(Relaxed)],
+        }
+    }
+
+    pub(crate) unsafe fn destroy(&self, batch: &mut DeferredBatch<'_>) {
+        match &self.inner {
+            GpuTextureInner::Fixed { image_id, .. } => {
+                batch.destroy_image(*image_id);
+            }
+            GpuTextureInner::Staged {
+                image_id,
+                staging_id,
+                ..
+            } => {
+                batch.destroy_image(*image_id).destroy_buffer(*staging_id);
+            }
+            GpuTextureInner::RingBuffer {
+                image_ids,
+                staging_id,
+                ..
+            } => {
+                batch.destroy_buffer(*staging_id);
+                for id in image_ids {
+                    batch.destroy_image(*id);
+                }
+            }
         }
     }
 

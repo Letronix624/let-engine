@@ -1,7 +1,7 @@
 //! Default gpu backend made with `Vulkano`
 
 use std::{
-    cell::OnceCell,
+    cell::{OnceCell, RefCell},
     collections::BTreeMap,
     sync::{Arc, OnceLock},
 };
@@ -41,6 +41,7 @@ use vulkano::{
     shader::spirv::SpirvBytesNotMultipleOf4,
 };
 
+use vulkano_taskgraph::collector::DeferredBatch;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 
 pub use vulkano::DeviceSize;
@@ -319,16 +320,17 @@ impl let_engine_core::backend::gpu::GpuInterfacer<VulkanTypes> for GpuInterfacer
             settings: &self.settings,
             settings_sender: &self.settings_sender,
             present_modes: self.available_present_modes.get().map(|v| &**v),
+            remove_batch: RefCell::new(None),
             guard: unsafe { vulkan.collector.pin() },
         }
     }
 }
 
-#[derive(Debug)]
 pub struct GpuInterface<'a> {
     settings: &'a RwLock<GpuSettings>,
     settings_sender: &'a Sender<GpuSettings>,
     present_modes: Option<&'a [PresentMode]>,
+    remove_batch: RefCell<Option<DeferredBatch<'a>>>,
 
     guard: Guard<'a>,
 }
@@ -443,14 +445,23 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     fn remove_material<V: Vertex>(&self, id: MaterialId<V>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.remove_resource(id.as_id(), &self.guard);
+        let mut remove_batch = self.remove_batch.borrow_mut();
+        if remove_batch.is_none() {
+            *remove_batch = Some(vulkan.resources.create_deferred_batch());
+        }
+
+        vulkan.remove_resource(id.as_id(), remove_batch.as_mut().unwrap(), &self.guard);
         Ok(())
     }
 
     fn remove_buffer<B: Data>(&self, id: BufferId<B>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.remove_resource(id.as_id(), &self.guard);
+        let mut remove_batch = self.remove_batch.borrow_mut();
+        if remove_batch.is_none() {
+            *remove_batch = Some(vulkan.resources.create_deferred_batch());
+        }
+        vulkan.remove_resource(id.as_id(), remove_batch.as_mut().unwrap(), &self.guard);
         vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(())
@@ -459,7 +470,11 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     fn remove_model<V: Vertex>(&self, id: ModelId<V>) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.remove_resource(id.as_id(), &self.guard);
+        let mut remove_batch = self.remove_batch.borrow_mut();
+        if remove_batch.is_none() {
+            *remove_batch = Some(vulkan.resources.create_deferred_batch());
+        }
+        vulkan.remove_resource(id.as_id(), remove_batch.as_mut().unwrap(), &self.guard);
         vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(())
@@ -468,7 +483,11 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
     fn remove_texture(&self, id: TextureId) -> Result<()> {
         let vulkan = VK.get().unwrap();
 
-        vulkan.remove_resource(id.as_id(), &self.guard);
+        let mut remove_batch = self.remove_batch.borrow_mut();
+        if remove_batch.is_none() {
+            *remove_batch = Some(vulkan.resources.create_deferred_batch());
+        }
+        vulkan.remove_resource(id.as_id(), remove_batch.as_mut().unwrap(), &self.guard);
         vulkan.flag_taskgraph_to_be_rebuilt();
 
         Ok(())
@@ -684,6 +703,15 @@ impl<'a> let_engine_core::backend::gpu::GpuInterface<VulkanTypes> for GpuInterfa
         // TODO: Cache descriptor sets
 
         Ok(())
+    }
+}
+
+impl Drop for GpuInterface<'_> {
+    fn drop(&mut self) {
+        let mut batch = self.remove_batch.borrow_mut();
+        if let Some(batch) = batch.take() {
+            batch.enqueue();
+        }
     }
 }
 

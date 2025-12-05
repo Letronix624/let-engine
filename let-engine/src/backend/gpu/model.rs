@@ -20,6 +20,7 @@ use vulkano::{
 };
 use vulkano_taskgraph::{
     Id,
+    collector::DeferredBatch,
     command_buffer::CopyBufferInfo,
     resource::{AccessTypes, HostAccessType},
 };
@@ -857,6 +858,54 @@ impl<V: Vertex> GpuModel<V> {
                 index_turn,
                 ..
             } => index_buffers.get(index_turn.load(Relaxed)).copied(),
+        }
+    }
+
+    /// # Safety
+    /// Only call when destroying and never using this again.
+    pub(crate) unsafe fn destroy(&self, batch: &mut DeferredBatch<'_>) {
+        match &self.inner {
+            GpuModelInner::Fixed {
+                vertex_buffer_id,
+                index_buffer_id,
+            }
+            | GpuModelInner::Pinned {
+                vertex_buffer_id,
+                index_buffer_id,
+                ..
+            } => {
+                batch.destroy_buffer(*vertex_buffer_id);
+                if let Some(id) = index_buffer_id {
+                    batch.destroy_buffer(*id);
+                };
+            }
+            GpuModelInner::Staged {
+                vertex_buffer_id,
+                index_buffer_id,
+                vertex_staging_id,
+                index_staging_id,
+            } => {
+                batch
+                    .destroy_buffer(*vertex_buffer_id)
+                    .destroy_buffer(*vertex_staging_id);
+                if let Some(id) = index_buffer_id {
+                    batch
+                        .destroy_buffer(*id)
+                        .destroy_buffer(index_staging_id.unwrap());
+                };
+            }
+            GpuModelInner::RingBuffer {
+                vertex_buffer_ids,
+                index_buffer_ids,
+                ..
+            } => {
+                for id in vertex_buffer_ids {
+                    batch.destroy_buffer(*id);
+                }
+                for id in index_buffer_ids {
+                    batch.destroy_buffer(*id);
+                }
+            }
         }
     }
 
