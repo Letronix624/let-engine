@@ -13,7 +13,7 @@ use glam::f32::{Vec2, vec2};
 /// Updates each frame.
 pub struct Input {
     /// pressed keyboard keycodes.
-    keys_down: HashSet<Key>,
+    keys_down: HashSet<PhysicalKey>,
 
     /// pressed keyboard modifiers
     keyboard_modifiers: ModifiersState,
@@ -51,9 +51,9 @@ impl Input {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
-                    self.keys_down.insert(event.logical_key.clone());
+                    self.keys_down.insert(event.physical_key);
                 } else {
-                    self.keys_down.remove(&event.logical_key);
+                    self.keys_down.remove(&event.physical_key);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -79,12 +79,12 @@ impl Input {
     }
 
     /// Returns true if the given keycode is pressed on the keyboard.
-    pub fn key_down(&self, key: &Key) -> bool {
+    pub fn key_down(&self, key: &PhysicalKey) -> bool {
         self.keys_down.contains(key)
     }
 
     /// Returns all the pressed keys in a HashSet
-    pub fn pressed_keys(&self) -> HashSet<Key> {
+    pub fn pressed_keys(&self) -> HashSet<PhysicalKey> {
         self.keys_down.clone()
     }
 

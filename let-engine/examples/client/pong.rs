@@ -106,13 +106,13 @@ impl Game {
 
         // Make left paddle controlled with W for up and S for down.
         let left_paddle = Paddle::new(
-            (Key::Character("w".into()), Key::Character("s".into())),
+            (KeyCode::KeyW.into(), KeyCode::KeyS.into()),
             -0.95,
             &mut context,
         );
         // The right paddle controlled with J and K. Weird controls, but 60% keyboard friendly
         let right_paddle = Paddle::new(
-            (Key::Character("k".into()), Key::Character("j".into())),
+            (KeyCode::KeyK.into(), KeyCode::KeyJ.into()),
             0.95,
             &mut context,
         );
@@ -308,13 +308,13 @@ impl let_engine::Game<PongBackends> for Game {
 }
 
 struct Paddle {
-    controls: (Key, Key), //up/down
+    controls: (PhysicalKey, PhysicalKey), //up/down
     object: ObjectId,
     height: f32,
 }
 
 impl Paddle {
-    pub fn new(controls: (Key, Key), x: f32, context: &mut EngineContext) -> Self {
+    pub fn new(controls: (PhysicalKey, PhysicalKey), x: f32, context: &mut EngineContext) -> Self {
         // Next we describe the appearance of the paddle.
 
         // Here we make the pedal square and give it a default material
