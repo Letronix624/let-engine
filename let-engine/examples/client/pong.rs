@@ -95,10 +95,7 @@ impl Game {
             .scene
             .add_view(
                 ui_layer,
-                Transform::default(),
-                CameraScaling::Expand,
-                DrawTarget::Window,
-                Some(Color::BLACK),
+                LayerViewBuilder::default().scaling(CameraScaling::Expand),
             )
             .unwrap();
 

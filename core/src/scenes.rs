@@ -37,11 +37,10 @@ impl<T: Loaded> Default for Scene<T> {
         let mut layer_views = SlotMap::default();
 
         let root_layer_id = layers.insert_with_key(|id| Layer::new(id, None));
-        let root_layer_view_id = layer_views.insert(LayerView::new(
-            root_layer_id,
-            DrawTarget::Window,
-            Some(Color::BLACK),
-        ));
+        let root_layer_view_id = layer_views.insert(LayerView {
+            parent_id: root_layer_id,
+            ..LayerViewBuilder::default().build().unwrap()
+        });
 
         // Add root view to root layer.
         // No need to sort; This is the first insert
@@ -166,28 +165,21 @@ impl<T: Loaded> Scene<T> {
     /// Returns `None` in case the layer ID is invalid.
     ///
     /// You can not have multiple views of the root layer.
-    ///
-    /// # Arguments
-    /// - `layer_id`: The ID of the layer in which this view views.
-    /// - `camera`: The transform of the camera where size equals zoom.
-    /// - `scaling`: The method of scaling the image to the aspect ratio.
-    /// - `draw_target`: The target which the image gets drawn onto.
-    /// - `clear_color`: If some, the color with which the image gets cleared;
-    ///   if none, the image will not be cleared.
     pub fn add_view(
         &mut self,
         layer_id: LayerId,
-        camera: Transform,
-        scaling: CameraScaling,
-        draw_target: DrawTarget<T>,
-        clear_color: Option<Color>,
-    ) -> Option<LayerViewId> {
-        let layer = self.layers.get_mut(layer_id)?;
+        builder: &LayerViewBuilder<T>,
+    ) -> Result<LayerViewId, LayerViewBuilderError> {
+        let layer = self
+            .layers
+            .get_mut(layer_id)
+            .ok_or(LayerViewBuilderError::ValidationError(
+                "layer ID is invalid".to_owned(),
+            ))?;
 
         let view = LayerView {
-            transform: camera,
-            scaling,
-            ..LayerView::new(layer_id, draw_target, clear_color)
+            parent_id: layer_id,
+            ..builder.build()?
         };
 
         let key = self.layer_views.insert(view);
@@ -198,7 +190,7 @@ impl<T: Loaded> Scene<T> {
 
         self.layer_tree_version += 1;
 
-        Some(key)
+        Ok(key)
     }
 
     pub fn views_iter(&self) -> slotmap::basic::Iter<'_, LayerViewId, LayerView<T>> {
@@ -760,49 +752,57 @@ impl Layer {
 /// The [`Transform`] acts as a camera, where `size` determines the zoom in both axis.
 ///
 /// The extent of this view is a screen or texture space UV rectangle.
+#[derive(derive_builder::Builder)]
+#[builder(build_fn(private))]
 pub struct LayerView<T: Loaded> {
+    /// The ID of the layer in which this view views.
+    #[builder(setter(skip))]
     parent_id: LayerId,
+
+    /// If true, this view will be rendered in the next render pass.
+    #[builder(default = "true")]
     pub draw: bool,
+
+    /// The target which the image gets drawn onto.
+    #[builder(default = "DrawTarget::Window")]
     draw_target: DrawTarget<T>,
+
+    /// If some, the color with which the image gets cleared;
+    /// if none, the image will not be cleared.
+    #[builder(default = "Some(Color::BLACK)")]
     clear_color: Option<Color>,
 
+    /// The transform of the camera where size equals zoom.
+    #[builder(default)]
     pub transform: Transform,
 
     /// The extent of the viewport.
     ///
     /// A rect determining the location on the target, where to put the viewport in UV coordinates.
+    #[builder(default = "[Vec2::ZERO, Vec2::ONE]")]
     pub extent: [Vec2; 2],
 
     /// The range determining the depth view distances.
+    #[builder(default = "0.0..1.0")]
     pub depth: Range<f32>,
 
+    #[builder(default)]
     pub mode: CameraMode,
 
     /// The scissor of the viewport.
     ///
     /// A UV rect that is visible in the viewport. Everything outside this rect is discarded.
+    #[builder(default = "[Vec2::ZERO, Vec2::ONE]")]
     pub scissor: [Vec2; 2],
+
+    /// The method of scaling the image to the aspect ratio.
+    #[builder(default)]
     pub scaling: CameraScaling,
 }
 
 new_key_type! { pub struct LayerViewId; }
 
 impl<T: Loaded> LayerView<T> {
-    fn new(parent_id: LayerId, draw_target: DrawTarget<T>, clear_color: Option<Color>) -> Self {
-        Self {
-            parent_id,
-            draw: true,
-            draw_target,
-            clear_color,
-            transform: Transform::default(),
-            extent: [Vec2::ZERO, Vec2::ONE],
-            depth: 0.0..1.0,
-            mode: CameraMode::default(),
-            scissor: [Vec2::ZERO, Vec2::ONE],
-            scaling: CameraScaling::default(),
-        }
-    }
-
     /// Returns the matrix of this view.
     #[inline]
     pub fn view_matrix(&self) -> Mat4 {
@@ -880,7 +880,7 @@ impl<T: Loaded> LayerView<T> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum DrawTarget<T: Loaded> {
     Window,
     Texture(T::TextureId),

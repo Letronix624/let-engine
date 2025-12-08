@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use concurrent_slotmap::{Key, SlotId, hyaline::Guard};
+use concurrent_slotmap::{Key, SlotId};
 use let_engine_core::resources::{
     buffer::{Buffer, BufferAccess, BufferUsage, LoadedBuffer, PreferOperation},
     data::Data,
