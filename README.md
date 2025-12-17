@@ -48,6 +48,11 @@ sudo pacman -Sy vulkan-devel
 sudo zypper install alsa-devel cmake
 sudo zypper install --type pattern devel_basis devel_C_C++ devel_vulkan mingw64-cross-gcc-c++ mingw64-cross-pkgconf
 ```
+
+### Brew dependencies
+```
+brew install vulkan-headers cmake
+```
 ## Radicle
 
 To clone this repository on [Radicle](https://radicle.xyz), simply run:
