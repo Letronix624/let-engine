@@ -9,7 +9,6 @@ pub use color::Color;
 #[cfg(feature = "physics")]
 pub mod physics;
 
-#[cfg(feature = "physics")]
 use glam::Vec2;
 use let_engine_macros::Vertex;
 #[cfg(feature = "physics")]
